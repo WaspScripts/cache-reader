@@ -1,0 +1,316 @@
+{$R-}
+type
+  TWhirlpool = record
+    Block, Hash, RoundKey, L, State: array[0..7] of UInt64;
+    BitLength: array[0..31] of Byte;
+    Buffer: array[0..63] of Byte;
+    BufferBits, BufferPosition: Integer;
+
+    LookupTables: array[0..7] of array[0..255] of UInt64;
+    RoundConstants: array[0..10] of UInt64;
+  end;
+
+procedure TWhirlpool.Setup();
+const
+  SBoxChars: array [0..127] of UInt16 = [
+    $1823, $C6E8, $87B8, $014F, $36A6, $D2F5, $796F, $9152,
+    $60BC, $9B8E, $A30C, $7B35, $1DE0, $D7C2, $2E4B, $FE57,
+    $1577, $37E5, $9FF0, $4ADA, $58C9, $290A, $B1A0, $6B85,
+    $BD5D, $10F4, $CB3E, $0567, $E427, $418B, $A77D, $95D8,
+    $FBEE, $7C66, $DD17, $479E, $CA2D, $BF07, $AD5A, $8333,
+    $6302, $AA71, $C819, $49D9, $F2E3, $5B88, $9A26, $32B0,
+    $E90F, $D580, $BECD, $3448, $FF7A, $905F, $2068, $1AAE,
+    $B454, $9322, $64F1, $7312, $4008, $C3EC, $DBA1, $8D3D,
+    $9700, $CF2B, $7682, $D61B, $B5AF, $6A50, $45F3, $30EF,
+    $3F55, $A2EA, $65BA, $2FC0, $DE1C, $FD4D, $9275, $068A,
+    $B2E6, $0E1F, $62D4, $A896, $F9C5, $2559, $8472, $394C,
+    $5E78, $388C, $D1A5, $E261, $B321, $9C1E, $43C7, $FC04,
+    $5199, $6D0D, $FADF, $7E24, $3BAB, $CE11, $8F4E, $B7EB,
+    $3C81, $94F7, $B913, $2CD3, $E76E, $C403, $5644, $7FA9,
+    $2ABB, $C153, $DC0B, $9D6C, $3174, $F646, $AC89, $14E1,
+    $163A, $6909, $70B6, $D0ED, $CC42, $98A4, $285C, $F886
+  ];
+var
+  i, j, offset: Integer;
+  word: UInt16;
+  value, shifted1, shifted2, mixed1, shifted3, mixed2: UInt64;
+  s: String;
+begin
+
+  for i := 0 to 255 do
+  begin
+    word := SBoxChars[i div 2];
+
+    if (i and 1) = 0 then
+      value := UInt64(word shr 8)
+    else
+      value := UInt64(word and $FF);
+
+    shifted1 := value shl 1;
+    if shifted1 >= $100 then
+      shifted1 := shifted1 xor $11D;
+
+    shifted2 := shifted1 shl 1;
+    if shifted2 >= $100 then
+      shifted2 := shifted2 xor $11D;
+
+    mixed1 := shifted2 xor value;
+
+    shifted3 := shifted2 shl 1;
+    if shifted3 >= $100 then
+      shifted3 := shifted3 xor $11D;
+
+    mixed2 := shifted3 xor value;
+
+    Self.LookupTables[0][i] := (value shl 56) or (value shl 48) or (shifted2 shl 40) or (value shl 32) or
+                                    (shifted3 shl 24) or (mixed1 shl 16) or (shifted1 shl 8) or mixed2;
+
+    for j := 1 to 7 do
+      Self.LookupTables[j][i] := (Self.LookupTables[j - 1][i] shr 8) or
+                                     (Self.LookupTables[j - 1][i] shl 56);
+  end;
+
+  Self.RoundConstants[0] := 0;
+
+  for i := 1 to 10 do
+  begin
+    offset := 8 * (i - 1);
+    Self.RoundConstants[i] :=
+      (Self.LookupTables[0][offset] and $FF00000000000000) xor
+      (Self.LookupTables[1][offset + 1] and $00FF000000000000) xor
+      (Self.LookupTables[2][offset + 2] and $0000FF0000000000) xor
+      (Self.LookupTables[3][offset + 3] and $000000FF00000000) xor
+      (Self.LookupTables[4][offset + 4] and $00000000FF000000) xor
+      (Self.LookupTables[5][offset + 5] and $0000000000FF0000) xor
+      (Self.LookupTables[6][offset + 6] and $000000000000FF00) xor
+      (Self.LookupTables[7][offset + 7] and $00000000000000FF);
+  end;
+end;
+
+procedure TWhirlpool.Reset();
+var
+  i: Integer;
+begin
+  for i := 0 to 7 do
+  begin
+    Self.Block[i] := 0;
+    Self.Hash[i] := 0;
+    Self.RoundKey[i] := 0;
+    Self.L[i] := 0;
+    Self.State[i] := 0;
+  end;
+
+  for i := 0 to 31 do
+    Self.BitLength[i] := 0;
+
+  for i := 0 to 63 do
+    Self.Buffer[i] := 0;
+
+  Self.BufferBits := 0;
+  Self.BufferPosition := 0;
+end;
+
+procedure TWhirlpool._ProcessBuffer();
+var
+  i, j, p: Integer;
+begin
+  p := 0;
+  for i := 0 to 7 do
+  begin
+    Self.Block[i] :=
+      (UInt64(Self.Buffer[p]) shl 56) or
+      (UInt64(Self.Buffer[p + 1]) shl 48) or
+      (UInt64(Self.Buffer[p + 2]) shl 40) or
+      (UInt64(Self.Buffer[p + 3]) shl 32) or
+      (UInt64(Self.Buffer[p + 4]) shl 24) or
+      (UInt64(Self.Buffer[p + 5]) shl 16) or
+      (UInt64(Self.Buffer[p + 6]) shl 8)  or
+       UInt64(Self.Buffer[p + 7]);
+
+    Inc(p, 8);
+  end;
+
+  for i := 0 to 7 do
+  begin
+    Self.RoundKey[i] := Self.Hash[i];
+    Self.State[i] := Self.Block[i] xor Self.RoundKey[i];
+  end;
+
+  for i := 1 to 10 do
+  begin
+    for j := 0 to 7 do
+    begin
+      Self.L[j] :=
+        Self.LookupTables[0][Byte((Self.RoundKey[(j - 0) and 7] shr 56) and $FF)] xor
+        Self.LookupTables[1][Byte((Self.RoundKey[(j - 1) and 7] shr 48) and $FF)] xor
+        Self.LookupTables[2][Byte((Self.RoundKey[(j - 2) and 7] shr 40) and $FF)] xor
+        Self.LookupTables[3][Byte((Self.RoundKey[(j - 3) and 7] shr 32) and $FF)] xor
+        Self.LookupTables[4][Byte((Self.RoundKey[(j - 4) and 7] shr 24) and $FF)] xor
+        Self.LookupTables[5][Byte((Self.RoundKey[(j - 5) and 7] shr 16) and $FF)] xor
+        Self.LookupTables[6][Byte((Self.RoundKey[(j - 6) and 7] shr  8) and $FF)] xor
+        Self.LookupTables[7][Byte( Self.RoundKey[(j - 7) and 7]         and $FF)];
+    end;
+
+    for j := 0 to 7 do
+      Self.RoundKey[j] := Self.L[j];
+
+    Self.RoundKey[0] := Self.RoundKey[0] xor Self.RoundConstants[i];
+
+    for j := 0 to 7 do
+    begin
+      Self.L[j] :=
+        Self.RoundKey[j] xor
+        Self.LookupTables[0][Byte((Self.State[(j - 0) and 7] shr 56) and $FF)] xor
+        Self.LookupTables[1][Byte((Self.State[(j - 1) and 7] shr 48) and $FF)] xor
+        Self.LookupTables[2][Byte((Self.State[(j - 2) and 7] shr 40) and $FF)] xor
+        Self.LookupTables[3][Byte((Self.State[(j - 3) and 7] shr 32) and $FF)] xor
+        Self.LookupTables[4][Byte((Self.State[(j - 4) and 7] shr 24) and $FF)] xor
+        Self.LookupTables[5][Byte((Self.State[(j - 5) and 7] shr 16) and $FF)] xor
+        Self.LookupTables[6][Byte((Self.State[(j - 6) and 7] shr  8) and $FF)] xor
+        Self.LookupTables[7][Byte( Self.State[(j - 7) and 7]         and $FF)];
+    end;
+
+    for j := 0 to 7 do
+      Self.State[j] := Self.L[j];
+  end;
+
+  for i := 0 to 7 do
+    Self.Hash[i] := Self.Hash[i] xor Self.State[i] xor Self.Block[i];
+end;
+
+procedure TWhirlpool.Update(const data: TByteArray; bitCount: UInt64);
+var
+  pos, sourceShift, bufferShift,
+  bitLengthPos, carry, value: Integer;
+  remaining: UInt64;
+begin
+  sourceShift := (8 - (bitCount and $7)) and $7;
+  bufferShift := Self.BufferBits and $7;
+  remaining := bitCount;
+
+  carry := 0;
+  for bitLengthPos := 31 downto 0 do
+  begin
+    carry += Self.BitLength[bitLengthPos] + Byte(remaining and $FF);
+    Self.BitLength[bitLengthPos] := Byte(carry);
+    carry := carry shr 8;
+    remaining := remaining shr 8;
+  end;
+
+  value := 0;
+  while bitCount > 8 do
+  begin
+    value := ((data[pos] shl sourceShift) and $FF) or ((data[pos + 1] and $FF) shr (8 - sourceShift));
+
+    Self.Buffer[Self.BufferPosition] := Self.Buffer[Self.BufferPosition] or Byte(value shr bufferShift);
+
+    Inc(Self.BufferPosition);
+    Inc(Self.BufferBits, 8 - bufferShift);
+
+    if Self.BufferBits = 512 then
+    begin
+      Self._ProcessBuffer();
+      Self.BufferPosition := 0;
+      Self.BufferBits := 0;
+    end;
+
+    Self.Buffer[Self.BufferPosition] := Byte((value shl (8 - bufferShift)) and $FF);
+
+    Inc(Self.BufferBits, bufferShift);
+    Dec(bitCount, 8);
+    Inc(pos);
+  end;
+
+  if bitCount > 0 then
+  begin
+    value := (data[pos] shl sourceShift) and $FF;
+    Self.Buffer[Self.BufferPosition] :=
+      Self.Buffer[Self.BufferPosition] or Byte(value shr bufferShift);
+  end
+  else
+    value := 0;
+
+
+  if (bufferShift + bitCount) < 8 then
+  begin
+    Inc(Self.BufferBits, bitCount);
+    Exit;
+  end;
+
+  Inc(Self.BufferPosition);
+  Inc(Self.BufferBits, 8 - bufferShift);
+  Dec(bitCount, 8 - bufferShift);
+
+  if Self.BufferBits = 512 then
+  begin
+    Self._ProcessBuffer();
+    Self.BufferPosition := 0;
+    Self.BufferBits := 0;
+  end;
+
+  Self.Buffer[Self.BufferPosition] := Byte((value shl (8 - bufferShift)) and $FF);
+
+  Inc(Self.BufferBits, bitCount);
+end;
+
+procedure TWhirlpool.Finalize(var digest: TByteArray);
+var
+  i, shift: Integer;
+  hash: UInt64;
+begin
+  Self.Buffer[Self.BufferPosition] := Self.Buffer[Self.BufferPosition] or Byte($80 shr (Self.BufferBits and $7));
+  Inc(Self.BufferPosition);
+
+  if Self.BufferPosition > 32 then
+  begin
+    while Self.BufferPosition < 64 do
+    begin
+      Self.Buffer[Self.BufferPosition] := 0;
+      Inc(Self.BufferPosition);
+    end;
+
+    Self._ProcessBuffer();
+    Self.BufferPosition := 0;
+  end;
+
+  while Self.BufferPosition < 32 do
+  begin
+    Self.Buffer[Self.BufferPosition] := 0;
+    Inc(Self.BufferPosition);
+  end;
+
+  Move(Self.BitLength[0], Self.Buffer[32], 32);
+  Self._ProcessBuffer();
+
+  i := -1;
+  for hash in Self.Hash do
+  begin
+    for shift := 56 downto 8 with 8 do
+      digest[Inc(i)] := hash shr shift;
+    digest[Inc(i)] := hash;
+  end;
+end;
+
+procedure TestWhirlPool();
+var
+  wh: TWhirlpool;
+  data: TByteArray;
+  digest: TByteArray;
+  i: Integer;
+  str: String;
+begin
+  str := 'abc';
+  data := str.ToBytes();
+
+  wh.Setup();
+  wh.Reset();
+  wh.Update(data, Length(data) * 8);
+  SetLength(digest, 64);
+  wh.Finalize(digest);
+
+  WriteLn('Empty string hash:');
+  for i := 0 to 63 do
+    Write(IntToHex(digest[i], 2), ', ');
+  WriteLn('');
+end;
+{$R+}
