@@ -1,0 +1,46 @@
+type
+  TFile = object
+    ID: Integer;
+    Data: TByteArray;
+    HashName: Integer;
+  end;
+
+function TFile.Construct(id: Integer): TFile; static;
+begin
+  Result.ID := id;
+  Result.Data := [];
+  Result.HashName := 0;
+end;
+
+function TFile.Construct(id: Integer; const data: TByteArray): TFile; static; overload;
+begin
+  Result.ID := id;
+  Result.Data := data;
+  Result.HashName := 0;
+end;
+
+function TFile.Construct(id: Integer; const data: TByteArray; hashName: Integer): TFile; static; overload;
+begin
+  Result.ID := id;
+  Result.Data := data;
+  Result.HashName := hashName;
+end;
+
+function TFile.Construct(const other: TFile): TFile; static; overload;
+begin
+  Result.ID := other.ID;
+  Result.Data := Copy(other.Data);
+  Result.HashName := other.HashName;
+end;
+
+function TFile.CompareTo(const other: TFile): Integer;
+begin
+  if Self.ID < other.ID then Exit(-1);
+  if Self.ID > other.ID then Exit(1);
+  Result := 0;
+end;
+
+function TFile.ToString(): String;
+begin
+  Result := Format('File %d[data_length=%d, hash_name=%d]', [Self.ID, Length(Self.Data), Self.HashName]);
+end;
