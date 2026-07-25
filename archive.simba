@@ -1,0 +1,282 @@
+{$include_once ./file.simba}
+{$include_once ./archive_sector.simba}
+
+type
+  TArchive = object
+    ID, HashName, Revision, CRC,
+    Flag8Value, Flag4Value1, Flag4Value2: Integer;
+
+    CompressionType: ECacheCompression;
+    Whirlpool: TByteArray;
+    XTEA: TIntegerArray;
+
+    HasRead, IsNew, NeedUpdate: Boolean;
+    Files: TMap<Integer, TFile>;
+  end;
+
+function TArchive.Construct(id: Integer): TArchive; static;
+begin
+  Result.ID := id;
+end;
+
+function TArchive.Construct(id, hashName: Integer): TArchive; static; overload;
+begin
+  Result := new TArchive(id);
+  Result.HashName := hashName;
+end;
+
+function TArchive.Construct(const other: TArchive): TArchive; static; overload;
+var
+  _file: TFile;
+begin
+  Result.ID := other.ID;
+  Result.HashName := other.HashName;
+  Result.Revision := other.Revision;
+  Result.CRC := other.CRC;
+  Result.Whirlpool := Copy(other.Whirlpool);
+  Result.XTEA := Copy(other.XTEA);
+
+  for _file in other.Files.Values do
+    Result.Files.Value[_file.ID] := new TFile(_file);
+end;
+
+function TArchive.ContainsData(): Boolean;
+var
+  _file: TFile;
+begin
+  for _file in Self.Files.Values do
+    if _file.Data <> [] then
+      Exit(True);
+  Result := False;
+end;
+
+
+function TArchive.CompareTo(const other: TArchive): Integer;
+begin
+  if Self.ID < other.ID then Exit(-1);
+  if Self.ID > other.ID then Exit(1);
+  Result := 0;
+end;
+
+function TArchive.ToHash(const name: String): Integer;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 1 to Length(name) do
+    Result := Result * 31 + Ord(name[i]);
+end;
+
+function TArchive.ToString(): String;
+begin
+  Result := Format(
+    'Archive[id=%d, hash_name=%d, revision=%d, crc=%d, has_whirlpool=%s, has_read=%s, files_size=%d]',
+    [
+      Self.ID,
+      Self.HashName,
+      Self.Revision,
+      Self.CRC,
+      BoolToStr(Self.Whirlpool <> []),
+      BoolToStr(Self.HasRead),
+      Self.Files.Count
+    ]
+  );
+end;
+
+
+function TArchive.Contains(id: Integer): Boolean;
+begin
+  Result := Self.Files.Exists(id);
+end;
+
+function TArchive.Get(id: Integer): TFile;
+begin
+  Result := Self.Files.Value[id];
+end;
+
+function TArchive.FileIds(): TIntegerArray;
+var
+  files: array of TFile;
+  i: Integer;
+begin
+  files := Self.Files.Values;
+  SetLength(Result, Length(files));
+  for i := 0 to High(files) do
+    Result[i] := files[i].ID;
+end;
+
+function TArchive.CopyFiles(): array of TFile;
+var
+  files: array of TFile;
+  i: Integer;
+begin
+  files := Self.Files.Values;
+  SetLength(Result, Length(files));
+  for i := 0 to High(files) do
+    Result[i] := new TFile(files[i]);
+end;
+
+function TArchive.NextID(): Integer;
+var
+  count: Integer;
+begin
+  count := Self.Files.Count;
+  if count = 0 then
+    Exit(0);
+  Result := Self.Files.ValueFromIndex[count-1].ID + 1;
+end;
+
+
+procedure TArchive.Restore();
+var
+  i: Integer;
+  value: TFile;
+begin
+  for i := 0 to Self.Files.Count-1 do
+  begin
+    value := Self.Files.ValueFromIndex[i];
+    value.Data := [];
+    Self.Files.Value[value.ID] := value;
+  end;
+  Self.HasRead := False;
+  Self.IsNew := False;
+end;
+
+function TArchive.Add(id: Integer; data: TByteArray; hashName: Integer = 0): TFile;
+var
+  idx: Integer;
+
+begin
+  idx := Self.Files.IndexOf(id);
+
+  if idx > -1 then
+  begin
+    Result := Self.Files.ValueFromIndex[idx];
+    Result.Data := data; //Should update on the map because data is an array which means it's a pointer.
+    Result.HashName := hashName;
+    Exit;
+  end;
+
+  Result := new TFile(id, data, hashName);
+  Self.Files.Value[id] := Result;
+end;
+
+function TArchive.Add(data: TByteArray): TFile; overload;
+begin
+  Result := Self.Add(Self.NextID(), data);
+end;
+
+procedure TArchive.Read(const data: TByteArray);
+var
+  chunkCount, fileCount: Integer;
+  _file: TFile;
+  sizes: TIntegerArray;
+  dataOffset, tableOffset, chunkSize: Integer;
+  i, j: Integer;
+begin
+  Self.HasRead := True;
+  fileCount := Self.Files.Count;
+
+  if fileCount = 0 then
+    Exit;
+
+  if fileCount = 1 then
+  begin
+    _file := Self.Files.ValueFromIndex[0];
+    _file.Data := data;
+    Exit;
+  end;
+
+  chunkCount := data.Last;
+  SetLength(sizes, fileCount);
+  tableOffset := Length(data) - 1 - (chunkCount * fileCount * 4);
+
+  //calculate final file sizes.
+  for i := 0 to chunkCount - 1 do
+  begin
+    chunkSize := 0;
+    for j := 0 to fileCount - 1 do
+    begin
+      chunkSize +=
+        (data[tableOffset] shl 24) or
+        (data[tableOffset + 1] shl 16) or
+        (data[tableOffset + 2] shl 8) or
+        data[tableOffset + 3];
+
+      sizes[j] += chunkSize;
+      Inc(tableOffset, 4);
+    end;
+  end;
+
+  //allocate buffers
+  for i := 0 to fileCount - 1 do
+  begin
+    _file := Self.Files.ValueFromIndex[i];
+    SetLength(_file.Data, sizes[i]);
+  end;
+
+  //copy chunk data.
+  dataOffset := 0;
+  tableOffset := Length(data) - 1 - (chunkCount * fileCount * 4);
+
+  for i := 0 to chunkCount - 1 do
+  begin
+    chunkSize := 0;
+    for j := 0 to fileCount - 1 do
+    begin
+      chunkSize += (data[tableOffset] shl 24) or (data[tableOffset + 1] shl 16) or
+                   (data[tableOffset + 2] shl 8) or data[tableOffset + 3];
+      Inc(tableOffset, 4);
+
+      _file := Self.Files.ValueFromIndex[j];
+      Move(data[dataOffset], _file.Data[Length(_file.Data) - sizes[j]], chunkSize);
+
+      Inc(dataOffset, chunkSize);
+      sizes[j] -= chunkSize;
+    end;
+  end;
+end;
+
+function TArchive.Write(): TByteArray;
+var
+  count, totalSize, offset, i, previous, fileSize: Integer;
+begin
+  count := Self.Files.Count;
+  if count = 1 then
+    Exit(Self.Files.ValueFromIndex[0].Data);
+
+  totalSize := 1 + (count * 4);
+
+  for i := 0 to count-1 do
+    totalSize += Length(Self.Files.ValueFromIndex[i].Data);
+
+  SetLength(Result, totalSize);
+
+  offset := 0;
+
+  for i := 0 to count-1 do
+  begin
+    Move(Self.Files.ValueFromIndex[i].Data[0], Result[offset], Length(Self.Files.ValueFromIndex[i].Data));
+    Inc(offset, Length(Self.Files.ValueFromIndex[i].Data));
+  end;
+
+  previous := 0;
+
+  for i := 0 to count-1 do
+  begin
+    fileSize := Length(Self.Files.ValueFromIndex[i].Data);
+    fileSize := fileSize - previous;
+
+    Result[offset] := fileSize shr 24;
+    Result[offset + 1] := fileSize shr 16;
+    Result[offset + 2] := fileSize shr 8;
+    Result[offset + 3] := fileSize;
+
+    Inc(offset, 4);
+
+    previous := Length(Self.Files.ValueFromIndex[i].Data);
+  end;
+
+  Result[offset] := 1;
+end;
+
