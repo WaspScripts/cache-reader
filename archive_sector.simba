@@ -1,0 +1,97 @@
+type
+  ECacheCompression = enum(NONE, BZIP2, GZIP, LZMA);
+
+  TArchiveSector = object
+    BigSector: Boolean;
+    Size, Position, ID, Index, Chunk, NextPosition: Integer;
+    Data: TByteArray;
+
+    CompressionType: ECacheCompression;
+
+    const INDEX_SIZE: Integer = 6;
+    const SECTOR_HEADER_SIZE_SMALL: Integer = 8;
+    const SECTOR_DATA_SIZE_SMALL: Integer = 512;
+    const SECTOR_HEADER_SIZE_BIG: Integer = 10;
+    const SECTOR_DATA_SIZE_BIG: Integer = 510;
+    const SECTOR_SIZE: Integer = 520;
+    const WHIRLPOOL_SIZE: Integer = 64;
+  end;
+
+function TArchiveSector.Construct(bigSector: Boolean; size, position: Integer): TArchiveSector; static;
+begin
+  Result.BigSector := bigSector;
+  Result.Size := size;
+  Result.Position := position;
+  Result.ID := 0;
+  Result.Index := 0;
+  Result.Chunk := 0;
+  Result.NextPosition := 0;
+  SetLength(Result.Data, size);
+  Result.CompressionType := ECacheCompression.NONE;
+end;
+
+function TArchiveSector.Construct(bigSector: Boolean; size, position, id, index: Integer): TArchiveSector; static; overload;
+begin
+  Result := new TArchiveSector(bigSector, size, position);
+  Result.ID := id;
+  Result.Index := index;
+end;
+
+procedure TArchiveSector.Read(constref data: TByteArray; var offset: Integer);
+begin
+  if Self.BigSector then
+  begin
+    Self.ID := (data[offset] shl 24) or (data[offset+1] shl 16) or
+      (data[offset+2] shl 8) or data[offset+3];
+    Inc(offset, 4);
+  end
+  else
+  begin
+    Self.ID := (data[offset] shl 8) or data[offset+1];
+    Inc(offset, 2);
+  end;
+
+  Self.Chunk := (data[offset] shl 8) or data[offset+1];
+  Inc(offset, 2);
+
+  Self.NextPosition := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
+  Inc(offset, 3);
+
+  Self.Index := data[offset];
+  Inc(offset);
+end;
+
+function TArchiveSector.Write(): TByteArray;
+var
+  offset: Integer;
+begin
+  if Self.BigSector then
+    SetLength(Result, TArchiveSector.SECTOR_HEADER_SIZE_BIG)
+  else
+    SetLength(Result, TArchiveSector.SECTOR_HEADER_SIZE_SMALL);
+
+  if Self.BigSector then
+  begin
+    Result[offset] := (Self.ID shr 24) and $FF;
+    Result[offset+1] := (Self.ID shr 16) and $FF;
+    Result[offset+2] := (Self.ID shr 8) and $FF;
+    Result[offset+3] := Self.ID and $FF;
+    Inc(offset, 4);
+  end
+  else
+  begin
+    Result[offset] := (Self.ID shr 8) and $FF;
+    Result[offset+1] := Self.ID and $FF;
+    Inc(offset, 2);
+  end;
+
+  Result[offset] := (Self.Chunk shr 8) and $FF;
+  Result[offset+1] := Self.Chunk and $FF;
+  Inc(offset, 2);
+
+  Result[offset] := (Self.Position shr 16) and $FF;
+  Result[offset+1] := (Self.Position shr 8) and $FF;
+  Result[offset+2] := Self.Position and $FF;
+  Inc(offset, 3);
+  Result[offset] := Self.Index;
+end;
