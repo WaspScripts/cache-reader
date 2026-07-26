@@ -1,4 +1,5 @@
-{$R-}
+{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+
 function BZ2ReadBits(const data: TByteArray; var bitPos: Integer; count: Integer): Integer;
 var
   i, bytePos, bitInByte, bit: Integer;

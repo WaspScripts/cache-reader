@@ -1,4 +1,5 @@
-{$R-}
+{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+
 type
   TFile = object
     ID, HashName: Integer;

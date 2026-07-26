@@ -1,5 +1,6 @@
 {$include_once ./bzip2.simba}
-{$R-}
+{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+
 function Read32Bit(const data: TByteArray; var offset: Integer): Integer;
 begin
   Result := (data[offset] shl 24) or (data[offset+1] shl 16) or (data[offset+2] shl 8) or data[offset+3];

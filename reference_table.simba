@@ -1,5 +1,5 @@
 {$include_once ./archive.simba}
-{$R-}
+{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
 
 type
   TReferenceTable = object

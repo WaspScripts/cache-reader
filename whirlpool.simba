@@ -1,4 +1,5 @@
-{$R-}
+{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+
 type
   TWhirlpool = record
     Block, Hash, RoundKey, L, State: array [0..7] of UInt64;

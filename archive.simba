@@ -1,6 +1,6 @@
 {$include_once ./file.simba}
 {$include_once ./archive_sector.simba}
-{$R-}
+{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
 
 type
   PArchive = ^TArchive;
@@ -193,14 +193,8 @@ begin
     chunkSize := 0;
     for j := 0 to fileCount - 1 do
     begin
-      chunkSize +=
-        (data[tableOffset] shl 24) or
-        (data[tableOffset + 1] shl 16) or
-        (data[tableOffset + 2] shl 8) or
-        data[tableOffset + 3];
-
+      chunkSize += Read32Bit(data, tableOffset);
       sizes[j] += chunkSize;
-      Inc(tableOffset, 4);
     end;
   end;
 
@@ -220,10 +214,7 @@ begin
     chunkSize := 0;
     for j := 0 to fileCount - 1 do
     begin
-      chunkSize += (data[tableOffset] shl 24) or (data[tableOffset + 1] shl 16) or
-                   (data[tableOffset + 2] shl 8) or data[tableOffset + 3];
-      Inc(tableOffset, 4);
-
+      chunkSize += Read32Bit(data, tableOffset);
       _file := Self.Files.ValueFromIndex[j];
       Move(data[dataOffset], _file.Data[Length(_file.Data) - sizes[j]], chunkSize);
 

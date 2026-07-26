@@ -1,5 +1,6 @@
 {$include_once ./index.simba}
-{$R-}
+{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+
 type
   TCacheReader = object
     Path: String;

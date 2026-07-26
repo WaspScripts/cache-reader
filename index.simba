@@ -1,6 +1,6 @@
 {$include_once ./whirlpool.simba}
 {$include_once ./reference_table.simba}
-{$R-}
+{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
 
 type
   PCacheIndex = ^TCacheIndex;
@@ -152,7 +152,7 @@ begin
 
     archive.CompressionType := sector.CompressionType;
 
-    data := sector.Decompress(); //TODO: XTEA decryption
+    data := sector.Decompress();
 
     if Length(data) > 0 then
     begin
