@@ -1,0 +1,39 @@
+{$include_once ./index.simba}
+{$R-}
+type
+  TCacheReader = object
+    Path: String;
+    MainData, Index255Data: TByteArray;
+    Indices: array of TCacheIndex;
+  end;
+
+function TCacheReader.Construct(const path: String): TCacheReader; static;
+begin
+  Result.Path := path;
+end;
+
+procedure TCacheReader.Load();
+var
+  indicesLength, i: Integer;
+  idxPath: String;
+begin
+  Self.MainData := FileReadBytes(Self.Path + 'main_file_cache.dat2');
+  Self.Index255Data := FileReadBytes(Self.Path + 'main_file_cache.idx255');
+
+  indicesLength := Length(Self.Index255Data) div TArchiveSector.INDEX_SIZE;
+  SetLength(Self.Indices, indicesLength);
+
+  for i := 0 to indicesLength - 1 do
+  begin
+    idxPath := Self.Path + 'main_file_cache.idx' + ToStr(i);
+
+    if not FileExists(idxPath) then
+      Continue;
+
+    Self.Indices[i] := new TCacheIndex(i, Self.MainData);
+    Self.Indices[i].Index255 := Self.Index255Data;
+    Self.Indices[i].IndexData := FileReadBytes(idxPath);
+    Self.Indices[i].Load();
+  end;
+end;
+{$R+}

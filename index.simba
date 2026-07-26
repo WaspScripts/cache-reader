@@ -1,0 +1,237 @@
+{$include_once ./whirlpool.simba}
+{$include_once ./reference_table.simba}
+{$R-}
+
+type
+  PCacheIndex = ^TCacheIndex;
+  TCacheIndex = object
+    ReferenceTable: TReferenceTable;
+    ID, CRC: Integer;
+    CompressionType: ECacheCompression;
+    Whirlpool, MainData, Index255, IndexData: TByteArray;
+    Cached, Closed: Boolean;
+  end;
+
+function TCacheIndex.Construct(id: Integer; const data: TByteArray): TCacheIndex; static;
+begin
+  Result.ID := id;
+  Result.MainData := data;
+  Result.ReferenceTable := new TReferenceTable(id);
+  Result.Cached := False;
+  Result.Closed := False;
+end;
+
+function TCacheIndex.ReadArchiveSector(id: Integer; const data: TByteArray; ownerId: Integer): TArchiveSector;
+var
+  sectorData: TByteArray;
+  sector: TArchiveSector;
+  offset, position, size, readBytes, chunk,
+  requiredToRead,
+  sectorHeaderSize, sectorDataSize,
+  sectorOffset, bufferOffset: Integer;
+  bigSector: Boolean;
+begin
+  offset := id * TArchiveSector.INDEX_SIZE;
+  if offset + TArchiveSector.INDEX_SIZE > Length(data) then
+    Exit;
+
+  sectorData := Copy(data, offset, TArchiveSector.INDEX_SIZE);
+  bigSector := id > 65535;
+
+  offset := 0;
+  size := Read24Bit(sectorData, offset);
+  position := Read24Bit(sectorData, offset);
+
+  if (size < 0) or (position <= 0) or (position > Length(Self.MainData) div TArchiveSector.SECTOR_SIZE) then
+    Exit;
+
+  sector := new TArchiveSector(bigSector, size, position);
+
+  readBytes := 0;
+  chunk := 0;
+
+  if bigSector then
+  begin
+    sectorHeaderSize := TArchiveSector.HEADER_SIZE_BIG;
+    sectorDataSize := TArchiveSector.DATA_SIZE_BIG;
+  end
+  else
+  begin
+    sectorHeaderSize := TArchiveSector.HEADER_SIZE_SMALL;
+    sectorDataSize := TArchiveSector.DATA_SIZE_SMALL;
+  end;
+
+  SetLength(sector.Data, size);
+
+  while readBytes < size do
+  begin
+    if sector.Position = 0 then
+      Exit;
+
+    requiredToRead := size - readBytes;
+    if requiredToRead > sectorDataSize then
+      requiredToRead := sectorDataSize;
+
+    sectorOffset := sector.Position * TArchiveSector.SECTOR_SIZE;
+    if sectorOffset + sectorHeaderSize + requiredToRead > Length(Self.MainData) then
+      Exit;
+
+    sectorData := Copy(Self.MainData, sectorOffset, sectorHeaderSize + requiredToRead);
+
+    bufferOffset := 0;
+    sector.Read(sectorData, bufferOffset);
+
+    if sector.ID <> id then
+      Exit;
+    if sector.Chunk <> chunk then
+      Exit;
+    if ownerId <> sector.Index then // was Self.ID
+      Exit;
+    if (sector.NextPosition < 0) or (sector.NextPosition > Length(Self.MainData) div TArchiveSector.SECTOR_SIZE) then
+      Exit;
+
+    Move(sectorData[sectorHeaderSize], sector.Data[readBytes], requiredToRead);
+    Inc(readBytes, requiredToRead);
+
+    sector.Position := sector.NextPosition;
+    Inc(chunk);
+  end;
+
+  Result := sector;
+end;
+
+procedure TCacheIndex.Load();
+var
+  sector: TArchiveSector;
+  data: TByteArray;
+  offset: Integer;
+begin
+  if (Self.ID < 0) or (Self.ID >= 255) then
+    Exit;
+
+  sector := Self.ReadArchiveSector(Self.ID, Self.Index255, 255);
+
+  if Length(sector.Data) = 0 then
+    Exit;
+
+  Self.CRC := StrToInt('$' + HashData(EHashAlgo.CRC32, @sector.Data[0], Length(sector.Data)));
+  Self.Whirlpool := Whirlpool.Generate(sector.Data);
+
+  data := sector.Decompress();
+
+  offset := 0;
+  Self.ReferenceTable.Read(data, offset);
+
+  Self.CompressionType := sector.CompressionType;
+end;
+
+procedure TCacheIndex.Cache();
+var
+  archive: TArchive;
+  sector: TArchiveSector;
+  data: TByteArray;
+  tailOffset, remaining, compressedFieldValue, revOffset: Integer;
+const
+  MAPS_INDEX = 5;
+begin
+  if Self.Closed or Self.Cached then
+    Exit;
+
+  for archive in Self.ReferenceTable.Archives.Values do
+  begin
+    sector := Self.ReadArchiveSector(archive.ID, Self.IndexData, Self.ID);
+
+    if Length(sector.Data) = 0 then
+    begin
+      archive.HasRead := True;
+      archive.IsNew := True;
+      archive.Files.Clear();
+      Self.ReferenceTable.Archives.Value[archive.ID] := archive;
+      Continue;
+    end;
+
+    archive.CompressionType := sector.CompressionType;
+
+    data := sector.Decompress(); //TODO: XTEA decryption
+
+    if Length(data) > 0 then
+    begin
+      archive.Read(data);
+      archive.HasRead := True;
+    end;
+
+    if (Self.ID = MAPS_INDEX) and not archive.ContainsData() then
+      archive.HasRead := False;
+
+    tailOffset := 1;
+    compressedFieldValue := Read32Bit(sector.Data, tailOffset);
+    remaining := Length(sector.Data) - (compressedFieldValue + tailOffset);
+    if remaining >= 2 then
+    begin
+      revOffset := Length(sector.Data) - 2;
+      archive.Revision := Read16Bit(sector.Data, revOffset);
+    end;
+
+    Self.ReferenceTable.Archives.Value[archive.ID] := archive;
+  end;
+
+  Self.Cached := True;
+end;
+
+procedure TCacheIndex.UnCache();
+var
+  archive: TArchive;
+begin
+  for archive in Self.ReferenceTable.Archives.Values do
+  begin
+    archive.Restore();
+    Self.ReferenceTable.Archives.Value[archive.ID] := archive;
+  end;
+
+  Self.Cached := False;
+end;
+
+
+procedure TCacheIndex.Clear();
+begin
+  Self.ReferenceTable.Archives.Clear();
+  Self.CRC := 0;
+  SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
+  FillMem(Self.Whirlpool[0], TArchiveSector.WHIRLPOOL_SIZE, 0);
+end;
+
+procedure TCacheIndex.Close();
+begin
+  if Self.Closed then
+    Exit;
+  Self.Closed := True;
+end;
+
+function TCacheIndex.FlaggedArchives(): TArchiveArray;
+var
+  archive: TArchive;
+  count: Integer;
+begin
+  SetLength(Result, Self.ReferenceTable.Archives.Count);
+  count := 0;
+
+  for archive in Self.ReferenceTable.Archives.Values do
+  begin
+    if archive.NeedUpdate then
+    begin
+      Result[count] := archive;
+      Inc(count);
+    end;
+  end;
+
+  SetLength(Result, count);
+end;
+
+function TCacheIndex.Info(): String;
+begin
+  Result := 'Index[id=' + ToStr(Self.ID) +
+            ', archives=' + ToStr(Self.ReferenceTable.Archives.Count) +
+            ', compression=' + ToStr(Self.CompressionType) + ']';
+end;
+{$R+}
+

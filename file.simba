@@ -1,9 +1,10 @@
+{$R-}
 type
   TFile = object
-    ID: Integer;
+    ID, HashName: Integer;
     Data: TByteArray;
-    HashName: Integer;
   end;
+  TFileArray = array of TFile;
 
 function TFile.Construct(id: Integer): TFile; static;
 begin
@@ -32,15 +33,4 @@ begin
   Result.Data := Copy(other.Data);
   Result.HashName := other.HashName;
 end;
-
-function TFile.CompareTo(const other: TFile): Integer;
-begin
-  if Self.ID < other.ID then Exit(-1);
-  if Self.ID > other.ID then Exit(1);
-  Result := 0;
-end;
-
-function TFile.ToString(): String;
-begin
-  Result := Format('File %d[data_length=%d, hash_name=%d]', [Self.ID, Length(Self.Data), Self.HashName]);
-end;
+{$R+}

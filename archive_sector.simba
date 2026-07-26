@@ -1,5 +1,26 @@
+{$R-}
+function Read32Bit(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := (data[offset] shl 24) or (data[offset+1] shl 16) or (data[offset+2] shl 8) or data[offset+3];
+  Inc(offset, 4);
+end;
+
+function Read24Bit(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
+  Inc(offset, 3);
+end;
+
+function Read16Bit(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := (data[offset] shl 8) or data[offset+1];
+  Inc(offset, 2);
+end;
+
 type
   ECacheCompression = enum(NONE, BZIP2, GZIP, LZMA);
+
+  PArchiveSector = ^TArchiveSector;
 
   TArchiveSector = object
     BigSector: Boolean;
@@ -9,10 +30,10 @@ type
     CompressionType: ECacheCompression;
 
     const INDEX_SIZE: Integer = 6;
-    const SECTOR_HEADER_SIZE_SMALL: Integer = 8;
-    const SECTOR_DATA_SIZE_SMALL: Integer = 512;
-    const SECTOR_HEADER_SIZE_BIG: Integer = 10;
-    const SECTOR_DATA_SIZE_BIG: Integer = 510;
+    const HEADER_SIZE_SMALL: Integer = 8;
+    const HEADER_SIZE_BIG: Integer = 10;
+    const DATA_SIZE_SMALL: Integer = 512;
+    const DATA_SIZE_BIG: Integer = 510;
     const SECTOR_SIZE: Integer = 520;
     const WHIRLPOOL_SIZE: Integer = 64;
   end;
@@ -40,22 +61,13 @@ end;
 procedure TArchiveSector.Read(constref data: TByteArray; var offset: Integer);
 begin
   if Self.BigSector then
-  begin
-    Self.ID := (data[offset] shl 24) or (data[offset+1] shl 16) or
-      (data[offset+2] shl 8) or data[offset+3];
-    Inc(offset, 4);
-  end
+    Self.ID := Read32Bit(data, offset)
   else
-  begin
-    Self.ID := (data[offset] shl 8) or data[offset+1];
-    Inc(offset, 2);
-  end;
+    Self.ID := Read16Bit(data, offset);
 
-  Self.Chunk := (data[offset] shl 8) or data[offset+1];
-  Inc(offset, 2);
+  Self.Chunk := Read16Bit(data, offset);
 
-  Self.NextPosition := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
-  Inc(offset, 3);
+  Self.NextPosition := Read24Bit(data, offset);
 
   Self.Index := data[offset];
   Inc(offset);
@@ -66,9 +78,9 @@ var
   offset: Integer;
 begin
   if Self.BigSector then
-    SetLength(Result, TArchiveSector.SECTOR_HEADER_SIZE_BIG)
+    SetLength(Result, TArchiveSector.HEADER_SIZE_BIG)
   else
-    SetLength(Result, TArchiveSector.SECTOR_HEADER_SIZE_SMALL);
+    SetLength(Result, TArchiveSector.HEADER_SIZE_SMALL);
 
   if Self.BigSector then
   begin
@@ -95,3 +107,60 @@ begin
   Inc(offset, 3);
   Result[offset] := Self.Index;
 end;
+
+
+function TArchiveSector.BZip2Decompress(compressed: TByteArray; size: Integer): TByteArray; static;
+begin
+
+end;
+
+function TArchiveSector.GZipDecompress(compressed: TByteArray; size: Integer): TByteArray; static;
+var
+  outData: Pointer;
+  outSize: Int64;
+begin
+  outData := nil;
+  outSize := 0;
+
+  DecompressData(ECompressAlgo.GZ, @compressed[0], size, outData, outSize);
+  if outSize <= 0 then
+    Exit([]);
+  SetLength(Result, outSize);
+  Move(outData^, Result[0], outSize);
+  FreeMem(outData);
+end;
+
+function TArchiveSector.LzmaDecompress(compressed: TByteArray; size: Integer): TByteArray; static;
+begin
+
+end;
+
+function TArchiveSector.Decompress(): TByteArray;
+var
+  offset, compressedLength, decompressedLength: Integer;
+  compressed: TByteArray;
+  compression: ECacheCompression;
+begin
+  compression := ECacheCompression(Self.Data[offset]);
+  Self.CompressionType := compression;
+  Inc(offset);
+
+  compressedLength := Read32Bit(Self.Data, offset);
+
+  if compression = ECacheCompression.NONE then
+  begin
+    Result := Copy(Self.Data, offset, compressedLength);
+    Exit;
+  end;
+
+  decompressedLength := Read32Bit(Self.Data, offset);
+
+  compressed := Copy(Self.Data, offset, compressedLength);
+
+  case compression of
+    ECacheCompression.BZIP2: Result := TArchiveSector.BZip2Decompress(compressed, decompressedLength);
+    ECacheCompression.GZIP:  Result := TArchiveSector.GZipDecompress(compressed, decompressedLength);
+    ECacheCompression.LZMA:  Result := TArchiveSector.LzmaDecompress(compressed, decompressedLength);
+  end;
+end;
+{$R+}

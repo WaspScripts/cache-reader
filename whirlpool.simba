@@ -1,13 +1,14 @@
 {$R-}
 type
   TWhirlpool = record
-    Block, Hash, RoundKey, L, State: array[0..7] of UInt64;
-    BitLength: array[0..31] of Byte;
-    Buffer: array[0..63] of Byte;
+    Block, Hash, RoundKey, L, State: array [0..7] of UInt64;
+    BitLength: array [0..31] of Byte;
+    Buffer: array [0..63] of Byte;
     BufferBits, BufferPosition: Integer;
 
-    LookupTables: array[0..7] of array[0..255] of UInt64;
-    RoundConstants: array[0..10] of UInt64;
+    LookupTables: array [0..7] of array[0..255] of UInt64;
+    RoundConstants: array [0..10] of UInt64;
+    IsSetup: Boolean;
   end;
 
 procedure TWhirlpool.Setup();
@@ -36,7 +37,8 @@ var
   value, shifted1, shifted2, mixed1, shifted3, mixed2: UInt64;
   s: String;
 begin
-
+  if Self.IsSetup then
+    Exit;
   for i := 0 to 255 do
   begin
     word := SBoxChars[i div 2];
@@ -85,6 +87,8 @@ begin
       (Self.LookupTables[6][offset + 6] and $000000000000FF00) xor
       (Self.LookupTables[7][offset + 7] and $00000000000000FF);
   end;
+
+  Self.IsSetup := True;
 end;
 
 procedure TWhirlpool.Reset();
@@ -291,9 +295,20 @@ begin
   end;
 end;
 
+function TWhirlpool.Generate(const data: TByteArray): TByteArray;
+begin
+  SetLength(Result, 64);
+  Self.Setup();
+  Self.Reset();
+  Self.Update(data, Length(data)*8);
+  Self.Finalize(Result);
+end;
+
+var
+  Whirlpool: TWhirlpool;
+
 procedure TestWhirlPool();
 var
-  wh: TWhirlpool;
   data: TByteArray;
   digest: TByteArray;
   i: Integer;
@@ -302,13 +317,9 @@ begin
   str := 'abc';
   data := str.ToBytes();
 
-  wh.Setup();
-  wh.Reset();
-  wh.Update(data, Length(data) * 8);
-  SetLength(digest, 64);
-  wh.Finalize(digest);
+  digest := Whirlpool.Generate(data);
 
-  WriteLn('Empty string hash:');
+  WriteLn('Input string: "' + str + '", Whirlpool Hash:');
   for i := 0 to 63 do
     Write(IntToHex(digest[i], 2), ', ');
   WriteLn('');

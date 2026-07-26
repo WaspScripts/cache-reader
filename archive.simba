@@ -1,10 +1,13 @@
 {$include_once ./file.simba}
 {$include_once ./archive_sector.simba}
+{$R-}
 
 type
+  PArchive = ^TArchive;
+
   TArchive = object
     ID, HashName, Revision, CRC,
-    Flag8Value, Flag4Value1, Flag4Value2: Integer;
+    Checksum, CompressedLength, DecompressedLength: Integer;
 
     CompressionType: ECacheCompression;
     Whirlpool: TByteArray;
@@ -14,6 +17,8 @@ type
     Files: TMap<Integer, TFile>;
   end;
 
+  TArchiveArray = array of TArchive;
+
 function TArchive.Construct(id: Integer): TArchive; static;
 begin
   Result.ID := id;
@@ -22,7 +27,8 @@ end;
 function TArchive.Construct(id, hashName: Integer): TArchive; static; overload;
 begin
   Result := new TArchive(id);
-  Result.HashName := hashName;
+  Result.HashName := hashName; 
+  Result.CompressionType := ECacheCompression.GZIP;
 end;
 
 function TArchive.Construct(const other: TArchive): TArchive; static; overload;
@@ -51,39 +57,6 @@ begin
 end;
 
 
-function TArchive.CompareTo(const other: TArchive): Integer;
-begin
-  if Self.ID < other.ID then Exit(-1);
-  if Self.ID > other.ID then Exit(1);
-  Result := 0;
-end;
-
-function TArchive.ToHash(const name: String): Integer;
-var
-  i: Integer;
-begin
-  Result := 0;
-  for i := 1 to Length(name) do
-    Result := Result * 31 + Ord(name[i]);
-end;
-
-function TArchive.ToString(): String;
-begin
-  Result := Format(
-    'Archive[id=%d, hash_name=%d, revision=%d, crc=%d, has_whirlpool=%s, has_read=%s, files_size=%d]',
-    [
-      Self.ID,
-      Self.HashName,
-      Self.Revision,
-      Self.CRC,
-      BoolToStr(Self.Whirlpool <> []),
-      BoolToStr(Self.HasRead),
-      Self.Files.Count
-    ]
-  );
-end;
-
-
 function TArchive.Contains(id: Integer): Boolean;
 begin
   Result := Self.Files.Exists(id);
@@ -96,7 +69,7 @@ end;
 
 function TArchive.FileIds(): TIntegerArray;
 var
-  files: array of TFile;
+  files: TFileArray;
   i: Integer;
 begin
   files := Self.Files.Values;
@@ -105,9 +78,9 @@ begin
     Result[i] := files[i].ID;
 end;
 
-function TArchive.CopyFiles(): array of TFile;
+function TArchive.CopyFiles(): TFileArray;
 var
-  files: array of TFile;
+  files: TFileArray;
   i: Integer;
 begin
   files := Self.Files.Values;
@@ -142,22 +115,45 @@ begin
   Self.IsNew := False;
 end;
 
-function TArchive.Add(id: Integer; data: TByteArray; hashName: Integer = 0): TFile;
+function TArchive.Add(id: Integer; data: TByteArray; hashName: Integer = -1; overwrite: Boolean = True): TFile;
 var
   idx: Integer;
-
+  changed: Boolean;
 begin
   idx := Self.Files.IndexOf(id);
 
-  if idx > -1 then
+  if idx = -1 then
   begin
-    Result := Self.Files.ValueFromIndex[idx];
-    Result.Data := data; //Should update on the map because data is an array which means it's a pointer.
-    Result.HashName := hashName;
+    if hashName = -1 then
+      Result := new TFile(id, data, 0)
+    else
+      Result := new TFile(id, data, hashName);
+    Self.Files.Value[id] := Result;
+    Self.NeedUpdate := True;
     Exit;
   end;
 
-  Result := new TFile(id, data, hashName);
+  Result := Self.Files.ValueFromIndex[idx];
+  if not overwrite then
+    Exit;
+
+  changed := False;
+
+  if not Result.Data.Equals(data) then
+  begin
+    Result.Data := data;
+    changed := True;
+  end;
+
+  if (hashName <> -1) and (Result.HashName <> hashName) then
+  begin
+    Result.HashName := hashName;
+    changed := True;
+  end;
+
+  if changed then
+    Self.NeedUpdate := True;
+
   Self.Files.Value[id] := Result;
 end;
 
@@ -279,4 +275,13 @@ begin
 
   Result[offset] := 1;
 end;
+
+function TArchive.GetRevisionBytes(): Integer;
+begin
+  if Self.Revision = -1 then
+    Result := 0
+  else
+    Result := 2;
+end;
+{$R+}
 
