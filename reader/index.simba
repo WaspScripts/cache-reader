@@ -110,11 +110,11 @@ begin
     Exit;
 
   sector := Self.ReadArchiveSector(Self.ID, Self.Index255, 255);
-
   if Length(sector.Data) = 0 then
     Exit;
 
   Self.CRC := StrToInt('$' + HashData(EHashAlgo.CRC32, @sector.Data[0], Length(sector.Data)));
+
   Self.Whirlpool := Whirlpool.Generate(sector.Data);
 
   data := sector.Decompress();
@@ -126,13 +126,13 @@ begin
 end;
 
 procedure TCacheIndex.Cache();
+const
+  MAPS_INDEX = 5;
 var
   archive: TArchive;
   sector: TArchiveSector;
   data: TByteArray;
   tailOffset, remaining, compressedFieldValue, revOffset: Integer;
-const
-  MAPS_INDEX = 5;
 begin
   if Self.Closed or Self.Cached then
     Exit;

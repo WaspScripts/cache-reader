@@ -5,7 +5,7 @@ type
   TReferenceTable = object
     ID, Revision, Version, Mask: Integer;
     NeedUpdate: Boolean;
-    Archives: TMap<Integer, TArchive>;
+    Archives: TArchiveMap;
   end;
 
 function TReferenceTable.Construct(id: Integer): TReferenceTable; static;
@@ -199,12 +199,12 @@ begin
       archive.DecompressedLength := Read32Bit(data, offset);
     end;
 
-  // Revisions
-  for archive in archives do
+
+  for archive in archives do // revisions
     archive.Revision := Read32Bit(data, offset);
 
-  // File counts
-  SetLength(fileCounts, Length(archives));
+
+  SetLength(fileCounts, Length(archives)); // file counts
 
   for i := 0 to High(archives) do
   begin
@@ -214,8 +214,8 @@ begin
       fileCounts[i] := Read16Bit(data, offset);
   end;
 
-  // File IDs
-  for i := 0 to High(archives) do
+
+  for i := 0 to High(archives) do // file IDs
   begin
     archive := archives[i];
     fileID := 0;
@@ -234,8 +234,8 @@ begin
   if not named then
     Exit;
 
-  // File name hashes
-  for i := 0 to High(archives) do
+
+  for i := 0 to High(archives) do // File name hashes
   begin
     archive := archives[i];
 
@@ -275,7 +275,6 @@ var
 begin
   archives := Self.Archives.Values;
 
-  // Calculate required size.
   totalSize := 1; // version
 
   if Self.Version >= 6 then
@@ -343,12 +342,12 @@ begin
   SetLength(Result, totalSize);
   offset := 0;
 
-  // Version
-  Result[offset] := Self.Version;
+
+  Result[offset] := Self.Version; // Version
   Inc(offset);
 
-  // Revision
-  if Self.Version >= 6 then
+
+  if Self.Version >= 6 then // Revision
   begin
     Result[offset] := Self.Revision shr 24;
     Result[offset+1] := Self.Revision shr 16;
@@ -357,8 +356,8 @@ begin
     Inc(offset, 4);
   end;
 
-  // Mask
-  Result[offset] := Self.Mask;
+
+  Result[offset] := Self.Mask; // Mask
   Inc(offset);
 
   // Archive count
