@@ -1,3 +1,4 @@
+{$include_once ./bzip2.simba}
 {$R-}
 function Read32Bit(const data: TByteArray; var offset: Integer): Integer;
 begin
@@ -111,7 +112,7 @@ end;
 
 function TArchiveSector.BZip2Decompress(compressed: TByteArray; size: Integer): TByteArray; static;
 begin
-
+  Result := Bzip2FullDecompress(compressed);
 end;
 
 function TArchiveSector.GZipDecompress(compressed: TByteArray; size: Integer): TByteArray; static;

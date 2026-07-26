@@ -45,20 +45,6 @@ begin
   Result := Self.Archives.ValueFromIndex[count-1].ID + 1;
 end;
 
-procedure TReferenceTable.Flag();
-begin
-  Self.NeedUpdate := True;
-end;
-
-function TReferenceTable.Flagged(): Boolean;
-begin
-  Result := Self.NeedUpdate;
-end;
-
-procedure TReferenceTable.UnFlag();
-begin
-  Self.NeedUpdate := False;
-end;
 
 procedure TReferenceTable.FlagMask(flag: Integer);
 begin
@@ -69,6 +55,7 @@ procedure TReferenceTable.UnFlagMask(flag: Integer);
 begin
   Self.Mask := Self.Mask and not flag;
 end;
+
 
 function TReferenceTable.IsNamed(): Boolean;
 begin
@@ -85,7 +72,7 @@ begin
   Result := (Self.Mask and $4) <> 0;
 end;
 
-  function TReferenceTable.hasChecksums(): Boolean;
+function TReferenceTable.HasChecksums(): Boolean;
 begin
   Result := (Self.Mask and $8) <> 0;
 end;
@@ -193,7 +180,7 @@ begin
   for archive in archives do // CRCs
     archive.CRC := Read32Bit(data, offset);
 
-  if Self.hasChecksums() then // checksums
+  if Self.HasChecksums() then // checksums
     for archive in archives do
       archive.Checksum := Read32Bit(data, offset);
 
@@ -510,27 +497,6 @@ begin
       end;
 end;
 
-function TReferenceTable.CompareTo(const other: TReferenceTable): Integer;
-begin
-  if Self.ID < other.ID then
-    Exit(-1);
-  if Self.ID > other.ID then
-    Exit(1);
-  Result := 0;
-end;
-
-function TReferenceTable.ToString(): String;
-begin
-  Result := Format(
-    'ReferenceTable[id=%d, archives=%d, version=%d]',
-    [
-      Self.ID,
-      Self.Archives.Count,
-      Self.Version
-    ]
-  );
-end;
-
 function TReferenceTable.Add(id: Integer; hashName: Integer = -1): TArchive;
 var
   i: Integer;
@@ -553,7 +519,7 @@ begin
     Result.HashName := hashName;
 
   Self.Archives.Value[id] := Result;
-  Self.Flag();
+  Self.NeedUpdate := True;
 end;
 
 function TReferenceTable.Remove(id: Integer): Boolean;

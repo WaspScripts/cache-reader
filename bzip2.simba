@@ -1,0 +1,377 @@
+{$R-}
+function BZ2ReadBits(const data: TByteArray; var bitPos: Integer; count: Integer): Integer;
+var
+  i, bytePos, bitInByte, bit: Integer;
+begin
+  Result := 0;
+  for i := 1 to count do
+  begin
+    bytePos := bitPos shr 3;
+    bitInByte := bitPos and 7;
+    bit := (data[bytePos] shr (7 - bitInByte)) and 1;
+    Result := (Result shl 1) or bit;
+    Inc(bitPos);
+  end;
+end;
+
+function Bzip2InverseBWT(const bwt: TByteArray; origPtr: Integer): TByteArray;
+var
+  n, i: Integer;
+  counts, cumulative: array [0..255] of Integer;
+  total, pos: Integer;
+  next: TIntegerArray;
+begin
+  n := Length(bwt);
+  SetLength(next, n);
+
+  for i := 0 to 255 do counts[i] := 0;
+  for i := 0 to n - 1 do Inc(counts[bwt[i]]);
+
+  total := 0;
+  for i := 0 to 255 do
+  begin
+    cumulative[i] := total;
+    total := total + counts[i];
+  end;
+
+  for i := 0 to n - 1 do
+  begin
+    next[cumulative[bwt[i]]] := i;
+    Inc(cumulative[bwt[i]]);
+  end;
+
+  SetLength(Result, n);
+  pos := next[origPtr];
+  for i := 0 to n - 1 do
+  begin
+    Result[i] := bwt[pos];
+    pos := next[pos];
+  end;
+end;
+
+function Bzip2RLE1Decode(const data: TByteArray): TByteArray;
+var
+  i, k, n, runLen, extra, lastByte, outLen: Integer;
+  output: TByteArray;
+begin
+  n := Length(data);
+  SetLength(output, n * 2 + 16);
+  outLen := 0;
+  i := 0;
+  while i < n do
+  begin
+    if (i + 3 < n) and (data[i] = data[i+1]) and (data[i] = data[i+2]) and (data[i] = data[i+3]) then
+    begin
+      lastByte := data[i];
+      runLen := 4;
+      extra := data[i+4];
+
+      if outLen + runLen + extra > Length(output) then
+        SetLength(output, (outLen + runLen + extra) * 2);
+
+      for k := 0 to runLen + extra - 1 do
+        output[outLen + k] := lastByte;
+      outLen := outLen + runLen + extra;
+
+      i := i + 5;
+    end
+    else
+    begin
+      if outLen >= Length(output) then
+        SetLength(output, Length(output) * 2);
+      output[outLen] := data[i];
+      Inc(outLen);
+      Inc(i);
+    end;
+  end;
+
+  SetLength(output, outLen);
+  Result := output;
+end;
+
+function Bzip2DecodeBlock(const data: TByteArray; var bitPos: Integer; out isEOS: Boolean): TByteArray;
+const
+  MAX_CODE_LEN = 23;
+var
+  magicHigh, magicLow, blockCRC, randomized, origPtr: Integer;
+  symbolMapL1, symbolMapL2: Integer;
+  usedSymbols: TIntegerArray;
+  usedCount, i, j, k: Integer;
+  alphabetSize, groupCount, selectorsUsed: Integer;
+  selectorMtf, selectors, mtfSel: TIntegerArray;
+  value: Integer;
+  tableLengths: array of TIntegerArray;
+  curLen: Integer;
+  base_, limit_, permOffset: array of TIntegerArray;
+  perm: array of TIntegerArray;
+  blCount: TIntegerArray;
+  minLen, maxLen: Integer;
+  groupNo, groupPos: Integer;
+  RUNA, RUNB, EOB: Integer;
+  mtf: TIntegerArray;
+  bwtblock: TByteArray;
+  bwtLen, bwtCap: Integer;
+  repeatCount, repeatPower: Integer;
+  sym, idx: Integer;
+  bit, code, len: Integer;
+  t, s: Integer;
+begin
+  isEOS := False;
+
+  magicHigh := BZ2ReadBits(data, bitPos, 24);
+  magicLow := BZ2ReadBits(data, bitPos, 24);
+
+  if (magicHigh = $177245) and (magicLow = $385090) then
+  begin
+    isEOS := True;
+    Exit;
+  end;
+
+  blockCRC := BZ2ReadBits(data, bitPos, 32);
+  randomized := BZ2ReadBits(data, bitPos, 1); // legacy bzip 0.9 "randomized" mode NOT supported here — see note below
+  origPtr := BZ2ReadBits(data, bitPos, 24);
+
+  symbolMapL1 := BZ2ReadBits(data, bitPos, 16);
+  SetLength(usedSymbols, 256);
+  usedCount := 0;
+  for i := 0 to 15 do
+  begin
+    if (symbolMapL1 and ($8000 shr i)) <> 0 then
+    begin
+      symbolMapL2 := BZ2ReadBits(data, bitPos, 16);
+      for j := 0 to 15 do
+        if (symbolMapL2 and ($8000 shr j)) <> 0 then
+        begin
+          usedSymbols[usedCount] := i * 16 + j;
+          Inc(usedCount);
+        end;
+    end;
+  end;
+  SetLength(usedSymbols, usedCount);
+
+  alphabetSize := usedCount + 2;
+  RUNA := 0;
+  RUNB := 1;
+  EOB := alphabetSize - 1;
+
+  groupCount := BZ2ReadBits(data, bitPos, 3);
+  selectorsUsed := BZ2ReadBits(data, bitPos, 15);
+
+  SetLength(selectorMtf, selectorsUsed);
+  for i := 0 to selectorsUsed - 1 do
+  begin
+    j := 0;
+    while BZ2ReadBits(data, bitPos, 1) = 1 do
+      Inc(j);
+    selectorMtf[i] := j;
+  end;
+
+  SetLength(mtfSel, groupCount);
+  for i := 0 to groupCount - 1 do
+    mtfSel[i] := i;
+
+  SetLength(selectors, selectorsUsed);
+  for i := 0 to selectorsUsed - 1 do
+  begin
+    j := selectorMtf[i];
+    value := mtfSel[j];
+    for k := j downto 1 do
+      mtfSel[k] := mtfSel[k - 1];
+    mtfSel[0] := value;
+    selectors[i] := value;
+  end;
+
+  SetLength(tableLengths, groupCount);
+  for t := 0 to groupCount - 1 do
+  begin
+    SetLength(tableLengths[t], alphabetSize);
+    curLen := BZ2ReadBits(data, bitPos, 5);
+    for s := 0 to alphabetSize - 1 do
+    begin
+      while BZ2ReadBits(data, bitPos, 1) = 1 do
+      begin
+        if BZ2ReadBits(data, bitPos, 1) = 1 then
+          Dec(curLen)
+        else
+          Inc(curLen);
+      end;
+      tableLengths[t][s] := curLen;
+    end;
+  end;
+
+  SetLength(base_, groupCount);
+  SetLength(limit_, groupCount);
+  SetLength(permOffset, groupCount);
+  SetLength(perm, groupCount);
+
+  for t := 0 to groupCount - 1 do
+  begin
+    SetLength(blCount, MAX_CODE_LEN + 1);
+    for i := 0 to MAX_CODE_LEN do
+      blCount[i] := 0;
+
+    minLen := MAX_CODE_LEN;
+    maxLen := 0;
+    for s := 0 to alphabetSize - 1 do
+    begin
+      curLen := tableLengths[t][s];
+      Inc(blCount[curLen]);
+      if curLen < minLen then minLen := curLen;
+      if curLen > maxLen then maxLen := curLen;
+    end;
+
+    SetLength(base_[t], MAX_CODE_LEN + 1);
+    SetLength(limit_[t], MAX_CODE_LEN + 1);
+    SetLength(permOffset[t], MAX_CODE_LEN + 1);
+    SetLength(perm[t], alphabetSize);
+
+    code := 0;
+    for len := 1 to MAX_CODE_LEN do
+    begin
+      base_[t][len] := code;
+      code := code + blCount[len];
+      if blCount[len] > 0 then
+        limit_[t][len] := code - 1
+      else
+        limit_[t][len] := -1;
+      code := code shl 1;
+    end;
+
+    permOffset[t][1] := 0;
+    for len := 2 to MAX_CODE_LEN do
+      permOffset[t][len] := permOffset[t][len - 1] + blCount[len - 1];
+
+    for i := 0 to MAX_CODE_LEN do
+      blCount[i] := 0;
+
+    for s := 0 to alphabetSize - 1 do
+    begin
+      curLen := tableLengths[t][s];
+      perm[t][permOffset[t][curLen] + blCount[curLen]] := s;
+      Inc(blCount[curLen]);
+    end;
+  end;
+
+  SetLength(mtf, usedCount);
+  for i := 0 to usedCount - 1 do
+    mtf[i] := usedSymbols[i];
+
+  bwtCap := 1048576;
+  SetLength(bwtblock, bwtCap);
+  bwtLen := 0;
+
+  groupNo := -1;
+  groupPos := 0;
+  t := 0;
+  repeatCount := 0;
+  repeatPower := 0;
+
+  while True do
+  begin
+    if groupPos = 0 then
+    begin
+      Inc(groupNo);
+      t := selectors[groupNo];
+      groupPos := 50;
+    end;
+    Dec(groupPos);
+
+    code := 0;
+    len := 0;
+    sym := -1;
+    while True do
+    begin
+      Inc(len);
+      bit := BZ2ReadBits(data, bitPos, 1);
+      code := (code shl 1) or bit;
+      if (limit_[t][len] >= 0) and (code <= limit_[t][len]) then
+      begin
+        sym := perm[t][permOffset[t][len] + (code - base_[t][len])];
+        Break;
+      end;
+    end;
+
+    if (sym = RUNA) or (sym = RUNB) then
+    begin
+      if repeatPower = 0 then
+        repeatPower := 1;
+      if sym = RUNA then
+        repeatCount := repeatCount + repeatPower
+      else
+        repeatCount := repeatCount + 2 * repeatPower;
+      repeatPower := repeatPower shl 1;
+      Continue;
+    end
+    else if repeatCount > 0 then
+    begin
+      if bwtLen + repeatCount > bwtCap then
+      begin
+        bwtCap := (bwtLen + repeatCount) * 2;
+        SetLength(bwtblock, bwtCap);
+      end;
+      for k := 0 to repeatCount - 1 do
+        bwtblock[bwtLen + k] := mtf[0];
+      bwtLen := bwtLen + repeatCount;
+      repeatCount := 0;
+      repeatPower := 0;
+    end;
+
+    if sym = EOB then
+      Break;
+
+    idx := sym - 1;
+    value := mtf[idx];
+    for k := idx downto 1 do
+      mtf[k] := mtf[k - 1];
+    mtf[0] := value;
+
+    if bwtLen >= bwtCap then
+    begin
+      bwtCap := bwtCap * 2;
+      SetLength(bwtblock, bwtCap);
+    end;
+    bwtblock[bwtLen] := value;
+    Inc(bwtLen);
+  end;
+
+  SetLength(bwtblock, bwtLen);
+  Result := Bzip2RLE1Decode(Bzip2InverseBWT(bwtblock, origPtr));
+end;
+
+function Bzip2FullDecompress(const compressed: TByteArray): TByteArray;
+var
+  fullData: TByteArray;
+  bitPos: Integer;
+  isEOS: Boolean;
+  blockData: TByteArray;
+  resultLen: Integer;
+  output: TByteArray;
+begin
+  // Jagex strips the standard "BZh" + level header to save 4 bytes; re-add it.
+  SetLength(fullData, Length(compressed) + 4);
+  fullData[0] := Ord('B');
+  fullData[1] := Ord('Z');
+  fullData[2] := Ord('h');
+  fullData[3] := Ord('1');
+  Move(compressed[0], fullData[4], Length(compressed));
+
+  bitPos := 32; // skip the 4-byte header we just added ('B','Z','h','1')
+
+  SetLength(output, 0);
+  resultLen := 0;
+
+  repeat
+    blockData := Bzip2DecodeBlock(fullData, bitPos, isEOS);
+    if not isEOS then
+    begin
+      SetLength(output, resultLen + Length(blockData));
+      if Length(blockData) > 0 then
+        Move(blockData[0], output[resultLen], Length(blockData));
+      resultLen := resultLen + Length(blockData);
+    end;
+  until isEOS;
+
+  Result := output;
+end;
+{$R+}
+
