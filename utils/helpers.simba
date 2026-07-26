@@ -1,0 +1,20 @@
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+
+function Read32Bit(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := (data[offset] shl 24) or (data[offset+1] shl 16) or (data[offset+2] shl 8) or data[offset+3];
+  Inc(offset, 4);
+end;
+
+function Read24Bit(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
+  Inc(offset, 3);
+end;
+
+function Read16Bit(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := (data[offset] shl 8) or data[offset+1];
+  Inc(offset, 2);
+end;
+{$R+}

@@ -1,5 +1,5 @@
 {$include_once ./index.simba}
-{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   TCacheReader = object

@@ -1,6 +1,6 @@
 {$include_once ./file.simba}
 {$include_once ./archive_sector.simba}
-{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   PArchive = ^TArchive;

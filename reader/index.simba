@@ -1,6 +1,6 @@
-{$include_once ./whirlpool.simba}
+{$include_once ./algorithms/whirlpool.simba}
 {$include_once ./reference_table.simba}
-{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   PCacheIndex = ^TCacheIndex;

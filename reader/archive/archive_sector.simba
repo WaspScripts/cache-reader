@@ -1,23 +1,6 @@
-{$include_once ./bzip2.simba}
-{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
-
-function Read32Bit(const data: TByteArray; var offset: Integer): Integer;
-begin
-  Result := (data[offset] shl 24) or (data[offset+1] shl 16) or (data[offset+2] shl 8) or data[offset+3];
-  Inc(offset, 4);
-end;
-
-function Read24Bit(const data: TByteArray; var offset: Integer): Integer;
-begin
-  Result := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
-  Inc(offset, 3);
-end;
-
-function Read16Bit(const data: TByteArray; var offset: Integer): Integer;
-begin
-  Result := (data[offset] shl 8) or data[offset+1];
-  Inc(offset, 2);
-end;
+{$include_once ../../utils/helpers.simba}
+{$include_once ../algorithms/bzip2.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   ECacheCompression = enum(NONE, BZIP2, GZIP, LZMA);
@@ -111,12 +94,12 @@ begin
 end;
 
 
-function TArchiveSector.BZip2Decompress(compressed: TByteArray; size: Integer): TByteArray; static;
+function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
 begin
   Result := Bzip2FullDecompress(compressed);
 end;
 
-function TArchiveSector.GZipDecompress(compressed: TByteArray; size: Integer): TByteArray; static;
+function TArchiveSector.GZipDecompress(compressed: TByteArray): TByteArray; static;
 var
   outData: Pointer;
   outSize: Int64;
@@ -124,22 +107,23 @@ begin
   outData := nil;
   outSize := 0;
 
-  DecompressData(ECompressAlgo.GZ, @compressed[0], size, outData, outSize);
+  DecompressData(ECompressAlgo.GZ, @compressed[0], Length(compressed), outData, outSize);
   if outSize <= 0 then
     Exit([]);
+
   SetLength(Result, outSize);
   Move(outData^, Result[0], outSize);
   FreeMem(outData);
 end;
 
-function TArchiveSector.LzmaDecompress(compressed: TByteArray; size: Integer): TByteArray; static;
+function TArchiveSector.LzmaDecompress(compressed: TByteArray): TByteArray; static;
 begin
 
 end;
 
 function TArchiveSector.Decompress(): TByteArray;
 var
-  offset, compressedLength, decompressedLength: Integer;
+  offset, len: Integer;
   compressed: TByteArray;
   compression: ECacheCompression;
 begin
@@ -147,22 +131,17 @@ begin
   Self.CompressionType := compression;
   Inc(offset);
 
-  compressedLength := Read32Bit(Self.Data, offset);
+  len := Read32Bit(Self.Data, offset);
 
   if compression = ECacheCompression.NONE then
-  begin
-    Result := Copy(Self.Data, offset, compressedLength);
-    Exit;
-  end;
+    Exit(Copy(Self.Data, offset, len));
 
-  decompressedLength := Read32Bit(Self.Data, offset);
-
-  compressed := Copy(Self.Data, offset, compressedLength);
-
+  Inc(offset, 4);
+  compressed := Copy(Self.Data, offset, len);
   case compression of
-    ECacheCompression.BZIP2: Result := TArchiveSector.BZip2Decompress(compressed, decompressedLength);
-    ECacheCompression.GZIP:  Result := TArchiveSector.GZipDecompress(compressed, decompressedLength);
-    ECacheCompression.LZMA:  Result := TArchiveSector.LzmaDecompress(compressed, decompressedLength);
+    ECacheCompression.BZIP2: Result := TArchiveSector.BZip2Decompress(compressed);
+    ECacheCompression.GZIP:  Result := TArchiveSector.GZipDecompress(compressed);
+    ECacheCompression.LZMA:  Result := TArchiveSector.LzmaDecompress(compressed);
   end;
 end;
 {$R+}
