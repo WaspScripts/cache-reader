@@ -96,7 +96,7 @@ end;
 
 function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
 begin
-  Result := Bzip2FullDecompress(compressed);
+  Result := BZip2FullDecompress(compressed);
 end;
 
 function TArchiveSector.GZipDecompress(compressed: TByteArray): TByteArray; static;
@@ -123,7 +123,7 @@ end;
 
 function TArchiveSector.Decompress(): TByteArray;
 var
-  offset, len: Integer;
+  offset, compressedLen, decompressedLen: Integer;
   compressed: TByteArray;
   compression: ECacheCompression;
 begin
@@ -131,13 +131,15 @@ begin
   Self.CompressionType := compression;
   Inc(offset);
 
-  len := Read32Bit(Self.Data, offset);
+  compressedLen := Read32Bit(Self.Data, offset);
 
   if compression = ECacheCompression.NONE then
-    Exit(Copy(Self.Data, offset, len));
+    Exit(Copy(Self.Data, offset, compressedLen));
 
-  Inc(offset, 4);
-  compressed := Copy(Self.Data, offset, len);
+  //not used but we need offset to skip these 4 bits anyway.
+  decompressedLen := Read32Bit(Self.Data, offset);
+
+  compressed := Copy(Self.Data, offset, compressedLen);
   case compression of
     ECacheCompression.BZIP2: Result := TArchiveSector.BZip2Decompress(compressed);
     ECacheCompression.GZIP:  Result := TArchiveSector.GZipDecompress(compressed);

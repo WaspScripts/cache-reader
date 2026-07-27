@@ -1,4 +1,33 @@
-{$IFNDEF DEBUG_CACHE_READER}{$R-}{$ENDIF}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+
+type
+  TBZ2BitReader = record
+    Data: TByteArray;
+    BytePos: Integer;
+    Buffer: UInt32;
+    BitsAvailable: Integer;
+  end;
+
+function BZ2ReaderCreate(const data: TByteArray): TBZ2BitReader;
+begin
+  Result.Data := data;
+  Result.BytePos := 0;
+  Result.Buffer := 0;
+  Result.BitsAvailable := 0;
+end;
+
+function BZ2ReadBitsFast(var reader: TBZ2BitReader; count: Integer): Integer;
+begin
+  while reader.BitsAvailable < count do
+  begin
+    reader.Buffer := (reader.Buffer shl 8) or reader.Data[reader.BytePos];
+    Inc(reader.BytePos);
+    Inc(reader.BitsAvailable, 8);
+  end;
+  Dec(reader.BitsAvailable, count);
+  Result := (reader.Buffer shr reader.BitsAvailable) and ((1 shl count) - 1);
+end;
+
 
 function BZ2ReadBits(const data: TByteArray; var bitPos: Integer; count: Integer): Integer;
 var
@@ -90,7 +119,7 @@ begin
   Result := output;
 end;
 
-function Bzip2DecodeBlock(const data: TByteArray; var bitPos: Integer; out isEOS: Boolean): TByteArray;
+function Bzip2DecodeBlock(var reader: TBZ2BitReader; out isEOS: Boolean): TByteArray;
 const
   MAX_CODE_LEN = 23;
 var
@@ -110,7 +139,7 @@ var
   groupNo, groupPos: Integer;
   RUNA, RUNB, EOB: Integer;
   mtf: TIntegerArray;
-  bwtblock: TByteArray;
+  bwtblock, bwtblock2: TByteArray;
   bwtLen, bwtCap: Integer;
   repeatCount, repeatPower: Integer;
   sym, idx: Integer;
@@ -119,8 +148,8 @@ var
 begin
   isEOS := False;
 
-  magicHigh := BZ2ReadBits(data, bitPos, 24);
-  magicLow := BZ2ReadBits(data, bitPos, 24);
+  magicHigh := BZ2ReadBitsFast(reader, 24);
+  magicLow := BZ2ReadBitsFast(reader, 24);
 
   if (magicHigh = $177245) and (magicLow = $385090) then
   begin
@@ -128,18 +157,18 @@ begin
     Exit;
   end;
 
-  blockCRC := BZ2ReadBits(data, bitPos, 32);
-  randomized := BZ2ReadBits(data, bitPos, 1); // legacy bzip 0.9 "randomized" mode NOT supported here — see note below
-  origPtr := BZ2ReadBits(data, bitPos, 24);
+  blockCRC := BZ2ReadBitsFast(reader, 32);
+  randomized := BZ2ReadBitsFast(reader, 1);
+  origPtr := BZ2ReadBitsFast(reader, 24);
 
-  symbolMapL1 := BZ2ReadBits(data, bitPos, 16);
+  symbolMapL1 := BZ2ReadBitsFast(reader, 16);
   SetLength(usedSymbols, 256);
   usedCount := 0;
   for i := 0 to 15 do
   begin
     if (symbolMapL1 and ($8000 shr i)) <> 0 then
     begin
-      symbolMapL2 := BZ2ReadBits(data, bitPos, 16);
+      symbolMapL2 := BZ2ReadBitsFast(reader, 16);
       for j := 0 to 15 do
         if (symbolMapL2 and ($8000 shr j)) <> 0 then
         begin
@@ -155,14 +184,14 @@ begin
   RUNB := 1;
   EOB := alphabetSize - 1;
 
-  groupCount := BZ2ReadBits(data, bitPos, 3);
-  selectorsUsed := BZ2ReadBits(data, bitPos, 15);
+  groupCount := BZ2ReadBitsFast(reader, 3);
+  selectorsUsed := BZ2ReadBitsFast(reader, 15);
 
   SetLength(selectorMtf, selectorsUsed);
   for i := 0 to selectorsUsed - 1 do
   begin
     j := 0;
-    while BZ2ReadBits(data, bitPos, 1) = 1 do
+    while BZ2ReadBitsFast(reader, 1) = 1 do
       Inc(j);
     selectorMtf[i] := j;
   end;
@@ -186,12 +215,12 @@ begin
   for t := 0 to groupCount - 1 do
   begin
     SetLength(tableLengths[t], alphabetSize);
-    curLen := BZ2ReadBits(data, bitPos, 5);
+    curLen := BZ2ReadBitsFast(reader, 5);
     for s := 0 to alphabetSize - 1 do
     begin
-      while BZ2ReadBits(data, bitPos, 1) = 1 do
+      while BZ2ReadBitsFast(reader, 1) = 1 do
       begin
-        if BZ2ReadBits(data, bitPos, 1) = 1 then
+        if BZ2ReadBitsFast(reader, 1) = 1 then
           Dec(curLen)
         else
           Inc(curLen);
@@ -283,7 +312,7 @@ begin
     while True do
     begin
       Inc(len);
-      bit := BZ2ReadBits(data, bitPos, 1);
+      bit := BZ2ReadBitsFast(reader, 1);
       code := (code shl 1) or bit;
       if (limit_[t][len] >= 0) and (code <= limit_[t][len]) then
       begin
@@ -335,20 +364,22 @@ begin
     Inc(bwtLen);
   end;
 
+
   SetLength(bwtblock, bwtLen);
-  Result := Bzip2RLE1Decode(Bzip2InverseBWT(bwtblock, origPtr));
+
+  bwtblock2 := Bzip2InverseBWT(bwtblock, origPtr);
+  Result := Bzip2RLE1Decode(bwtblock2);
 end;
 
 function Bzip2FullDecompress(const compressed: TByteArray): TByteArray;
 var
   fullData: TByteArray;
-  bitPos: Integer;
+  reader: TBZ2BitReader;
   isEOS: Boolean;
   blockData: TByteArray;
   resultLen: Integer;
   output: TByteArray;
 begin
-  // Jagex strips the standard "BZh" + level header to save 4 bytes; re-add it.
   SetLength(fullData, Length(compressed) + 4);
   fullData[0] := Ord('B');
   fullData[1] := Ord('Z');
@@ -356,13 +387,14 @@ begin
   fullData[3] := Ord('1');
   Move(compressed[0], fullData[4], Length(compressed));
 
-  bitPos := 32; // skip the 4-byte header we just added ('B','Z','h','1')
+  reader := BZ2ReaderCreate(fullData);
+  BZ2ReadBitsFast(reader, 32); // skip the 4-byte header we just added
 
   SetLength(output, 0);
   resultLen := 0;
 
   repeat
-    blockData := Bzip2DecodeBlock(fullData, bitPos, isEOS);
+    blockData := Bzip2DecodeBlock(reader, isEOS);
     if not isEOS then
     begin
       SetLength(output, resultLen + Length(blockData));

@@ -37,14 +37,18 @@ type
   end;
 
 function ReadItemString(const data: TByteArray; var offset: Integer): String;
+var
+  ch: Byte;
 begin
   Result := '';
-  while data[offset] <> 0 do
+  while True do
   begin
-    Result := Result + Char(data[offset]);
+    ch := data[offset];
     Inc(offset);
+    if ch = 0 then
+      Break;
+    Result += Char(ch);
   end;
-  Inc(offset);
 end;
 
 function Read24BitSigned(const data: TByteArray; var offset: Integer): Integer;
@@ -71,7 +75,6 @@ begin
   Result.PlaceholderTemplate := -1;
   Result.Zoom2D := 2000;
   Result.Weight := 0;
-  SetLength(Result.Params, 0);
 
   offset := 0;
 
@@ -155,7 +158,7 @@ begin
       53: Result.FemaleHeadModel := Read32Bit(data, offset);
       54: Result.FemaleHeadModel2 := Read32Bit(data, offset);
       65: Result.GETradeable := True;
-      75: Result.Weight := Read16Bit(data, offset); // signed short in original; adjust below if needed
+      75: Result.Weight := Read16Bit(data, offset); // signed short in original, adjust below if needed
       78: Result.MaleModel2 := Read16Bit(data, offset);
       79: Result.FemaleModel2 := Read16Bit(data, offset);
       90: Result.MaleHeadModel := Read16Bit(data, offset);
@@ -180,7 +183,7 @@ begin
       160: Result.Stackable := 2;
       200, 201, 202:
         begin
-          WriteLn('[WARNING] Opcode ', opcode, ' (entity sub/conditional op) not implemented — parsing may be corrupted from here.');
+          WriteLn('Opcode ', opcode, ' (entity sub/conditional op) not implemented. Parsing may be corrupted from here.');
           Break;
         end;
       249: begin
@@ -199,7 +202,7 @@ begin
            end;
     else
       begin
-        WriteLn('[WARNING] Unrecognized opcode ', opcode, ' at offset ', offset - 1, '. Parsing may be corrupted from here.');
+        WriteLn('Unrecognized opcode ', opcode, ' at offset ', offset - 1, '. Parsing may be corrupted from here.');
         Break;
       end;
     end;

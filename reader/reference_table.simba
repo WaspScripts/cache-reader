@@ -1,4 +1,4 @@
-{$include_once ./archive/archive.simba}
+{$include_once ./archive/maps/archivemap.simba}
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type

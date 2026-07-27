@@ -140,7 +140,6 @@ begin
   for archive in Self.ReferenceTable.Archives.Values do
   begin
     sector := Self.ReadArchiveSector(archive.ID, Self.IndexData, Self.ID);
-
     if Length(sector.Data) = 0 then
     begin
       archive.HasRead := True;
@@ -150,9 +149,8 @@ begin
       Continue;
     end;
 
-    archive.CompressionType := sector.CompressionType;
-
     data := sector.Decompress();
+    archive.CompressionType := sector.CompressionType;
 
     if Length(data) > 0 then
     begin
@@ -166,6 +164,7 @@ begin
     tailOffset := 1;
     compressedFieldValue := Read32Bit(sector.Data, tailOffset);
     remaining := Length(sector.Data) - (compressedFieldValue + tailOffset);
+
     if remaining >= 2 then
     begin
       revOffset := Length(sector.Data) - 2;
@@ -225,13 +224,6 @@ begin
   end;
 
   SetLength(Result, count);
-end;
-
-function TCacheIndex.Info(): String;
-begin
-  Result := 'Index[id=' + ToStr(Self.ID) +
-            ', archives=' + ToStr(Self.ReferenceTable.Archives.Count) +
-            ', compression=' + ToStr(Self.CompressionType) + ']';
 end;
 {$R+}
 
