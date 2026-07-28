@@ -1,0 +1,321 @@
+{$include_once ../utils/helpers.simba}
+{$include_once ./entityops.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+type
+  TObjectDefinition = record
+    ID: Integer;
+    Name: String;
+
+    RetextureToFind, TextureToReplace,
+    RecolorToFind, RecolorToReplace,
+    ObjectModels, ObjectTypes,
+    AmbientSoundIds, ConfigChangeDest: TIntegerArray;
+
+    DecorDisplacement, MapAreaId, SizeX, SizeY,
+    AmbientSoundDistance, AmbientSoundRetain, AmbientSoundId,
+    AmbientSoundChangeTicksMin, AmbientSoundChangeTicksMax,
+    OffsetX, OffsetY, OffsetHeight,
+    WallOrDoor, AnimationID, VarbitID, VarpID,
+    Ambient, Contrast, InteractType, MapSceneID, BlockingMask,
+    ModelSizeX, ModelSizeHeight, ModelSizeY,
+    ContouredGround, SupportsItems, RaiseAmount,
+    Category, SoundDistanceFadeCurve,
+    SoundFadeInDuration, SoundFadeOutDuration,
+    SoundFadeInCurve, SoundFadeOutCurve, SoundVisibility: Integer;
+
+    IsHollow, MergeNormals, Shadow, ObstructsGround, IsRotated,
+    ModelClipped, BlocksProjectile, RandomizeAnimStart,
+    DeferAnimChange, Unknown1: Boolean;
+
+    Ops: TEntityOpsDefinition;
+
+    Params: array of record
+      Key: Integer;
+      IsString: Boolean;
+      IntValue: Integer;
+      StrValue: String;
+    end;
+  end;
+
+function TObjectDefinition.Create(objID, revision: Integer; const data: TByteArray): TObjectDefinition; static;
+var
+  offset, opcode, i, len, paramCount: Integer;
+  rev220SoundData: Boolean;
+  varpID, configId, cfgLen, varTmp: Integer;
+begin
+  Result.ID := objID;
+  Result.DecorDisplacement := 16;
+  Result.IsHollow := False;
+  Result.Name := 'null';
+  Result.MapAreaId := -1;
+  Result.SizeX := 1;
+  Result.SizeY := 1;
+  Result.AmbientSoundDistance := 0;
+  Result.OffsetX := 0;
+  Result.OffsetY := 0;
+  Result.OffsetHeight := 0;
+  Result.MergeNormals := False;
+  Result.WallOrDoor := -1;
+  Result.AnimationID := -1;
+  Result.VarbitID := -1;
+  Result.VarpID := -1;
+  Result.Ambient := 0;
+  Result.Contrast := 0;
+  Result.InteractType := 2;
+  Result.MapSceneID := -1;
+  Result.BlockingMask := 0;
+  Result.Shadow := True;
+  Result.ModelSizeX := 128;
+  Result.ModelSizeHeight := 128;
+  Result.ModelSizeY := 128;
+  Result.ObstructsGround := False;
+  Result.ContouredGround := -1;
+  Result.SupportsItems := -1;
+  Result.Category := 0;
+  Result.IsRotated := False;
+  Result.ModelClipped := False;
+  Result.SoundFadeInDuration := 300;
+  Result.SoundFadeOutDuration := 300;
+  Result.SoundVisibility := 2;
+  Result.AmbientSoundChangeTicksMin := 0;
+  Result.AmbientSoundChangeTicksMax := 0;
+  Result.BlocksProjectile := True;
+  Result.RandomizeAnimStart := False;
+  Result.DeferAnimChange := False;
+  Result.Unknown1 := False;
+
+  rev220SoundData := revision >= 1673;
+
+  offset := 0;
+  while True do
+  begin
+    opcode := data[offset];
+    Inc(offset);
+
+    case opcode of
+      0: Break;
+      1:
+      begin
+        len := Read8Bits(data, offset);
+        if len <= 0 then
+          Continue;
+        SetLength(Result.ObjectModels, len);
+        SetLength(Result.ObjectTypes, len);
+        for i := 0 to len - 1 do
+        begin
+          Result.ObjectModels[i] := Read16Bits(data, offset);
+          Result.ObjectTypes[i] := Read8Bits(data, offset);
+        end;
+      end;
+      2: Result.Name := data.ReadCString(offset);
+      5:
+      begin
+        len := Read8Bits(data, offset);
+        if len <= 0 then
+          Continue;
+
+        SetLength(Result.ObjectTypes, 0);
+        SetLength(Result.ObjectModels, len);
+        for i := 0 to len - 1 do
+          Result.ObjectModels[i] := Read16Bits(data, offset);
+      end;
+      6:
+      begin
+        len := Read8Bits(data, offset);
+        if len <= 0 then
+          Continue;
+        SetLength(Result.ObjectModels, len);
+        SetLength(Result.ObjectTypes, len);
+        for i := 0 to len - 1 do
+        begin
+          Result.ObjectModels[i] := Read32Bits(data, offset);
+          Result.ObjectTypes[i] := Read8Bits(data, offset);
+        end;
+      end;
+      7:
+      begin
+        len := Read8Bits(data, offset);
+        if len <= 0 then
+          Continue;
+        SetLength(Result.ObjectTypes, 0);
+        SetLength(Result.ObjectModels, len);
+        for i := 0 to len - 1 do
+          Result.ObjectModels[i] := Read32Bits(data, offset);
+      end;
+      14: Result.SizeX := Read8Bits(data, offset);
+      15: Result.SizeY := Read8Bits(data, offset);
+      17:
+      begin
+        Result.InteractType := 0;
+        Result.BlocksProjectile := False;
+      end;
+      18: Result.BlocksProjectile := False;
+      19: Result.WallOrDoor := Read8Bits(data, offset);
+      21: Result.ContouredGround := 0;
+      22: Result.MergeNormals := True;
+      23: Result.ModelClipped := True;
+      24:
+      begin
+        Result.AnimationID := Read16Bits(data, offset);
+        if Result.AnimationID = $FFFF then
+          Result.AnimationID := -1;
+      end;
+      27: Result.InteractType := 1;
+      28: Result.DecorDisplacement := Read8Bits(data, offset);
+      29: Result.Ambient := Read8Bits(data, offset);
+      39: Result.Contrast := Read8Bits(data, offset) * 25;
+      30..34: Result.Ops.DecodeOp(data, offset, opcode - 30);
+      40:
+      begin
+        len := Read8Bits(data, offset);
+        SetLength(Result.RecolorToFind, len);
+        SetLength(Result.RecolorToReplace, len);
+        for i := 0 to len - 1 do
+        begin
+          Result.RecolorToFind[i] := Read16Bits(data, offset);
+          Result.RecolorToReplace[i] := Read16Bits(data, offset);
+        end;
+      end;
+      41:
+      begin
+        len := Read8Bits(data, offset);
+        SetLength(Result.RetextureToFind, len);
+        SetLength(Result.TextureToReplace, len);
+        for i := 0 to len - 1 do
+        begin
+          Result.RetextureToFind[i] := Read16Bits(data, offset);
+          Result.TextureToReplace[i] := Read16Bits(data, offset);
+        end;
+      end;
+      61: Result.Category := Read16Bits(data, offset);
+      62: Result.IsRotated := True;
+      64: Result.Shadow := False;
+      65: Result.ModelSizeX := Read16Bits(data, offset);
+      66: Result.ModelSizeHeight := Read16Bits(data, offset);
+      67: Result.ModelSizeY := Read16Bits(data, offset);
+      68: Result.MapSceneID := Read16Bits(data, offset);
+      69: Result.BlockingMask := Read8Bits(data, offset);
+      70: Result.OffsetX := Read16Bits(data, offset);
+      71: Result.OffsetHeight := Read16Bits(data, offset);
+      72: Result.OffsetY := Read16Bits(data, offset);
+      73: Result.ObstructsGround := True;
+      74: Result.IsHollow := True;
+      75: Result.SupportsItems := Read8Bits(data, offset);
+      77:
+      begin
+        varpID := Read16Bits(data, offset);
+        if varpID = $FFFF then varpID := -1;
+        Result.VarbitID := varpID;
+
+        configId := Read16Bits(data, offset);
+        if configId = $FFFF then configId := -1;
+        Result.VarpID := configId;
+
+        cfgLen := Read8Bits(data, offset);
+        SetLength(Result.ConfigChangeDest, cfgLen + 2);
+        for i := 0 to cfgLen do
+        begin
+          Result.ConfigChangeDest[i] := Read16Bits(data, offset);
+          if Result.ConfigChangeDest[i] = $FFFF then
+            Result.ConfigChangeDest[i] := -1;
+        end;
+        Result.ConfigChangeDest[cfgLen+1] := -1;
+      end;
+      78:
+      begin
+        Result.AmbientSoundId := Read16Bits(data, offset);
+        Result.AmbientSoundDistance := Read8Bits(data, offset);
+        if rev220SoundData then
+          Result.AmbientSoundRetain := Read8Bits(data, offset);
+      end;
+      79:
+      begin
+        Result.AmbientSoundChangeTicksMin := Read16Bits(data, offset);
+        Result.AmbientSoundChangeTicksMax := Read16Bits(data, offset);
+        Result.AmbientSoundDistance := Read8Bits(data, offset);
+        if rev220SoundData then
+          Result.AmbientSoundRetain := Read8Bits(data, offset);
+        SetLength(Result.AmbientSoundIds, Read8Bits(data, offset));
+        for i := 0 to High(Result.AmbientSoundIds) do
+          Result.AmbientSoundIds[i] := Read16Bits(data, offset);
+      end;
+      81: Result.ContouredGround := Read8Bits(data, offset) * 256;
+      82: Result.MapAreaId := Read16Bits(data, offset);
+      89: Result.RandomizeAnimStart := True;
+      90: Result.DeferAnimChange := True;
+      91: Result.SoundDistanceFadeCurve := Read8Bits(data, offset);
+      92:
+      begin
+        varpID := Read16Bits(data, offset);
+        if varpID = $FFFF then varpID := -1;
+        Result.VarbitID := varpID;
+
+        configId := Read16Bits(data, offset);
+        if configId = $FFFF then configId := -1;
+        Result.VarpID := configId;
+
+        varTmp := Read16Bits(data, offset);
+        if varTmp = $FFFF then varTmp := -1;
+
+        cfgLen := Read8Bits(data, offset);
+        SetLength(Result.ConfigChangeDest, cfgLen + 2);
+        for i := 0 to cfgLen do
+        begin
+          Result.ConfigChangeDest[i] := Read16Bits(data, offset);
+          if Result.ConfigChangeDest[i] = $FFFF then
+            Result.ConfigChangeDest[i] := -1;
+        end;
+        Result.ConfigChangeDest[cfgLen + 1] := varTmp;
+      end;
+      93:
+      begin
+        Result.SoundFadeInCurve := Read8Bits(data, offset);
+        Result.SoundFadeInDuration := Read16Bits(data, offset);
+        Result.SoundFadeOutCurve := Read8Bits(data, offset);
+        Result.SoundFadeOutDuration := Read16Bits(data, offset);
+      end;
+      94: Result.Unknown1 := True;
+      95: Result.SoundVisibility := Read8Bits(data, offset);
+      96: Result.RaiseAmount := Read8Bits(data, offset);
+      100: Result.Ops.DecodeSubOp(data, offset);
+      101: Result.Ops.DecodeConditionalOp(data, offset);
+      102: Result.Ops.DecodeConditionalSubOp(data, offset);
+      249:
+      begin
+        SetLength(Result.Params, Read8Bits(data, offset));
+        for i := 0 to High(Result.Params) do
+        begin
+           Result.Params[i].IsString := Read8Bits(data, offset) = 1;
+           Result.Params[i].Key := Read24Bits(data, offset);
+           if Result.Params[i].IsString then
+             Result.Params[i].StrValue := data.ReadCString(offset)
+           else
+             Result.Params[i].IntValue := Read32Bits(data, offset);
+         end;
+      end;
+    else
+    begin
+      WriteLn('Unrecognized opcode ', opcode, ' at offset ', offset - 1, '. Parsing may be corrupted from here.');
+      Break;
+    end;
+    end;
+  end;
+
+  if Result.WallOrDoor = -1 then
+  begin
+    Result.WallOrDoor := 0;
+    if (Length(Result.ObjectModels) > 0) and ((Length(Result.ObjectTypes) = 0) or (Result.ObjectTypes[0] = 10)) then
+      Result.WallOrDoor := 1;
+    if Length(Result.Ops.Ops) > 0 then
+      Result.WallOrDoor := 1;
+  end;
+
+  if Result.SupportsItems = -1 then
+  begin
+    if Result.InteractType <> 0 then
+      Result.SupportsItems := 1
+    else
+      Result.SupportsItems := 0;
+  end;
+end;
+{$R+}

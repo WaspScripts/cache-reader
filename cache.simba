@@ -1,4 +1,5 @@
 {$include_once ./reader/reader.simba}
 {$include_once ./definitions/items.simba}
-
+{$include_once ./definitions/objects.simba}
+{$include_once ./definitions/models.simba}
 

@@ -1,0 +1,81 @@
+{$include_once ../utils/helpers.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+type
+  TEntityOpsDefinition = record
+    Ops: array of record
+      Index: Integer;
+      Text: String;
+    end;
+
+    SubOps: array of record
+      Index, SubID: Integer;
+      Text: String;
+    end;
+
+    ConditionalOps: array of record
+      Index, VarpID, VarbitID, MinValue, MaxValue: Integer;
+      Text: String;
+    end;
+
+    ConditionalSubOps: array of record
+      Index, SubID, VarpID, VarbitID, MinValue, MaxValue: Integer;
+      Text: String;
+    end;
+  end;
+
+
+procedure TEntityOpsDefinition.DecodeOp(const data: TByteArray; var offset: Integer; index: Integer);
+var
+  text: String;
+  i: Integer;
+begin
+  text := data.ReadCString(offset);
+  if LowerCase(text) = 'hidden' then
+    Exit;
+  i := Length(Self.Ops);
+  SetLength(Self.Ops, i+1);
+  Self.Ops[i].Index := index;
+  Self.Ops[i].Text := text;
+end;
+
+procedure TEntityOpsDefinition.DecodeSubOp(const data: TByteArray; var offset: Integer);
+var
+  i: Integer;
+begin
+  i := Length(Self.SubOps);
+  SetLength(Self.SubOps, i + 1);
+  Self.SubOps[i].Index := Read8Bits(data, offset);
+  Self.SubOps[i].SubID := Read8Bits(data, offset);
+  Self.SubOps[i].Text := data.ReadCString(offset);
+end;
+
+procedure TEntityOpsDefinition.DecodeConditionalOp(const data: TByteArray; var offset: Integer);
+var
+  i: Integer;
+begin
+  i := Length(Self.ConditionalOps);
+  SetLength(Self.ConditionalOps, i+1);
+  Self.ConditionalOps[i].Index := Read8Bits(data, offset);
+  Self.ConditionalOps[i].VarpID := Read16Bits(data, offset);
+  Self.ConditionalOps[i].VarbitID := Read16Bits(data, offset);
+  Self.ConditionalOps[i].MinValue := Read32Bits(data, offset);
+  Self.ConditionalOps[i].MaxValue := Read32Bits(data, offset);
+  Self.ConditionalOps[i].Text := data.ReadCString(offset);
+end;
+
+procedure TEntityOpsDefinition.DecodeConditionalSubOp(const data: TByteArray; var offset: Integer);
+var
+  i: Integer;
+begin
+  i := Length(Self.ConditionalSubOps);
+  SetLength(Self.ConditionalSubOps, i+1);
+  Self.ConditionalSubOps[i].Index := Read8Bits(data, offset);
+  Self.ConditionalSubOps[i].SubID := Read16Bits(data, offset);
+  Self.ConditionalSubOps[i].VarpID := Read16Bits(data, offset);
+  Self.ConditionalSubOps[i].VarbitID := Read16Bits(data, offset);
+  Self.ConditionalSubOps[i].MinValue := Read32Bits(data, offset);
+  Self.ConditionalSubOps[i].MaxValue := Read32Bits(data, offset);
+  Self.ConditionalSubOps[i].Text := data.ReadCString(offset);
+end;
+{$R+}
+

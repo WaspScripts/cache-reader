@@ -1,0 +1,945 @@
+{$include_once ../utils/helpers.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+type
+  TModelDefinition = record
+    ID, VertexCount, FaceCount, NumTextureFaces, Priority: Integer;
+
+    VertexX, VertexY, VertexZ,
+    FaceIndices1, FaceIndices2, FaceIndices3,
+    FaceColors,
+    TexIndices1, TexIndices2, TexIndices3, FaceTextures,
+    PackedVertexGroups, PackedTransparencyVertexGroups: TIntegerArray;
+
+    AnimayaGroups, AnimayaScales: T2DIntegerArray;
+
+    FaceZOffsets,
+    FaceTransparencies, FaceRenderPriorities, FaceRenderTypes,
+    TextureCoords, TextureRenderTypes: TByteArray;
+  end;
+
+
+function TModelDefinition.DetectFormat(const data: TByteArray): Integer; static;
+var
+  i: Integer;
+begin
+  i := Length(data);
+  if data[i-2] <> $FF then
+    Exit(0);
+
+  case data[i-1] of
+    $FD: Result := 3;
+    $FE: Result := 2;
+    $FF: Result := 1;
+    else Result := 0;
+  end;
+end;
+
+function TModelDefinition.DecodeOldFormat(id: Integer; const data: TByteArray): TModelDefinition; static;
+var
+  c1, c2, c3, c4, c5: Integer; //data cursors
+
+  vertexCount, faceCount, textureCount,
+  isTextured, faceRenderPriority, hasFaceTransparencies,
+  hasPackedTransparencyVertexGroups, hasPackedVertexGroups,
+  vertexXDataByteCount, vertexYDataByteCount, vertexZDataByteCount, faceIndexDataByteCount,
+  dataOffset,
+  offsetOfVertexFlags, offsetOfFaceIndexCompressionTypes, offsetOfFaceRenderPriorities,
+  offsetOfPackedTransparencyVertexGroups, offsetOfFaceTextureFlags, offsetOfPackedVertexGroups,
+  offsetOfFaceTransparencies, offsetOfFaceIndexData, offsetOfFaceColorsOrFaceTextures,
+  offsetOfTextureIndices, offsetOfVertexXData, offsetOfVertexYData, offsetOfVertexZData: Integer;
+  i, vertexFlags, deltaX, deltaY, deltaZ,
+  previousVertexX, previousVertexY, previousVertexZ,
+  faceTextureFlags, faceIndexCompressionType,
+  previousIndex1, previousIndex2, previousIndex3, swapTmp, coord: Integer;
+  usesFaceRenderTypes, usesFaceTextures, usesTextureCoords: Boolean;
+begin
+  Result.ID := id;
+
+  c1 := Length(data) - 18;
+  Result.VertexCount := Read16Bits(data, c1);
+  Result.FaceCount := Read16Bits(data, c1);
+  textureCount := Read8Bits(data, c1);
+  Result.NumTextureFaces := textureCount;
+  isTextured := Read8Bits(data, c1);
+  faceRenderPriority := Read8Bits(data, c1);
+  hasFaceTransparencies := Read8Bits(data, c1);
+  hasPackedTransparencyVertexGroups := Read8Bits(data, c1);
+  hasPackedVertexGroups := Read8Bits(data, c1);
+  vertexXDataByteCount := Read16Bits(data, c1);
+  vertexYDataByteCount := Read16Bits(data, c1);
+  vertexZDataByteCount := Read16Bits(data, c1);
+  faceIndexDataByteCount := Read16Bits(data, c1);
+
+  vertexCount := Result.VertexCount;
+  faceCount := Result.FaceCount;
+
+  offsetOfVertexFlags := 0;
+  dataOffset := offsetOfVertexFlags + vertexCount;
+  offsetOfFaceIndexCompressionTypes := dataOffset;
+  dataOffset := dataOffset + faceCount;
+  offsetOfFaceRenderPriorities := dataOffset;
+  if faceRenderPriority = 255 then
+    dataOffset := dataOffset + faceCount;
+  offsetOfPackedTransparencyVertexGroups := dataOffset;
+  if hasPackedTransparencyVertexGroups = 1 then
+    dataOffset := dataOffset + faceCount;
+  offsetOfFaceTextureFlags := dataOffset;
+  if isTextured = 1 then
+    dataOffset := dataOffset + faceCount;
+  offsetOfPackedVertexGroups := dataOffset;
+  if hasPackedVertexGroups = 1 then
+    dataOffset := dataOffset + vertexCount;
+  offsetOfFaceTransparencies := dataOffset;
+  if hasFaceTransparencies = 1 then
+    dataOffset := dataOffset + faceCount;
+  offsetOfFaceIndexData := dataOffset;
+  dataOffset := dataOffset + faceIndexDataByteCount;
+  offsetOfFaceColorsOrFaceTextures := dataOffset;
+  dataOffset := dataOffset + faceCount * 2;
+  offsetOfTextureIndices := dataOffset;
+  dataOffset := dataOffset + textureCount * 6;
+  offsetOfVertexXData := dataOffset;
+  dataOffset := dataOffset + vertexXDataByteCount;
+  offsetOfVertexYData := dataOffset;
+  dataOffset := dataOffset + vertexYDataByteCount;
+  offsetOfVertexZData := dataOffset;
+
+  SetLength(Result.VertexX, vertexCount);
+  SetLength(Result.VertexY, vertexCount);
+  SetLength(Result.VertexZ, vertexCount);
+  SetLength(Result.FaceIndices1, faceCount);
+  SetLength(Result.FaceIndices2, faceCount);
+  SetLength(Result.FaceIndices3, faceCount);
+  SetLength(Result.FaceColors, faceCount);
+
+  if hasPackedVertexGroups = 1 then
+    SetLength(Result.PackedVertexGroups, vertexCount);
+
+  if isTextured = 1 then
+  begin
+    SetLength(Result.FaceRenderTypes, faceCount);
+    SetLength(Result.TextureCoords, faceCount);
+    SetLength(Result.FaceTextures, faceCount);
+  end;
+
+  if faceRenderPriority = 255 then
+    SetLength(Result.FaceRenderPriorities, faceCount)
+  else
+    Result.Priority := faceRenderPriority;
+
+  if hasFaceTransparencies = 1 then
+    SetLength(Result.FaceTransparencies, faceCount);
+
+  if hasPackedTransparencyVertexGroups = 1 then
+    SetLength(Result.PackedTransparencyVertexGroups, faceCount);
+
+  if textureCount > 0 then
+  begin
+    SetLength(Result.TextureRenderTypes, textureCount);
+    SetLength(Result.TexIndices1, textureCount);
+    SetLength(Result.TexIndices2, textureCount);
+    SetLength(Result.TexIndices3, textureCount);
+  end;
+
+  // Vertices
+  c1 := offsetOfVertexFlags;
+  c2 := offsetOfVertexXData;
+  c3 := offsetOfVertexYData;
+  c4 := offsetOfVertexZData;
+  c5 := offsetOfPackedVertexGroups;
+
+  previousVertexX := 0;
+  previousVertexY := 0;
+  previousVertexZ := 0;
+
+  for i := 0 to vertexCount - 1 do
+  begin
+    vertexFlags := Read8Bits(data, c1);
+
+    deltaX := 0;
+    if (vertexFlags and 1) <> 0 then
+      deltaX := ReadShortSmart(data, c2);
+
+    deltaY := 0;
+    if (vertexFlags and 2) <> 0 then
+      deltaY := ReadShortSmart(data, c3);
+
+    deltaZ := 0;
+    if (vertexFlags and 4) <> 0 then
+      deltaZ := ReadShortSmart(data, c4);
+
+    Result.VertexX[i] := previousVertexX + deltaX;
+    Result.VertexY[i] := previousVertexY + deltaY;
+    Result.VertexZ[i] := previousVertexZ + deltaZ;
+    previousVertexX := Result.VertexX[i];
+    previousVertexY := Result.VertexY[i];
+    previousVertexZ := Result.VertexZ[i];
+
+    if hasPackedVertexGroups = 1 then
+      Result.PackedVertexGroups[i] := Read8Bits(data, c5);
+  end;
+
+  usesFaceRenderTypes := False;
+  usesFaceTextures := False;
+
+  c1 := offsetOfFaceColorsOrFaceTextures;
+  c2 := offsetOfFaceTextureFlags;
+  c3 := offsetOfFaceRenderPriorities;
+  c4 := offsetOfFaceTransparencies;
+  c5 := offsetOfPackedTransparencyVertexGroups;
+
+  for i := 0 to faceCount - 1 do
+  begin
+    Result.FaceColors[i] := Read16Bits(data, c1);
+
+    if isTextured = 1 then
+    begin
+      faceTextureFlags := Read8Bits(data, c2);
+
+      if (faceTextureFlags and 1) = 1 then
+      begin
+        Result.FaceRenderTypes[i] := 1;
+        usesFaceRenderTypes := True;
+      end
+      else
+        Result.FaceRenderTypes[i] := 0;
+
+      if (faceTextureFlags and 2) = 2 then
+      begin
+        Result.TextureCoords[i] := faceTextureFlags shr 2;
+        Result.FaceTextures[i] := Result.FaceColors[i];
+        Result.FaceColors[i] := 127;
+        if Result.FaceTextures[i] <> -1 then
+          usesFaceTextures := True;
+      end
+      else
+      begin
+        Result.TextureCoords[i] := 255; // -1 as unsigned byte
+        Result.FaceTextures[i] := -1;
+      end;
+    end;
+
+    if faceRenderPriority = 255 then
+      Result.FaceRenderPriorities[i] := Read8Bits(data, c3);
+    if hasFaceTransparencies = 1 then
+      Result.FaceTransparencies[i] := Read8Bits(data, c4);
+
+    if hasPackedTransparencyVertexGroups = 1 then
+      Result.PackedTransparencyVertexGroups[i] := Read8Bits(data, c5);
+  end;
+
+  // Face indices
+  c1 := offsetOfFaceIndexData;
+  c2 := offsetOfFaceIndexCompressionTypes;
+  previousIndex1 := 0;
+  previousIndex2 := 0;
+  previousIndex3 := 0;
+
+  for i := 0 to faceCount - 1 do
+  begin
+    faceIndexCompressionType := Read8Bits(data, c2);
+
+    case faceIndexCompressionType of
+      1: begin
+           previousIndex1 := ReadShortSmart(data, c1) + previousIndex3;
+           previousIndex2 := ReadShortSmart(data, c1) + previousIndex1;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex2;
+         end;
+      2: begin
+           previousIndex2 := previousIndex3;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+      3: begin
+           previousIndex1 := previousIndex3;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+      4: begin
+           swapTmp := previousIndex1;
+           previousIndex1 := previousIndex2;
+           previousIndex2 := swapTmp;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+    end;
+
+    Result.FaceIndices1[i] := previousIndex1;
+    Result.FaceIndices2[i] := previousIndex2;
+    Result.FaceIndices3[i] := previousIndex3;
+  end;
+
+  // Texture indices
+  c1 := offsetOfTextureIndices;
+  for i := 0 to textureCount - 1 do
+  begin
+    Result.TextureRenderTypes[i] := 0;
+    Result.TexIndices1[i] := Read16Bits(data, c1);
+    Result.TexIndices2[i] := Read16Bits(data, c1);
+    Result.TexIndices3[i] := Read16Bits(data, c1);
+  end;
+
+  if isTextured = 1 then
+  begin
+    usesTextureCoords := False;
+    for i := 0 to faceCount - 1 do
+    begin
+      coord := Result.TextureCoords[i];
+      if coord <> 255 then
+      begin
+        if (Result.FaceIndices1[i] = Result.TexIndices1[coord]) and
+           (Result.FaceIndices2[i] = Result.TexIndices2[coord]) and
+           (Result.FaceIndices3[i] = Result.TexIndices3[coord]) then
+          Result.TextureCoords[i] := 255
+        else
+          usesTextureCoords := True;
+      end;
+    end;
+    if not usesTextureCoords then
+      SetLength(Result.TextureCoords, 0);
+  end;
+
+  if not usesFaceTextures then
+    SetLength(Result.FaceTextures, 0);
+
+  if not usesFaceRenderTypes then
+    SetLength(Result.FaceRenderTypes, 0);
+end;
+
+function TModelDefinition.DecodeType2(id: Integer; const data: TByteArray): TModelDefinition; static;
+var
+  c1, c2, c3, c4, c5, c6, c7: Integer; //data cursors
+
+  vertexCount, faceCount, textureCount,
+  faceTexturedFlag, faceRenderPriorityFlag, faceTransparenciesFlag,
+  packedTransparencyVertexGroupsFlag, packedVertexGroupsFlag, animayaFlag,
+  vertexXDataByteCount, vertexYDataByteCount, vertexZDataByteCount,
+  faceIndexDataByteCount, packedVertexGroupsByteCount,
+  totalOffset: Integer;
+
+  offsetOfVertexFlags, offsetOfFaceIndexCompressionTypes, offsetOfFaceRenderPriorities,
+  offsetOfPackedTransparencyVertexGroups, offsetOfFaceTexturedFlags, offsetOfPackedVertexGroups,
+  offsetOfFaceTransparencies, offsetOfFaceIndexData, offsetOfFaceColorsOrFaceTextures,
+  offsetOfTextureIndices, offsetOfVertexXData, offsetOfVertexYData, offsetOfVertexZData: Integer;
+
+  i, j, groupSize,
+  vertexFlags, deltaX, deltaY, deltaZ,
+  previousVertexX, previousVertexY, previousVertexZ,
+  faceTexturedByte, faceIndexCompressionType,
+  previousIndex1, previousIndex2, previousIndex3, swapTmp, coord: Integer;
+
+  usesFaceRenderTypes, usesFaceTextures, usesTextureCoords, hasOffsets: Boolean;
+begin
+  Result.ID := id;
+
+  c1 := Length(data) - 23;
+  vertexCount := Read16Bits(data, c1);
+  faceCount := Read16Bits(data, c1);
+  textureCount := Read8Bits(data, c1);
+  faceTexturedFlag := Read8Bits(data, c1);
+  faceRenderPriorityFlag := Read8Bits(data, c1);
+  faceTransparenciesFlag := Read8Bits(data, c1);
+  packedTransparencyVertexGroupsFlag := Read8Bits(data, c1);
+  packedVertexGroupsFlag := Read8Bits(data, c1);
+  animayaFlag := Read8Bits(data, c1);
+  vertexXDataByteCount := Read16Bits(data, c1);
+  vertexYDataByteCount := Read16Bits(data, c1);
+  vertexZDataByteCount := Read16Bits(data, c1);
+  faceIndexDataByteCount := Read16Bits(data, c1);
+  packedVertexGroupsByteCount := Read16Bits(data, c1);
+
+  Result.VertexCount := vertexCount;
+  Result.FaceCount := faceCount;
+  Result.NumTextureFaces := textureCount;
+
+  offsetOfVertexFlags := 0;
+  totalOffset := offsetOfVertexFlags + vertexCount;
+  offsetOfFaceIndexCompressionTypes := totalOffset;
+  totalOffset := totalOffset + faceCount;
+  offsetOfFaceRenderPriorities := totalOffset;
+  if faceRenderPriorityFlag = 255 then
+    totalOffset := totalOffset + faceCount;
+  offsetOfPackedTransparencyVertexGroups := totalOffset;
+  if packedTransparencyVertexGroupsFlag = 1 then
+    totalOffset := totalOffset + faceCount;
+  offsetOfFaceTexturedFlags := totalOffset;
+  if faceTexturedFlag = 1 then
+    totalOffset := totalOffset + faceCount;
+  offsetOfPackedVertexGroups := totalOffset;
+  totalOffset := totalOffset + packedVertexGroupsByteCount;
+  offsetOfFaceTransparencies := totalOffset;
+  if faceTransparenciesFlag = 1 then
+    totalOffset := totalOffset + faceCount;
+  offsetOfFaceIndexData := totalOffset;
+  totalOffset := totalOffset + faceIndexDataByteCount;
+  offsetOfFaceColorsOrFaceTextures := totalOffset;
+  totalOffset := totalOffset + faceCount * 2;
+  offsetOfTextureIndices := totalOffset;
+  totalOffset := totalOffset + textureCount * 6;
+  offsetOfVertexXData := totalOffset;
+  totalOffset := totalOffset + vertexXDataByteCount;
+  offsetOfVertexYData := totalOffset;
+  totalOffset := totalOffset + vertexYDataByteCount;
+  offsetOfVertexZData := totalOffset;
+  totalOffset := totalOffset + vertexZDataByteCount;
+
+  SetLength(Result.VertexX, vertexCount);
+  SetLength(Result.VertexY, vertexCount);
+  SetLength(Result.VertexZ, vertexCount);
+  SetLength(Result.FaceIndices1, faceCount);
+  SetLength(Result.FaceIndices2, faceCount);
+  SetLength(Result.FaceIndices3, faceCount);
+  SetLength(Result.FaceColors, faceCount);
+
+  if packedVertexGroupsFlag = 1 then
+    SetLength(Result.PackedVertexGroups, vertexCount);
+
+  if faceTexturedFlag = 1 then
+  begin
+    SetLength(Result.FaceRenderTypes, faceCount);
+    SetLength(Result.TextureCoords, faceCount);
+    SetLength(Result.FaceTextures, faceCount);
+  end;
+
+  if faceRenderPriorityFlag = 255 then
+    SetLength(Result.FaceRenderPriorities, faceCount)
+  else
+    Result.Priority := faceRenderPriorityFlag;
+
+  if faceTransparenciesFlag = 1 then
+    SetLength(Result.FaceTransparencies, faceCount);
+
+  if packedTransparencyVertexGroupsFlag = 1 then
+    SetLength(Result.PackedTransparencyVertexGroups, faceCount);
+
+  if animayaFlag = 1 then
+  begin
+    SetLength(Result.AnimayaGroups, vertexCount);
+    SetLength(Result.AnimayaScales, vertexCount);
+  end;
+
+  if textureCount > 0 then
+  begin
+    SetLength(Result.TextureRenderTypes, textureCount);
+    SetLength(Result.TexIndices1, textureCount);
+    SetLength(Result.TexIndices2, textureCount);
+    SetLength(Result.TexIndices3, textureCount);
+  end;
+
+  //Vertices
+  c1 := offsetOfVertexFlags;
+  c2 := offsetOfVertexXData;
+  c3 := offsetOfVertexYData;
+  c4 := offsetOfVertexZData;
+  c5 := offsetOfPackedVertexGroups;
+
+  previousVertexX := 0;
+  previousVertexY := 0;
+  previousVertexZ := 0;
+
+  for i := 0 to vertexCount - 1 do
+  begin
+    vertexFlags := Read8Bits(data, c1);
+
+    deltaX := 0;
+    if (vertexFlags and 1) <> 0 then
+      deltaX := ReadShortSmart(data, c2);
+
+    deltaY := 0;
+    if (vertexFlags and 2) <> 0 then
+      deltaY := ReadShortSmart(data, c3);
+
+    deltaZ := 0;
+    if (vertexFlags and 4) <> 0 then
+      deltaZ := ReadShortSmart(data, c4);
+
+    Result.VertexX[i] := previousVertexX + deltaX;
+    Result.VertexY[i] := previousVertexY + deltaY;
+    Result.VertexZ[i] := previousVertexZ + deltaZ;
+    previousVertexX := Result.VertexX[i];
+    previousVertexY := Result.VertexY[i];
+    previousVertexZ := Result.VertexZ[i];
+
+    if packedVertexGroupsFlag = 1 then
+      Result.PackedVertexGroups[i] := Read8Bits(data, c5);
+  end;
+
+  if animayaFlag = 1 then
+    for i := 0 to vertexCount - 1 do
+    begin
+      groupSize := Read8Bits(data, c5);
+      SetLength(Result.AnimayaGroups[i], groupSize);
+      SetLength(Result.AnimayaScales[i], groupSize);
+      for j := 0 to groupSize - 1 do
+      begin
+        Result.AnimayaGroups[i][j] := Read8Bits(data, c5);
+        Result.AnimayaScales[i][j] := Read8Bits(data, c5);
+      end;
+    end;
+
+  usesFaceRenderTypes := False;
+  usesFaceTextures := False;
+
+  c1 := offsetOfFaceColorsOrFaceTextures;
+  c2 := offsetOfFaceTexturedFlags;
+  c3 := offsetOfFaceRenderPriorities;
+  c4 := offsetOfFaceTransparencies;
+  c5 := offsetOfPackedTransparencyVertexGroups;
+
+  for i := 0 to faceCount - 1 do
+  begin
+    Result.FaceColors[i] := Read16Bits(data, c1);
+
+    if faceTexturedFlag = 1 then
+    begin
+      faceTexturedByte := Read8Bits(data, c2);
+
+      if (faceTexturedByte and 1) = 1 then
+      begin
+        Result.FaceRenderTypes[i] := 1;
+        usesFaceRenderTypes := True;
+      end
+      else
+        Result.FaceRenderTypes[i] := 0;
+
+      if (faceTexturedByte and 2) = 2 then
+      begin
+        Result.TextureCoords[i] := faceTexturedByte shr 2;
+        Result.FaceTextures[i] := Result.FaceColors[i];
+        Result.FaceColors[i] := 127;
+        if Result.FaceTextures[i] <> -1 then
+          usesFaceTextures := True;
+      end
+      else
+      begin
+        Result.TextureCoords[i] := 255;
+        Result.FaceTextures[i] := -1;
+      end;
+    end;
+
+    if faceRenderPriorityFlag = 255 then
+      Result.FaceRenderPriorities[i] := Read8Bits(data, c3);
+
+    if faceTransparenciesFlag = 1 then
+      Result.FaceTransparencies[i] := Read8Bits(data, c4);
+
+    if packedTransparencyVertexGroupsFlag = 1 then
+      Result.PackedTransparencyVertexGroups[i] := Read8Bits(data, c5);
+  end;
+
+  // Face indices
+  c1 := offsetOfFaceIndexData;
+  c2 := offsetOfFaceIndexCompressionTypes;
+  previousIndex1 := 0;
+  previousIndex2 := 0;
+  previousIndex3 := 0;
+
+  for i := 0 to faceCount - 1 do
+  begin
+    faceIndexCompressionType := Read8Bits(data, c2);
+
+    case faceIndexCompressionType of
+      1: begin
+           previousIndex1 := ReadShortSmart(data, c1) + previousIndex3;
+           previousIndex2 := ReadShortSmart(data, c1) + previousIndex1;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex2;
+         end;
+      2: begin
+           previousIndex2 := previousIndex3;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+      3: begin
+           previousIndex1 := previousIndex3;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+      4: begin
+           swapTmp := previousIndex1;
+           previousIndex1 := previousIndex2;
+           previousIndex2 := swapTmp;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+    end;
+
+    Result.FaceIndices1[i] := previousIndex1;
+    Result.FaceIndices2[i] := previousIndex2;
+    Result.FaceIndices3[i] := previousIndex3;
+  end;
+
+  // Texture indices
+  c1 := offsetOfTextureIndices;
+  for i := 0 to textureCount - 1 do
+  begin
+    Result.TextureRenderTypes[i] := 0;
+    Result.TexIndices1[i] := Read16Bits(data, c1);
+    Result.TexIndices2[i] := Read16Bits(data, c1);
+    Result.TexIndices3[i] := Read16Bits(data, c1);
+  end;
+
+  // optional per-face Z offsets
+  c1 := totalOffset;
+  hasOffsets := Read8Bits(data, c1) = 1;
+  if hasOffsets then
+  begin
+    SetLength(Result.FaceZOffsets, faceCount);
+    for i := 0 to faceCount - 1 do
+      Result.FaceZOffsets[i] := Read8Bits(data, c1);
+  end;
+
+  // Post-processing
+  if faceTexturedFlag = 1 then
+  begin
+    usesTextureCoords := False;
+    for i := 0 to faceCount - 1 do
+    begin
+      coord := Result.TextureCoords[i];
+      if coord <> 255 then
+      begin
+        if (Result.FaceIndices1[i] = Result.TexIndices1[coord]) and
+           (Result.FaceIndices2[i] = Result.TexIndices2[coord]) and
+           (Result.FaceIndices3[i] = Result.TexIndices3[coord]) then
+          Result.TextureCoords[i] := 255
+        else
+          usesTextureCoords := True;
+      end;
+    end;
+    if not usesTextureCoords then
+      SetLength(Result.TextureCoords, 0);
+  end;
+
+  if not usesFaceTextures then
+    SetLength(Result.FaceTextures, 0);
+
+  if not usesFaceRenderTypes then
+    SetLength(Result.FaceRenderTypes, 0);
+end;
+
+function TModelDefinition.DecodeType3(id: Integer; const data: TByteArray): TModelDefinition; static;
+var
+  c1, c2, c3, c4, c5, c6, c7: Integer; // 7 data cursors
+
+  vertexCount, faceCount, textureCount,
+  packedVertexGroupsFlag, faceRenderTypesFlag, faceRenderPriorityFlag,
+  faceTransparenciesFlag, packedTransparencyVertexGroupsFlag, faceTexturesFlag,
+  animayaFlag, vertexXDataByteCount, vertexYDataByteCount, vertexZDataByteCount,
+  faceIndexDataByteCount, textureCoordsDataByteCount, packedVertexGroupsByteCount,
+  simpleTexCount, complexTexCount, dualComplexTexCount,
+  totalOffset: Integer;
+
+  offsetOfVertexFlags, offsetOfFaceRenderTypes, offsetOfFaceIndexCompressionTypes,
+  offsetOfFaceRenderPriorities, offsetOfPackedTransparencyVertexGroups,
+  offsetOfFaceTransparencies, offsetOfFaceIndexData, offsetOfFaceTextures,
+  offsetOfTextureCoords, offsetOfFaceColorsOrFaceTextures, offsetOfVertexXData,
+  offsetOfVertexYData, offsetOfVertexZData, offsetOfPackedVertexGroups,
+  offsetOfSimpleTexIndices: Integer;
+
+  i, j, groupSize, textureRenderType,
+  vertexFlags, deltaX, deltaY, deltaZ,
+  previousVertexX, previousVertexY, previousVertexZ,
+  faceIndexCompressionType,
+  previousIndex1, previousIndex2, previousIndex3, swapTmp, coord: Integer;
+
+  usesFaceRenderTypes, usesFaceTextures, usesTextureCoords, hasOffsets: Boolean;
+  unusedByte: Integer;
+begin
+  Result.ID := id;
+
+  c1 := Length(data) - 26;
+  vertexCount := Read16Bits(data, c1);
+  faceCount := Read16Bits(data, c1);
+  textureCount := Read8Bits(data, c1);
+  faceRenderTypesFlag := Read8Bits(data, c1);
+  faceRenderPriorityFlag := Read8Bits(data, c1);
+  faceTransparenciesFlag := Read8Bits(data, c1);
+  packedTransparencyVertexGroupsFlag := Read8Bits(data, c1);
+  faceTexturesFlag := Read8Bits(data, c1);
+  packedVertexGroupsFlag := Read8Bits(data, c1);
+  animayaFlag := Read8Bits(data, c1);
+  vertexXDataByteCount := Read16Bits(data, c1);
+  vertexYDataByteCount := Read16Bits(data, c1);
+  vertexZDataByteCount := Read16Bits(data, c1);
+  faceIndexDataByteCount := Read16Bits(data, c1);
+  textureCoordsDataByteCount := Read16Bits(data, c1);
+  packedVertexGroupsByteCount := Read16Bits(data, c1);
+
+  Result.VertexCount := vertexCount;
+  Result.FaceCount := faceCount;
+  Result.NumTextureFaces := textureCount;
+
+  simpleTexCount := 0;
+  complexTexCount := 0;
+  dualComplexTexCount := 0;
+
+  if textureCount > 0 then
+  begin
+    SetLength(Result.TextureRenderTypes, textureCount);
+    c1 := 0;
+    for i := 0 to textureCount - 1 do
+    begin
+      textureRenderType := Read8Bits(data, c1);
+      Result.TextureRenderTypes[i] := textureRenderType;
+      if textureRenderType = 0 then Inc(simpleTexCount);
+      if (textureRenderType >= 1) and (textureRenderType <= 3) then Inc(complexTexCount);
+      if textureRenderType = 2 then Inc(dualComplexTexCount);
+    end;
+  end;
+
+  totalOffset := textureCount + vertexCount;
+  offsetOfFaceRenderTypes := totalOffset;
+  if faceRenderTypesFlag = 1 then
+    totalOffset := totalOffset + faceCount;
+  offsetOfFaceIndexCompressionTypes := totalOffset;
+  totalOffset := totalOffset + faceCount;
+  offsetOfFaceRenderPriorities := totalOffset;
+  if faceRenderPriorityFlag = 255 then
+    totalOffset := totalOffset + faceCount;
+  offsetOfPackedTransparencyVertexGroups := totalOffset;
+  if packedTransparencyVertexGroupsFlag = 1 then
+    totalOffset := totalOffset + faceCount;
+  offsetOfPackedVertexGroups := totalOffset;
+  totalOffset := totalOffset + packedVertexGroupsByteCount;
+  offsetOfFaceTransparencies := totalOffset;
+  if faceTransparenciesFlag = 1 then
+    totalOffset := totalOffset + faceCount;
+  offsetOfFaceIndexData := totalOffset;
+  totalOffset := totalOffset + faceIndexDataByteCount;
+  offsetOfFaceTextures := totalOffset;
+  if faceTexturesFlag = 1 then
+    totalOffset := totalOffset + faceCount * 2;
+  offsetOfTextureCoords := totalOffset;
+  totalOffset := totalOffset + textureCoordsDataByteCount;
+  offsetOfFaceColorsOrFaceTextures := totalOffset;
+  totalOffset := totalOffset + faceCount * 2;
+  offsetOfVertexXData := totalOffset;
+  totalOffset := totalOffset + vertexXDataByteCount;
+  offsetOfVertexYData := totalOffset;
+  totalOffset := totalOffset + vertexYDataByteCount;
+  offsetOfVertexZData := totalOffset;
+  totalOffset := totalOffset + vertexZDataByteCount;
+  offsetOfSimpleTexIndices := totalOffset;
+  totalOffset := totalOffset + simpleTexCount * 6;
+
+  totalOffset := totalOffset + complexTexCount * 6;
+  totalOffset := totalOffset + complexTexCount * 6;
+  totalOffset := totalOffset + complexTexCount * 2;
+  totalOffset := totalOffset + complexTexCount;
+  totalOffset := totalOffset + complexTexCount * 2 + dualComplexTexCount * 2;
+
+  SetLength(Result.VertexX, vertexCount);
+  SetLength(Result.VertexY, vertexCount);
+  SetLength(Result.VertexZ, vertexCount);
+  SetLength(Result.FaceIndices1, faceCount);
+  SetLength(Result.FaceIndices2, faceCount);
+  SetLength(Result.FaceIndices3, faceCount);
+  SetLength(Result.FaceColors, faceCount);
+
+  if packedVertexGroupsFlag = 1 then
+    SetLength(Result.PackedVertexGroups, vertexCount);
+
+  if faceRenderTypesFlag = 1 then
+    SetLength(Result.FaceRenderTypes, faceCount);
+
+  if faceRenderPriorityFlag = 255 then
+    SetLength(Result.FaceRenderPriorities, faceCount)
+  else
+    Result.Priority := faceRenderPriorityFlag;
+
+  if faceTransparenciesFlag = 1 then
+    SetLength(Result.FaceTransparencies, faceCount);
+
+  if packedTransparencyVertexGroupsFlag = 1 then
+    SetLength(Result.PackedTransparencyVertexGroups, faceCount);
+
+  if faceTexturesFlag = 1 then
+    SetLength(Result.FaceTextures, faceCount);
+
+  if (faceTexturesFlag = 1) and (textureCount > 0) then
+    SetLength(Result.TextureCoords, faceCount);
+
+  if animayaFlag = 1 then
+  begin
+    SetLength(Result.AnimayaGroups, vertexCount);
+    SetLength(Result.AnimayaScales, vertexCount);
+  end;
+
+  if textureCount > 0 then
+  begin
+    SetLength(Result.TexIndices1, textureCount);
+    SetLength(Result.TexIndices2, textureCount);
+    SetLength(Result.TexIndices3, textureCount);
+  end;
+
+  //Vertices
+  c1 := textureCount; //offsetOfVertexFlags
+  c2 := offsetOfVertexXData;
+  c3 := offsetOfVertexYData;
+  c4 := offsetOfVertexZData;
+  c5 := offsetOfPackedVertexGroups;
+
+  previousVertexX := 0;
+  previousVertexY := 0;
+  previousVertexZ := 0;
+
+  for i := 0 to vertexCount - 1 do
+  begin
+    vertexFlags := Read8Bits(data, c1);
+
+    deltaX := 0;
+    if (vertexFlags and 1) <> 0 then
+      deltaX := ReadShortSmart(data, c2);
+
+    deltaY := 0;
+    if (vertexFlags and 2) <> 0 then
+      deltaY := ReadShortSmart(data, c3);
+
+    deltaZ := 0;
+    if (vertexFlags and 4) <> 0 then
+      deltaZ := ReadShortSmart(data, c4);
+
+    Result.VertexX[i] := previousVertexX + deltaX;
+    Result.VertexY[i] := previousVertexY + deltaY;
+    Result.VertexZ[i] := previousVertexZ + deltaZ;
+    previousVertexX := Result.VertexX[i];
+    previousVertexY := Result.VertexY[i];
+    previousVertexZ := Result.VertexZ[i];
+
+    if packedVertexGroupsFlag = 1 then
+      Result.PackedVertexGroups[i] := Read8Bits(data, c5);
+  end;
+
+  if animayaFlag = 1 then
+    for i := 0 to vertexCount - 1 do
+    begin
+      groupSize := Read8Bits(data, c5);
+      SetLength(Result.AnimayaGroups[i], groupSize);
+      SetLength(Result.AnimayaScales[i], groupSize);
+      for j := 0 to groupSize - 1 do
+      begin
+        Result.AnimayaGroups[i][j] := Read8Bits(data, c5);
+        Result.AnimayaScales[i][j] := Read8Bits(data, c5);
+      end;
+    end;
+
+  // Face colors, render types, priorities, transparencies, ...
+  usesFaceRenderTypes := False;
+  usesFaceTextures := False;
+
+  c1 := offsetOfFaceColorsOrFaceTextures;
+  c2 := offsetOfFaceRenderTypes;
+  c3 := offsetOfFaceRenderPriorities;
+  c4 := offsetOfFaceTransparencies;
+  c5 := offsetOfPackedTransparencyVertexGroups;
+  c6 := offsetOfFaceTextures;
+  c7 := offsetOfTextureCoords;
+
+  for i := 0 to faceCount - 1 do
+  begin
+    Result.FaceColors[i] := Read16Bits(data, c1);
+
+    if faceRenderTypesFlag = 1 then
+    begin
+      Result.FaceRenderTypes[i] := Read8Bits(data, c2);
+      if Result.FaceRenderTypes[i] <> 0 then
+        usesFaceRenderTypes := True;
+    end;
+
+    if faceRenderPriorityFlag = 255 then
+      Result.FaceRenderPriorities[i] := Read8Bits(data, c3);
+
+    if faceTransparenciesFlag = 1 then
+      Result.FaceTransparencies[i] := Read8Bits(data, c4);
+
+    if packedTransparencyVertexGroupsFlag = 1 then
+      Result.PackedTransparencyVertexGroups[i] := Read8Bits(data, c5);
+
+    if faceTexturesFlag = 1 then
+    begin
+      Result.FaceTextures[i] := Read16Bits(data, c6) - 1;
+      if (Length(Result.TextureCoords) > 0) and (Result.FaceTextures[i] <> -1) then
+        Result.TextureCoords[i] := Read8Bits(data, c7) - 1;
+      if Result.FaceTextures[i] <> -1 then
+        usesFaceTextures := True;
+    end;
+  end;
+
+  // Face indices
+  c1 := offsetOfFaceIndexData;
+  c2 := offsetOfFaceIndexCompressionTypes;
+  previousIndex1 := 0;
+  previousIndex2 := 0;
+  previousIndex3 := 0;
+
+  for i := 0 to faceCount - 1 do
+  begin
+    faceIndexCompressionType := Read8Bits(data, c2);
+
+    case faceIndexCompressionType of
+      1: begin
+           previousIndex1 := ReadShortSmart(data, c1) + previousIndex3;
+           previousIndex2 := ReadShortSmart(data, c1) + previousIndex1;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex2;
+         end;
+      2: begin
+           previousIndex2 := previousIndex3;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+      3: begin
+           previousIndex1 := previousIndex3;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+      4: begin
+           swapTmp := previousIndex1;
+           previousIndex1 := previousIndex2;
+           previousIndex2 := swapTmp;
+           previousIndex3 := ReadShortSmart(data, c1) + previousIndex3;
+         end;
+    end;
+
+    Result.FaceIndices1[i] := previousIndex1;
+    Result.FaceIndices2[i] := previousIndex2;
+    Result.FaceIndices3[i] := previousIndex3;
+  end;
+
+  c1 := offsetOfSimpleTexIndices;
+  for i := 0 to textureCount - 1 do
+  begin
+    if Result.TextureRenderTypes[i] = 0 then
+    begin
+      Result.TexIndices1[i] := Read16Bits(data, c1);
+      Result.TexIndices2[i] := Read16Bits(data, c1);
+      Result.TexIndices3[i] := Read16Bits(data, c1);
+    end;
+  end;
+
+  // unknown 10-byte block (skipped if present), then optional per-face Z offsets
+  c1 := totalOffset;
+  unusedByte := Read8Bits(data, c1);
+  if unusedByte <> 0 then
+  begin
+    Read16Bits(data, c1);
+    Read16Bits(data, c1);
+    Read16Bits(data, c1);
+    Read32Bits(data, c1);
+  end;
+
+  hasOffsets := Read8Bits(data, c1) = 1;
+  if hasOffsets then
+  begin
+    SetLength(Result.FaceZOffsets, faceCount);
+    for i := 0 to faceCount - 1 do
+      Result.FaceZOffsets[i] := Read8Bits(data, c1);
+  end;
+
+  // Post-processing
+  if not usesFaceTextures then
+    SetLength(Result.FaceTextures, 0);
+
+  if not usesFaceRenderTypes then
+    SetLength(Result.FaceRenderTypes, 0);
+end;
+
+function TModelDefinition.Create(id: Integer; const data: TByteArray): TModelDefinition; static;
+begin
+  case TModelDefinition.DetectFormat(data) of
+    0: Result := TModelDefinition.DecodeOldFormat(id, data);
+    2: Result := TModelDefinition.DecodeType2(id, data);
+    3: Result := TModelDefinition.DecodeType3(id, data);
+  end;
+end;
+{$R+}

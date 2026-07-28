@@ -93,7 +93,7 @@ function TArchive.NextID(): Integer;
 var
   count: Integer;
 begin
-  count := Self.Files.Count;
+  count := Self.Files.Count();
   if count = 0 then
     Exit(0);
   Result := Self.Files.ValueFromIndex[count-1].ID + 1;
@@ -105,7 +105,7 @@ var
   i: Integer;
   value: TFile;
 begin
-  for i := 0 to Self.Files.Count-1 do
+  for i := 0 to Self.Files.Count()-1 do
   begin
     value := Self.Files.ValueFromIndex[i];
     value.Data := [];
@@ -171,7 +171,7 @@ var
   i, j: Integer;
 begin
   Self.HasRead := True;
-  fileCount := Self.Files.Count;
+  fileCount := Self.Files.Count();
 
   if fileCount = 0 then
     Exit;
@@ -228,7 +228,7 @@ function TArchive.Write(): TByteArray;
 var
   count, totalSize, offset, i, previous, fileSize: Integer;
 begin
-  count := Self.Files.Count;
+  count := Self.Files.Count();
   if count = 1 then
     Exit(Self.Files.ValueFromIndex[0].Data);
 

@@ -11,6 +11,12 @@ begin
   Inc(offset, 2);
 end;
 
+function Read16SignedBits(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := Read16Bits(data, offset);
+  if Result > 32767 then Result -= 65536;
+end;
+
 function Read24Bits(const data: TByteArray; var offset: Integer): Integer;
 begin
   Result := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
@@ -55,6 +61,28 @@ begin
     data[offset + 3] := value;
     Inc(offset, 4);
   end;
+end;
+
+function ReadShortSmart(const data: TByteArray; var offset: Integer): Integer;
+begin
+  if data[offset] < 128 then
+    Result := Read8Bits(data, offset) - 64
+  else
+    Result := Read16Bits(data, offset) - $C000;
+end;
+
+function TByteArray.ReadCString(var offset: Integer): String;
+var
+  ch: Byte;
+begin
+  for offset to High(Self)-1 do
+  begin
+    ch := Self[offset];
+    if ch = 0 then
+      Break;
+    Result += Char(ch);
+  end;
+  Inc(offset);
 end;
 {$R+}
 

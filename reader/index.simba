@@ -211,7 +211,7 @@ var
   archive: TArchive;
   count: Integer;
 begin
-  SetLength(Result, Self.ReferenceTable.Archives.Count);
+  SetLength(Result, Self.ReferenceTable.Archives.Count());
   count := 0;
 
   for archive in Self.ReferenceTable.Archives.Values do

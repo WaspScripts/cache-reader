@@ -38,7 +38,7 @@ function TReferenceTable.NextID(): Integer;
 var
   count: Integer;
 begin
-  count := Self.Archives.Count;
+  count := Self.Archives.Count();
   if count = 0 then
     Exit(0);
 
@@ -221,7 +221,7 @@ begin
   begin
     archive := archives[i];
 
-    for j := 0 to archive.Files.Count - 1 do
+    for j := 0 to archive.Files.Count() - 1 do
     begin
       _file := archive.Files.ValueFromIndex[j];
       _file.HashName := Read32Bits(data, offset);
@@ -283,7 +283,7 @@ begin
   begin
     // file count
     if Self.Version >= 7 then
-      Inc(totalSize, BigSmartSize(archive.Files.Count))
+      Inc(totalSize, BigSmartSize(archive.Files.Count()))
     else
       Inc(totalSize, 2);
 
@@ -300,7 +300,7 @@ begin
     end;
 
     if Self.IsNamed() then
-      Inc(totalSize, archive.Files.Count * 4);
+      Inc(totalSize, archive.Files.Count() * 4);
   end;
 
   SetLength(Result, totalSize);
@@ -418,11 +418,11 @@ begin
   // File counts
   for archive in archives do
     if Self.Version >= 7 then
-      WriteBigSmart(Result, offset, archive.Files.Count)
+      WriteBigSmart(Result, offset, archive.Files.Count())
     else
     begin
-      Result[offset] := archive.Files.Count shr 8;
-      Result[offset+1] := archive.Files.Count;
+      Result[offset] := archive.Files.Count() shr 8;
+      Result[offset+1] := archive.Files.Count();
       Inc(offset, 2);
     end;
 
@@ -449,7 +449,7 @@ begin
   // File name hashes
   if Self.IsNamed() then
     for archive in archives do
-      for j := 0 to archive.Files.Count-1 do
+      for j := 0 to archive.Files.Count()-1 do
       begin
         Result[offset] := archive.Files.ValueFromIndex[j].HashName shr 24;
         Result[offset+1] := archive.Files.ValueFromIndex[j].HashName shr 16;

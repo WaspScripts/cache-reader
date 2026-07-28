@@ -1,4 +1,5 @@
 {$include_once ../utils/helpers.simba}
+{$include_once ./entityops.simba}
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 type
   TItemDefinition = record
@@ -15,8 +16,9 @@ type
     Zoom2D, Xan2D, Yan2D, Zan2D,
     XOffset2D, YOffset2D: Integer;
 
-    GroundActions,
-    InventoryActions: array [0..4] of String;
+    InventoryActions, GroundActions: array [0..4] of String;
+    SubOps: array [0..4] of array [0..19] of String;
+    GroundOps: TEntityOpsDefinition;
 
     Category,
     NotedID, NotedTemplate,
@@ -27,7 +29,7 @@ type
     TeamID,
     ShiftClickDropIndex,
     Weight: Integer;
-
+    CountObj, CountCo: array [0..9] of Integer;
     Params: array of record
       Key: Integer;
       IsString: Boolean;
@@ -36,31 +38,13 @@ type
     end;
   end;
 
-function ReadItemString(const data: TByteArray; var offset: Integer): String;
+function TItemDefinition.Create(id: Integer; const data: TByteArray): TItemDefinition; static;
 var
-  ch: Byte;
+  offset, opcode, i, count, paramCount, opID, subopID: Integer;
+  valid: Boolean;
+  text: String;
 begin
-  while True do
-  begin
-    ch := data[offset];
-    Inc(offset);
-    if ch = 0 then
-      Break;
-    Result += Char(ch);
-  end;
-end;
-
-function ReadOffset(const data: TByteArray; var offset: Integer): Integer;
-begin
-  Result := Read16Bits(data, offset);
-  if Result > 32767 then Result -= 65536;
-end;
-
-function ParseItemDefinition(const data: TByteArray; itemID: Integer): TItemDefinition;
-var
-  offset, opcode, i, count, paramCount: Integer;
-begin
-  Result.ID := itemID;
+  Result.ID := id;
   Result.Name := 'null';
   Result.Examine := '';
   Result.Stackable := 0;
@@ -83,14 +67,14 @@ begin
     case opcode of
       0: Break;
       1: Result.InventoryModel := Read16Bits(data, offset);
-      2: Result.Name := ReadItemString(data, offset);
-      3: Result.Examine := ReadItemString(data, offset);
+      2: Result.Name := data.ReadCString(offset);
+      3: Result.Examine := data.ReadCString(offset);
       4: Result.Zoom2D := Read16Bits(data, offset);
       5: Result.Xan2D := Read16Bits(data, offset);
       6: Result.Yan2D := Read16Bits(data, offset);
-      7: Result.XOffset2D := ReadOffset(data, offset);
-      8: Result.YOffset2D := ReadOffset(data, offset);
-      9: ReadItemString(data, offset); // unknown1, discarded
+      7: Result.XOffset2D := Read16SignedBits(data, offset);
+      8: Result.YOffset2D := Read16SignedBits(data, offset);
+      9: data.ReadCString(offset); // unknown1, discarded
       11: Result.Stackable := 1;
       12: Result.Cost := Read32Bits(data, offset);
       13: Result.WearPos1 := Read8Bits(data, offset);
@@ -108,27 +92,39 @@ begin
           end;
       26: Result.FemaleModel1 := Read16Bits(data, offset);
       27: Result.WearPos3 := Read8Bits(data, offset);
-      30..34: Result.GroundActions[opcode - 30] := ReadItemString(data, offset);
-      35..39: Result.InventoryActions[opcode - 35] := ReadItemString(data, offset);
+      30..34: Result.GroundActions[opcode - 30] := data.ReadCString(offset);
+      35..39: Result.InventoryActions[opcode - 35] := data.ReadCString(offset);
       40, 41: Inc(offset, 4 * Read8Bits(data, offset));
       42: Result.ShiftClickDropIndex := Read8Bits(data, offset);
-      43: begin // subops — variable-length nested string list, skip but consume correctly
-            Inc(offset); // opId byte
-            while data[offset] <> 1 do // subopId+1; 0 terminates (subopId=-1)
-              ReadItemString(data, offset);
-            Inc(offset); // consume the terminator byte itself
-          end;
+      43:
+      begin
+        opID := Read8Bits(data, offset);
+        valid := (opID >= 0) and (opID < 5);
+
+        while True do
+        begin
+          subopID := Read8Bits(data, offset) - 1;
+          if subopID = -1 then
+            Break;
+
+          text := data.ReadCString(offset);
+          if valid and (subopID >= 0) and (subopID < 20) then
+            Result.SubOps[opID, subopID] := text;
+        end;
+      end;
       44: Result.InventoryModel := Read32Bits(data, offset);
-      45: begin
-            Result.MaleModel0 := Read32Bits(data, offset);
-            Result.MaleOffset := Read8Bits(data, offset);
-          end;
+      45:
+      begin
+        Result.MaleModel0 := Read32Bits(data, offset);
+        Result.MaleOffset := Read8Bits(data, offset);
+      end;
       46: Result.MaleModel1 := Read32Bits(data, offset);
       47: Result.MaleModel2 := Read32Bits(data, offset);
-      48: begin
-            Result.FemaleModel0 := Read32Bits(data, offset);
-            Result.FemaleOffset := Read8Bits(data, offset);
-          end;
+      48:
+      begin
+        Result.FemaleModel0 := Read32Bits(data, offset);
+        Result.FemaleOffset := Read8Bits(data, offset);
+      end;
       49: Result.FemaleModel1 := Read32Bits(data, offset);
       50: Result.FemaleModel2 := Read32Bits(data, offset);
       51: Result.MaleHeadModel := Read32Bits(data, offset);
@@ -136,7 +132,7 @@ begin
       53: Result.FemaleHeadModel := Read32Bits(data, offset);
       54: Result.FemaleHeadModel2 := Read32Bits(data, offset);
       65: Result.GETradeable := True;
-      75: Result.Weight := Read16Bits(data, offset); // signed short in original, adjust below if needed
+      75: Result.Weight := Read16Bits(data, offset);
       78: Result.MaleModel2 := Read16Bits(data, offset);
       79: Result.FemaleModel2 := Read16Bits(data, offset);
       90: Result.MaleHeadModel := Read16Bits(data, offset);
@@ -147,7 +143,11 @@ begin
       95: Result.Zan2D := Read16Bits(data, offset);
       97: Result.NotedID := Read16Bits(data, offset);
       98: Result.NotedTemplate := Read16Bits(data, offset);
-      100..109: Inc(offset, 4); //countObj+countCo pair, discarded
+      100..109:
+      begin
+        Result.CountObj[opcode - 100] := Read16Bits(data, offset);
+        Result.CountCo[opcode - 100] := Read16Bits(data, offset);
+      end;
       110: Result.ResizeX := Read16Bits(data, offset);
       111: Result.ResizeY := Read16Bits(data, offset);
       112: Result.ResizeZ := Read16Bits(data, offset);
@@ -158,26 +158,26 @@ begin
       140: Result.BoughtTemplateId := Read16Bits(data, offset);
       148: Result.PlaceholderID := Read16Bits(data, offset);
       149: Result.PlaceholderTemplate := Read16Bits(data, offset);
-      160: Result.Stackable := 2; //alt version. important maybe because 1 has weight 0.
-      200, 201, 202:
-        begin
-          WriteLn('Opcode ', opcode, ' (entity sub/conditional op) not implemented. Parsing may be corrupted from here.');
-          Break;
-        end;
-      249: begin
-             paramCount := Read8Bits(data, offset);
-             SetLength(Result.Params, paramCount);
-             for i := 0 to paramCount - 1 do
-             begin
-               Result.Params[i].IsString := Read8Bits(data, offset) = 1;
-               Result.Params[i].Key := Read24Bits(data, offset);
-               if Result.Params[i].IsString then
-                 Result.Params[i].StrValue := ReadItemString(data, offset)
-               else
-                 Result.Params[i].IntValue := Read32Bits(data, offset);
-             end;
-           end;
-    else
+      160: Result.Stackable := 2; //alt version. maybe important because 1 has weight 0.
+      200: Result.GroundOps.DecodeSubOp(data, offset);
+      201: Result.GroundOps.DecodeConditionalOp(data, offset);
+      202: Result.GroundOps.DecodeConditionalSubOp(data, offset);
+      249:
+      begin
+         paramCount := Read8Bits(data, offset);
+         SetLength(Result.Params, paramCount);
+         for i := 0 to paramCount - 1 do
+         begin
+           Result.Params[i].IsString := Read8Bits(data, offset) = 1;
+           Result.Params[i].Key := Read24Bits(data, offset);
+           if Result.Params[i].IsString then
+             Result.Params[i].StrValue := data.ReadCString(offset)
+           else
+             Result.Params[i].IntValue := Read32Bits(data, offset);
+         end;
+      end;
+
+      else
       begin
         WriteLn('Unrecognized opcode ', opcode, ' at offset ', offset - 1, '. Parsing may be corrupted from here.');
         Break;
