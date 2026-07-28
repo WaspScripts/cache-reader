@@ -193,7 +193,7 @@ begin
     chunkSize := 0;
     for j := 0 to fileCount - 1 do
     begin
-      chunkSize += Read32Bit(data, tableOffset);
+      chunkSize += Read32Bits(data, tableOffset);
       sizes[j] += chunkSize;
     end;
   end;
@@ -214,7 +214,7 @@ begin
     chunkSize := 0;
     for j := 0 to fileCount - 1 do
     begin
-      chunkSize += Read32Bit(data, tableOffset);
+      chunkSize += Read32Bits(data, tableOffset);
       _file := Self.Files.ValueFromIndex[j];
       Move(data[dataOffset], _file.Data[Length(_file.Data) - sizes[j]], chunkSize);
 
@@ -238,8 +238,6 @@ begin
     totalSize += Length(Self.Files.ValueFromIndex[i].Data);
 
   SetLength(Result, totalSize);
-
-  offset := 0;
 
   for i := 0 to count-1 do
   begin

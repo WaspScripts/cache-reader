@@ -46,16 +46,13 @@ end;
 procedure TArchiveSector.Read(constref data: TByteArray; var offset: Integer);
 begin
   if Self.BigSector then
-    Self.ID := Read32Bit(data, offset)
+    Self.ID := Read32Bits(data, offset)
   else
-    Self.ID := Read16Bit(data, offset);
+    Self.ID := Read16Bits(data, offset);
 
-  Self.Chunk := Read16Bit(data, offset);
-
-  Self.NextPosition := Read24Bit(data, offset);
-
-  Self.Index := data[offset];
-  Inc(offset);
+  Self.Chunk := Read16Bits(data, offset);
+  Self.NextPosition := Read24Bits(data, offset);
+  Self.Index := Read8Bits(data, offset);
 end;
 
 function TArchiveSector.Write(): TByteArray;
@@ -94,6 +91,31 @@ begin
 end;
 
 
+//function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
+//var
+//  fullData: TByteArray;
+//  outData: Pointer;
+//  outSize: Int64;
+//begin
+//  SetLength(fullData, Length(compressed) + 4);
+//  fullData[0] := Ord('B');
+//  fullData[1] := Ord('Z');
+//  fullData[2] := Ord('h');
+//  fullData[3] := Ord('1');
+//  Move(compressed[0], fullData[4], Length(compressed));
+//
+//  outData := nil;
+//  outSize := 0;
+//
+//  DecompressData(ECompressAlgo.BZIP2, @fullData[0], Length(fullData), outData, outSize);
+//  if outSize <= 0 then
+//    Exit([]);
+//
+//  SetLength(Result, outSize);
+//  Move(outData^, Result[0], outSize);
+//  FreeMem(outData);
+//end;
+
 function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
 begin
   Result := BZip2FullDecompress(compressed);
@@ -127,17 +149,16 @@ var
   compressed: TByteArray;
   compression: ECacheCompression;
 begin
-  compression := ECacheCompression(Self.Data[offset]);
+  compression := ECacheCompression(Read8Bits(Self.Data, offset));
   Self.CompressionType := compression;
-  Inc(offset);
 
-  compressedLen := Read32Bit(Self.Data, offset);
+  compressedLen := Read32Bits(Self.Data, offset);
 
   if compression = ECacheCompression.NONE then
     Exit(Copy(Self.Data, offset, compressedLen));
 
   //not used but we need offset to skip these 4 bits anyway.
-  decompressedLen := Read32Bit(Self.Data, offset);
+  decompressedLen := Read32Bits(Self.Data, offset);
 
   compressed := Copy(Self.Data, offset, compressedLen);
   case compression of

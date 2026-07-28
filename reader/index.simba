@@ -39,8 +39,8 @@ begin
   bigSector := id > 65535;
 
   offset := 0;
-  size := Read24Bit(sectorData, offset);
-  position := Read24Bit(sectorData, offset);
+  size := Read24Bits(sectorData, offset);
+  position := Read24Bits(sectorData, offset);
 
   if (size < 0) or (position <= 0) or (position > Length(Self.MainData) div TArchiveSector.SECTOR_SIZE) then
     Exit;
@@ -162,13 +162,13 @@ begin
       archive.HasRead := False;
 
     tailOffset := 1;
-    compressedFieldValue := Read32Bit(sector.Data, tailOffset);
+    compressedFieldValue := Read32Bits(sector.Data, tailOffset);
     remaining := Length(sector.Data) - (compressedFieldValue + tailOffset);
 
     if remaining >= 2 then
     begin
       revOffset := Length(sector.Data) - 2;
-      archive.Revision := Read16Bit(sector.Data, revOffset);
+      archive.Revision := Read16Bits(sector.Data, revOffset);
     end;
 
     Self.ReferenceTable.Archives.Value[archive.ID] := archive;

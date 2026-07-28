@@ -111,22 +111,6 @@ begin
 end;
 
 
-function BigSmartSize(value: Integer): Integer;
-begin
-  if value < 127 then
-    Result := 1
-  else
-    Result := 2;
-end;
-
-function ReadBigSmart(const data: TByteArray; var offset: Integer): Integer;
-begin
-  if data[offset] < 128 then
-    Result := Read16Bit(data, offset)
-  else
-    Result := Read32Bit(data, offset) and $7FFFFFFF;
-end;
-
 procedure TReferenceTable.Read(const data: TByteArray; var offset: Integer);
 var
   named, whirlpool: Boolean;
@@ -137,19 +121,17 @@ var
   i, j: Integer;
   _file: TFile;
 begin
-  Self.Version := data[offset];
-  Inc(offset);
+  Self.Version := Read8Bits(data, offset);
 
   if not InRange(Self.Version, 5, 7) then
     raise 'Unknown version: ' + ToStr(Self.Version);
 
   if Self.Version >= 6 then
-    Self.Revision := Read32Bit(data, offset)
+    Self.Revision := Read32Bits(data, offset)
   else
     Self.Revision := 0;
 
-  Self.Mask := data[offset];
-  Inc(offset);
+  Self.Mask := Read8Bits(data, offset);
 
   named := (Self.Mask and $1) <> 0;
   whirlpool := (Self.Mask and $2) <> 0;
@@ -157,7 +139,7 @@ begin
   if Self.Version >= 7 then
     archiveCount := ReadBigSmart(data, offset)
   else
-    archiveCount := Read16Bit(data, offset);
+    archiveCount := Read16Bits(data, offset);
 
   archiveID := 0;
 
@@ -166,7 +148,7 @@ begin
     if Self.Version >= 7 then
       archiveID := archiveID + ReadBigSmart(data, offset)
     else
-      archiveID := archiveID + Read16Bit(data, offset);
+      archiveID := archiveID + Read16Bits(data, offset);
 
     Self.Archives.Value[archiveID] := new TArchive(archiveID);
   end;
@@ -175,14 +157,14 @@ begin
 
   if named then
     for archive in archives do
-      archive.HashName := Read32Bit(data, offset);
+      archive.HashName := Read32Bits(data, offset);
 
   for archive in archives do // CRCs
-    archive.CRC := Read32Bit(data, offset);
+    archive.CRC := Read32Bits(data, offset);
 
   if Self.HasChecksums() then // checksums
     for archive in archives do
-      archive.Checksum := Read32Bit(data, offset);
+      archive.Checksum := Read32Bits(data, offset);
 
   if whirlpool then
     for archive in archives do
@@ -195,13 +177,13 @@ begin
   if Self.HasLengths() then // lengths
     for archive in archives do
     begin
-      archive.CompressedLength := Read32Bit(data, offset);
-      archive.DecompressedLength := Read32Bit(data, offset);
+      archive.CompressedLength := Read32Bits(data, offset);
+      archive.DecompressedLength := Read32Bits(data, offset);
     end;
 
 
   for archive in archives do // revisions
-    archive.Revision := Read32Bit(data, offset);
+    archive.Revision := Read32Bits(data, offset);
 
 
   SetLength(fileCounts, Length(archives)); // file counts
@@ -211,7 +193,7 @@ begin
     if Self.Version >= 7 then
       fileCounts[i] := ReadBigSmart(data, offset)
     else
-      fileCounts[i] := Read16Bit(data, offset);
+      fileCounts[i] := Read16Bits(data, offset);
   end;
 
 
@@ -225,7 +207,7 @@ begin
       if Self.Version >= 7 then
         fileID := fileID + ReadBigSmart(data, offset)
       else
-        fileID := fileID + Read16Bit(data, offset);
+        fileID := fileID + Read16Bits(data, offset);
 
       archive.Files.Value[fileID] := new TFile(fileID);
     end;
@@ -242,27 +224,9 @@ begin
     for j := 0 to archive.Files.Count - 1 do
     begin
       _file := archive.Files.ValueFromIndex[j];
-      _file.HashName := Read32Bit(data, offset);
+      _file.HashName := Read32Bits(data, offset);
       archive.Files.Value[_file.ID] := _file;
     end;
-  end;
-end;
-
-procedure WriteBigSmart(var data: TByteArray; var offset: Integer; value: Integer);
-begin
-  if value < 32768 then
-  begin
-    data[offset] := value shr 8;
-    data[offset + 1] := value;
-    Inc(offset, 2);
-  end
-  else
-  begin
-    data[offset] := (value shr 24) or $80;
-    data[offset + 1] := value shr 16;
-    data[offset + 2] := value shr 8;
-    data[offset + 3] := value;
-    Inc(offset, 4);
   end;
 end;
 
@@ -345,7 +309,6 @@ begin
 
   Result[offset] := Self.Version; // Version
   Inc(offset);
-
 
   if Self.Version >= 6 then // Revision
   begin

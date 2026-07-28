@@ -1,20 +1,60 @@
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
-
-function Read32Bit(const data: TByteArray; var offset: Integer): Integer;
+function Read8Bits(const data: TByteArray; var offset: Integer): Integer;
 begin
-  Result := (data[offset] shl 24) or (data[offset+1] shl 16) or (data[offset+2] shl 8) or data[offset+3];
-  Inc(offset, 4);
+  Result := data[offset];
+  Inc(offset);
 end;
 
-function Read24Bit(const data: TByteArray; var offset: Integer): Integer;
+function Read16Bits(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := (data[offset] shl 8) or data[offset+1];
+  Inc(offset, 2);
+end;
+
+function Read24Bits(const data: TByteArray; var offset: Integer): Integer;
 begin
   Result := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
   Inc(offset, 3);
 end;
 
-function Read16Bit(const data: TByteArray; var offset: Integer): Integer;
+function Read32Bits(const data: TByteArray; var offset: Integer): Integer;
 begin
-  Result := (data[offset] shl 8) or data[offset+1];
-  Inc(offset, 2);
+  Result := (data[offset] shl 24) or (data[offset+1] shl 16) or (data[offset+2] shl 8) or data[offset+3];
+  Inc(offset, 4);
+end;
+
+function BigSmartSize(value: Integer): Integer;
+begin
+  if value < 127 then
+    Result := 1
+  else
+    Result := 2;
+end;
+
+function ReadBigSmart(const data: TByteArray; var offset: Integer): Integer;
+begin
+  if data[offset] < 128 then
+    Result := Read16Bits(data, offset)
+  else
+    Result := Read32Bits(data, offset) and $7FFFFFFF;
+end;
+
+procedure WriteBigSmart(var data: TByteArray; var offset: Integer; value: Integer);
+begin
+  if value < 32768 then
+  begin
+    data[offset] := value shr 8;
+    data[offset + 1] := value;
+    Inc(offset, 2);
+  end
+  else
+  begin
+    data[offset] := (value shr 24) or $80;
+    data[offset + 1] := value shr 16;
+    data[offset + 2] := value shr 8;
+    data[offset + 3] := value;
+    Inc(offset, 4);
+  end;
 end;
 {$R+}
+

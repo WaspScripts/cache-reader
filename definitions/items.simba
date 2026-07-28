@@ -1,46 +1,45 @@
 {$include_once ../utils/helpers.simba}
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 type
-  TItemParam = record
-    Key: Integer;
-    IsString: Boolean;
-    IntValue: Integer;
-    StrValue: String;
-  end;
-
   TItemDefinition = record
     ID: Integer;
     Name, Examine: String;
-    InventoryModel: Integer;
-    Stackable: Integer; // 0=no, 1=yes, 2=yes(alt)
-    Cost: Integer;
-    Members, GETradeable: Boolean;
-    Tradeable: Boolean; // opcode 15 sets this false explicitly
-    WearPos1, WearPos2, WearPos3: Integer;
-    MaleModel0, MaleModel1, MaleModel2, MaleOffset: Integer;
-    FemaleModel0, FemaleModel1, FemaleModel2, FemaleOffset: Integer;
+    InventoryModel, Stackable, Cost: Integer;
+    Members, GETradeable, Tradeable: Boolean;
+
+    WearPos1, WearPos2, WearPos3,
+    MaleModel0, MaleModel1, MaleModel2, MaleOffset,
+    FemaleModel0, FemaleModel1, FemaleModel2, FemaleOffset,
     MaleHeadModel, MaleHeadModel2, FemaleHeadModel, FemaleHeadModel2: Integer;
-    Zoom2D, Xan2D, Yan2D, Zan2D: Integer;
+
+    Zoom2D, Xan2D, Yan2D, Zan2D,
     XOffset2D, YOffset2D: Integer;
-    GroundActions: array [0..4] of String;
+
+    GroundActions,
     InventoryActions: array [0..4] of String;
-    Category: Integer;
-    NotedID, NotedTemplate: Integer;
-    PlaceholderID, PlaceholderTemplate: Integer;
-    BoughtId, BoughtTemplateId: Integer;
-    ResizeX, ResizeY, ResizeZ: Integer;
-    Ambient, Contrast: Integer;
-    TeamID: Integer;
-    ShiftClickDropIndex: Integer;
+
+    Category,
+    NotedID, NotedTemplate,
+    PlaceholderID, PlaceholderTemplate,
+    BoughtId, BoughtTemplateId,
+    ResizeX, ResizeY, ResizeZ,
+    Ambient, Contrast,
+    TeamID,
+    ShiftClickDropIndex,
     Weight: Integer;
-    Params: array of TItemParam;
+
+    Params: array of record
+      Key: Integer;
+      IsString: Boolean;
+      IntValue: Integer;
+      StrValue: String;
+    end;
   end;
 
 function ReadItemString(const data: TByteArray; var offset: Integer): String;
 var
   ch: Byte;
 begin
-  Result := '';
   while True do
   begin
     ch := data[offset];
@@ -51,17 +50,17 @@ begin
   end;
 end;
 
-function Read24BitSigned(const data: TByteArray; var offset: Integer): Integer;
+function ReadOffset(const data: TByteArray; var offset: Integer): Integer;
 begin
-  Result := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
-  Inc(offset, 3);
+  Result := Read16Bits(data, offset);
+  if Result > 32767 then Result -= 65536;
 end;
 
-function ParseItemDefinition(const data: TByteArray; itemId: Integer): TItemDefinition;
+function ParseItemDefinition(const data: TByteArray; itemID: Integer): TItemDefinition;
 var
   offset, opcode, i, count, paramCount: Integer;
 begin
-  Result.ID := itemId;
+  Result.ID := itemID;
   Result.Name := 'null';
   Result.Examine := '';
   Result.Stackable := 0;
@@ -76,128 +75,106 @@ begin
   Result.Zoom2D := 2000;
   Result.Weight := 0;
 
-  offset := 0;
-
   while True do
   begin
     opcode := data[offset];
     Inc(offset);
 
-    if opcode = 0 then
-      Break;
-
     case opcode of
-      1: Result.InventoryModel := Read16Bit(data, offset);
+      0: Break;
+      1: Result.InventoryModel := Read16Bits(data, offset);
       2: Result.Name := ReadItemString(data, offset);
       3: Result.Examine := ReadItemString(data, offset);
-      4: Result.Zoom2D := Read16Bit(data, offset);
-      5: Result.Xan2D := Read16Bit(data, offset);
-      6: Result.Yan2D := Read16Bit(data, offset);
-      7: begin
-           Result.XOffset2D := Read16Bit(data, offset);
-           if Result.XOffset2D > 32767 then
-             Result.XOffset2D := Result.XOffset2D - 65536;
-         end;
-      8: begin
-           Result.YOffset2D := Read16Bit(data, offset);
-           if Result.YOffset2D > 32767 then
-             Result.YOffset2D := Result.YOffset2D - 65536;
-         end;
+      4: Result.Zoom2D := Read16Bits(data, offset);
+      5: Result.Xan2D := Read16Bits(data, offset);
+      6: Result.Yan2D := Read16Bits(data, offset);
+      7: Result.XOffset2D := ReadOffset(data, offset);
+      8: Result.YOffset2D := ReadOffset(data, offset);
       9: ReadItemString(data, offset); // unknown1, discarded
       11: Result.Stackable := 1;
-      12: Result.Cost := Read32Bit(data, offset);
-      13: begin Result.WearPos1 := data[offset]; Inc(offset); end;
-      14: begin Result.WearPos2 := data[offset]; Inc(offset); end;
+      12: Result.Cost := Read32Bits(data, offset);
+      13: Result.WearPos1 := Read8Bits(data, offset);
+      14: Result.WearPos2 := Read8Bits(data, offset);
       15: Result.Tradeable := False;
       16: Result.Members := True;
       23: begin
-            Result.MaleModel0 := Read16Bit(data, offset);
-            Result.MaleOffset := data[offset]; Inc(offset);
+            Result.MaleModel0 := Read16Bits(data, offset);
+            Result.MaleOffset := Read8Bits(data, offset);
           end;
-      24: Result.MaleModel1 := Read16Bit(data, offset);
+      24: Result.MaleModel1 := Read16Bits(data, offset);
       25: begin
-            Result.FemaleModel0 := Read16Bit(data, offset);
-            Result.FemaleOffset := data[offset]; Inc(offset);
+            Result.FemaleModel0 := Read16Bits(data, offset);
+            Result.FemaleOffset := Read8Bits(data, offset);
           end;
-      26: Result.FemaleModel1 := Read16Bit(data, offset);
-      27: begin Result.WearPos3 := data[offset]; Inc(offset); end;
+      26: Result.FemaleModel1 := Read16Bits(data, offset);
+      27: Result.WearPos3 := Read8Bits(data, offset);
       30..34: Result.GroundActions[opcode - 30] := ReadItemString(data, offset);
       35..39: Result.InventoryActions[opcode - 35] := ReadItemString(data, offset);
-      40: begin
-            count := data[offset]; Inc(offset);
-            for i := 1 to count do Inc(offset, 4);
-          end;
-      41: begin
-            count := data[offset]; Inc(offset);
-            for i := 1 to count do Inc(offset, 4);
-          end;
-      42: begin Result.ShiftClickDropIndex := data[offset]; Inc(offset); end;
+      40, 41: Inc(offset, 4 * Read8Bits(data, offset));
+      42: Result.ShiftClickDropIndex := Read8Bits(data, offset);
       43: begin // subops — variable-length nested string list, skip but consume correctly
             Inc(offset); // opId byte
             while data[offset] <> 1 do // subopId+1; 0 terminates (subopId=-1)
-            begin
               ReadItemString(data, offset);
-            end;
             Inc(offset); // consume the terminator byte itself
           end;
-      44: Result.InventoryModel := Read32Bit(data, offset);
+      44: Result.InventoryModel := Read32Bits(data, offset);
       45: begin
-            Result.MaleModel0 := Read32Bit(data, offset);
-            Result.MaleOffset := data[offset]; Inc(offset);
+            Result.MaleModel0 := Read32Bits(data, offset);
+            Result.MaleOffset := Read8Bits(data, offset);
           end;
-      46: Result.MaleModel1 := Read32Bit(data, offset);
-      47: Result.MaleModel2 := Read32Bit(data, offset);
+      46: Result.MaleModel1 := Read32Bits(data, offset);
+      47: Result.MaleModel2 := Read32Bits(data, offset);
       48: begin
-            Result.FemaleModel0 := Read32Bit(data, offset);
-            Result.FemaleOffset := data[offset]; Inc(offset);
+            Result.FemaleModel0 := Read32Bits(data, offset);
+            Result.FemaleOffset := Read8Bits(data, offset);
           end;
-      49: Result.FemaleModel1 := Read32Bit(data, offset);
-      50: Result.FemaleModel2 := Read32Bit(data, offset);
-      51: Result.MaleHeadModel := Read32Bit(data, offset);
-      52: Result.MaleHeadModel2 := Read32Bit(data, offset);
-      53: Result.FemaleHeadModel := Read32Bit(data, offset);
-      54: Result.FemaleHeadModel2 := Read32Bit(data, offset);
+      49: Result.FemaleModel1 := Read32Bits(data, offset);
+      50: Result.FemaleModel2 := Read32Bits(data, offset);
+      51: Result.MaleHeadModel := Read32Bits(data, offset);
+      52: Result.MaleHeadModel2 := Read32Bits(data, offset);
+      53: Result.FemaleHeadModel := Read32Bits(data, offset);
+      54: Result.FemaleHeadModel2 := Read32Bits(data, offset);
       65: Result.GETradeable := True;
-      75: Result.Weight := Read16Bit(data, offset); // signed short in original, adjust below if needed
-      78: Result.MaleModel2 := Read16Bit(data, offset);
-      79: Result.FemaleModel2 := Read16Bit(data, offset);
-      90: Result.MaleHeadModel := Read16Bit(data, offset);
-      91: Result.FemaleHeadModel := Read16Bit(data, offset);
-      92: Result.MaleHeadModel2 := Read16Bit(data, offset);
-      93: Result.FemaleHeadModel2 := Read16Bit(data, offset);
-      94: Result.Category := Read16Bit(data, offset);
-      95: Result.Zan2D := Read16Bit(data, offset);
-      97: Result.NotedID := Read16Bit(data, offset);
-      98: Result.NotedTemplate := Read16Bit(data, offset);
-      100..109: Inc(offset, 4); // countObj+countCo pair, discarded
-      110: Result.ResizeX := Read16Bit(data, offset);
-      111: Result.ResizeY := Read16Bit(data, offset);
-      112: Result.ResizeZ := Read16Bit(data, offset);
-      113: begin Result.Ambient := data[offset]; Inc(offset); end;
-      114: begin Result.Contrast := data[offset]; Inc(offset); end;
-      115: begin Result.TeamID := data[offset]; Inc(offset); end;
-      139: Result.BoughtId := Read16Bit(data, offset);
-      140: Result.BoughtTemplateId := Read16Bit(data, offset);
-      148: Result.PlaceholderID := Read16Bit(data, offset);
-      149: Result.PlaceholderTemplate := Read16Bit(data, offset);
-      160: Result.Stackable := 2;
+      75: Result.Weight := Read16Bits(data, offset); // signed short in original, adjust below if needed
+      78: Result.MaleModel2 := Read16Bits(data, offset);
+      79: Result.FemaleModel2 := Read16Bits(data, offset);
+      90: Result.MaleHeadModel := Read16Bits(data, offset);
+      91: Result.FemaleHeadModel := Read16Bits(data, offset);
+      92: Result.MaleHeadModel2 := Read16Bits(data, offset);
+      93: Result.FemaleHeadModel2 := Read16Bits(data, offset);
+      94: Result.Category := Read16Bits(data, offset);
+      95: Result.Zan2D := Read16Bits(data, offset);
+      97: Result.NotedID := Read16Bits(data, offset);
+      98: Result.NotedTemplate := Read16Bits(data, offset);
+      100..109: Inc(offset, 4); //countObj+countCo pair, discarded
+      110: Result.ResizeX := Read16Bits(data, offset);
+      111: Result.ResizeY := Read16Bits(data, offset);
+      112: Result.ResizeZ := Read16Bits(data, offset);
+      113: Result.Ambient := Read8Bits(data, offset);
+      114: Result.Contrast := Read8Bits(data, offset);
+      115: Result.TeamID := Read8Bits(data, offset);
+      139: Result.BoughtId := Read16Bits(data, offset);
+      140: Result.BoughtTemplateId := Read16Bits(data, offset);
+      148: Result.PlaceholderID := Read16Bits(data, offset);
+      149: Result.PlaceholderTemplate := Read16Bits(data, offset);
+      160: Result.Stackable := 2; //alt version. important maybe because 1 has weight 0.
       200, 201, 202:
         begin
           WriteLn('Opcode ', opcode, ' (entity sub/conditional op) not implemented. Parsing may be corrupted from here.');
           Break;
         end;
       249: begin
-             paramCount := data[offset]; Inc(offset);
+             paramCount := Read8Bits(data, offset);
              SetLength(Result.Params, paramCount);
              for i := 0 to paramCount - 1 do
              begin
-               Result.Params[i].IsString := data[offset] = 1;
-               Inc(offset);
-               Result.Params[i].Key := Read24BitSigned(data, offset);
+               Result.Params[i].IsString := Read8Bits(data, offset) = 1;
+               Result.Params[i].Key := Read24Bits(data, offset);
                if Result.Params[i].IsString then
                  Result.Params[i].StrValue := ReadItemString(data, offset)
                else
-                 Result.Params[i].IntValue := Read32Bit(data, offset);
+                 Result.Params[i].IntValue := Read32Bits(data, offset);
              end;
            end;
     else
@@ -208,6 +185,6 @@ begin
     end;
   end;
 
-  if Result.Stackable = 1 then
+  if Result.Stackable then
     Result.Weight := 0;
 end;
