@@ -1,0 +1,155 @@
+{$include_once ../utils/helpers.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+
+type
+  TSpriteDefinition = record
+    ID, Frame,
+    OffsetX, OffsetY,
+    Width, Height,
+    MaxWidth, MaxHeight: Integer;
+
+    Pixels, Palette: TIntegerArray;
+    PixelIdx: TByteArray;
+
+    const FLAG_VERTICAL: Integer = 1;
+    const FLAG_ALPHA:    Integer = 2;
+  end;
+
+  TSpriteDefinitionArray = array of TSpriteDefinition;
+
+procedure TSpriteDefinition.Normalize();
+var
+  newIdx: TByteArray;
+  x, y, srcPos: Integer;
+begin
+  if (Self.Width = Self.MaxWidth) and (Self.Height = Self.MaxHeight) then
+    Exit;
+
+  SetLength(newIdx, Self.MaxWidth * Self.MaxHeight);
+  srcPos := 0;
+
+  for y := 0 to Self.Height - 1 do
+    for x := 0 to Self.Width - 1 do
+    begin
+      newIdx[x + (y + Self.OffsetY) * Self.MaxWidth + Self.OffsetX] := Self.PixelIdx[srcPos];
+      Inc(srcPos);
+    end;
+
+  Self.PixelIdx := newIdx;
+  Self.Width := Self.MaxWidth;
+  Self.Height := Self.MaxHeight;
+  Self.OffsetX := 0;
+  Self.OffsetY := 0;
+end;
+
+function TSpriteDefinition.Create(id: Integer; const data: TByteArray): TSpriteDefinitionArray; static;
+var
+  offset, spriteCount, width, height, paletteLength: Integer;
+  palette: TIntegerArray;
+  i, j, k, dimension, flags, index: Integer;
+  pixelIdx, pixelAlphas: TByteArray;
+  bgr: Integer;
+begin
+  offset := Length(data) - 2;
+  spriteCount := Read16Bits(data, offset);
+
+  SetLength(Result, spriteCount);
+
+  offset := Length(data) - 7 - spriteCount * 8;
+  width := Read16Bits(data, offset);
+  height := Read16Bits(data, offset);
+  paletteLength := Read8Bits(data, offset) + 1;
+
+  for i := 0 to spriteCount - 1 do
+  begin
+    Result[i].ID := id;
+    Result[i].Frame := i;
+    Result[i].MaxWidth := width;
+    Result[i].MaxHeight := height;
+  end;
+
+  for i := 0 to spriteCount - 1 do
+    Result[i].OffsetX := Read16Bits(data, offset);
+  for i := 0 to spriteCount - 1 do
+    Result[i].OffsetY := Read16Bits(data, offset);
+  for i := 0 to spriteCount - 1 do
+    Result[i].Width := Read16Bits(data, offset);
+  for i := 0 to spriteCount - 1 do
+    Result[i].Height := Read16Bits(data, offset);
+
+  offset := Length(data) - 7 - spriteCount * 8 - (paletteLength - 1) * 3;
+  SetLength(palette, paletteLength);
+
+  for i := 1 to paletteLength - 1 do
+  begin
+    bgr := Read24Bits(data, offset);
+    if bgr = 0 then
+      bgr := 1;
+    palette[i] := bgr;
+  end;
+
+  offset := 0;
+
+  for i := 0 to spriteCount - 1 do
+  begin
+    dimension := Result[i].Width * Result[i].Height;
+    SetLength(pixelIdx, dimension);
+    SetLength(pixelAlphas, dimension);
+    Result[i].Palette := palette;
+
+    flags := Read8Bits(data, offset);
+
+    if (flags and TSpriteDefinition.FLAG_VERTICAL) = 0 then
+    begin
+      for j := 0 to dimension - 1 do
+        pixelIdx[j] := Read8Bits(data, offset);
+    end
+    else
+    begin
+      for j := 0 to Result[i].Width - 1 do
+        for k := 0 to Result[i].Height - 1 do
+          pixelIdx[Result[i].Width * k + j] := Read8Bits(data, offset);
+    end;
+
+    if (flags and TSpriteDefinition.FLAG_ALPHA) <> 0 then
+    begin
+      if (flags and TSpriteDefinition.FLAG_VERTICAL) = 0 then
+      begin
+        for j := 0 to dimension - 1 do
+          pixelAlphas[j] := Read8Bits(data, offset);
+      end
+      else
+      begin
+        for j := 0 to Result[i].Width - 1 do
+          for k := 0 to Result[i].Height - 1 do
+            pixelAlphas[Result[i].Width * k + j] := Read8Bits(data, offset);
+      end;
+    end;
+
+    for j := 0 to dimension - 1 do
+      if pixelIdx[j] <> 0 then
+        pixelAlphas[j] := $FF;
+
+    Result[i].PixelIdx := pixelIdx;
+
+    SetLength(Result[i].Pixels, dimension);
+    for j := 0 to dimension - 1 do
+    begin
+      index := pixelIdx[j];
+      bgr := palette[index];
+      //ABGR which is what simba uses
+      Result[i].Pixels[j] := (pixelAlphas[j] shl 24) or bgr;
+    end;
+  end;
+end;
+
+function TSpriteDefinition.ToImage(): TImage;
+var
+  y, x, pixel: Integer;
+  bgra: TColorBGRA;
+begin
+  Result := new TImage(Self.Width, Self.Height);
+  Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);
+end;
+{$R+}
+

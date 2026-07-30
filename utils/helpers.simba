@@ -84,5 +84,14 @@ begin
   end;
   Inc(offset);
 end;
+
+function CacheString2Hash(const s: String): Integer;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 1 to Length(s) do
+    Result := Ord(s[i]) + Result * 31;
+end;
 {$R+}
 

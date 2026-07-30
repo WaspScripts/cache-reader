@@ -3,7 +3,15 @@
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
-  PCacheIndex = ^TCacheIndex;
+  ECacheIndex = enum(
+    ANIMATIONS, SKELETONS, CONFIGS, INTERFACES, SOUNDEFFECTS, MAPS, MUSIC_TRACKS,
+    MODELS, SPRITES, TEXTURES, BINARY, MUSIC_JINGLES, CLIENTSCRIPT, FONTS,
+    MUSIC_SAMPLES, MUSIC_PATCHES,
+    WORLDMAP_GEOGRAPHY=18,
+    WORLDMAP, WORLDMAP_GROUND, DBTABLEINDEX, ANIMAYAS,
+    GAMEVALS=24
+  );
+
   TCacheIndex = object
     ReferenceTable: TReferenceTable;
     ID, CRC: Integer;
@@ -19,6 +27,11 @@ begin
   Result.ReferenceTable := new TReferenceTable(id);
   Result.Cached := False;
   Result.Closed := False;
+end;
+
+function TCacheIndex.Construct(id: ECacheIndex; const data: TByteArray): TCacheIndex; static; overload;
+begin
+  Result := new TCacheIndex(Ord(id), data);
 end;
 
 function TCacheIndex.ReadArchiveSector(id: Integer; const data: TByteArray; ownerId: Integer): TArchiveSector;

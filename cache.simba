@@ -2,4 +2,6 @@
 {$include_once ./definitions/items.simba}
 {$include_once ./definitions/objects.simba}
 {$include_once ./definitions/models.simba}
+{$include_once ./definitions/sprites.simba}
+{$include_once ./definitions/fonts.simba}
 

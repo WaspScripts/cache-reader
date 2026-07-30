@@ -1,0 +1,43 @@
+{$include_once ./sprites.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+
+const
+  FONT_NAMES: TStringArray = [
+    'p11_full', 'p12_full', 'b12_full',
+    'verdana_11pt_regular', 'verdana_13pt_regular', 'verdana_15pt_regular'
+  ];
+
+type
+  TFontDefinition = record
+    HashName: Integer;
+    Advances: array [0..255] of Integer;
+    Ascent: Integer;
+    Glyphs: TSpriteDefinitionArray;
+  end;
+
+function TFontDefinition.Create(hashName: Integer; const fontData, spriteData: TByteArray): TFontDefinition; static;
+var
+  i: Integer;
+begin
+  if Length(fontData) <> 257 then
+    raise 'Font data buffer is the wrong size';
+
+  Result.HashName := hashName;
+
+  for i := 0 to 255 do
+    Result.Advances[i] := fontData[i];
+
+  Result.Ascent := fontData[256];
+
+  Result.Glyphs := TSpriteDefinition.Create(hashName, spriteData);
+end;
+
+function TFontDefinition.GetGlyphImage(charCode: Integer): TImage;
+begin
+  if (charCode < 0) or (charCode > High(Self.Glyphs)) then
+    raise 'Invalid character code: ' + ToStr(charCode);
+
+  Result := Self.Glyphs[charCode].ToImage();
+end;
+{$R+}
+

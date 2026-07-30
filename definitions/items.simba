@@ -1,6 +1,7 @@
 {$include_once ../utils/helpers.simba}
 {$include_once ./entityops.simba}
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+
 type
   TItemDefinition = record
     ID: Integer;

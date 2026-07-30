@@ -28,7 +28,7 @@ begin
   Result := Self.Archives.Keys;
 end;
 
-function TReferenceTable.GeTArchives(): TArchiveArray;
+function TReferenceTable.GetArchives(): TArchiveArray;
 begin
   Result := Self.Archives.Values;
 end;
@@ -78,21 +78,13 @@ begin
 end;
 
 
-function TReferenceTable.ToHash(const name: String): Integer;
-var
-  i: Integer;
-begin
-  for i := 1 to Length(name) do
-    Result := Result * 31 + Ord(name[i]);
-end;
-
 
 function TReferenceTable.ArchiveID(const name: String): Integer;
 var
   hash: Integer;
   archive: TArchive;
 begin
-  hash := Self.ToHash(name);
+  hash := CacheString2Hash(name);
   for archive in Self.Archives.Values do
     if archive.HashName = hash then
       Exit(archive.ID);
