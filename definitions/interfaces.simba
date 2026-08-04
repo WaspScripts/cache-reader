@@ -1,0 +1,114 @@
+{$include_once ../utils/helpers.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+
+type
+  TInterfaceDefinition = record
+    ID: Integer;
+    IfType: Integer;
+    OriginalWidth, OriginalHeight: Integer;
+    SpriteId: Integer;
+    Name: String;
+  end;
+
+function ReadSignedShort(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := Read16Bits(data, offset);
+  if Result > 32767 then
+    Result := Result - 65536;
+end;
+
+function TInterfaceDefinition.Create(id: Integer; const data: TByteArray): TInterfaceDefinition; static;
+var
+  offset, widthMode, heightMode: Integer;
+begin
+  Result.ID := id;
+
+  offset := 0;
+  Read8Bits(data, offset); // marker byte, always $FF for if3
+  Result.IfType := Read8Bits(data, offset);
+  Read16Bits(data, offset); // contentType
+  ReadSignedShort(data, offset); // originalX
+  ReadSignedShort(data, offset); // originalY
+  Result.OriginalWidth := Read16Bits(data, offset);
+
+  if Result.IfType = 9 then
+    Result.OriginalHeight := ReadSignedShort(data, offset)
+  else
+    Result.OriginalHeight := Read16Bits(data, offset);
+
+  widthMode := Read8Bits(data, offset);
+  heightMode := Read8Bits(data, offset);
+  Read8Bits(data, offset); // xPositionMode
+  Read8Bits(data, offset); // yPositionMode
+  Read16Bits(data, offset); // parentId
+  Read8Bits(data, offset); // isHidden
+
+  if Result.IfType = 0 then
+  begin
+    Read16Bits(data, offset); // scrollWidth
+    Read16Bits(data, offset); // scrollHeight
+    Read8Bits(data, offset);  // noClickThrough
+  end;
+
+  if Result.IfType = 5 then
+  begin
+    Result.SpriteId := Read32Bits(data, offset);
+    Read16Bits(data, offset); // textureId
+    Read8Bits(data, offset);  // spriteTiling
+    Read8Bits(data, offset);  // opacity
+    Read8Bits(data, offset);  // borderType
+    Read32Bits(data, offset); // shadowColor
+    Read8Bits(data, offset);  // flippedVertically
+    Read8Bits(data, offset);  // flippedHorizontally
+  end;
+
+  if Result.IfType = 6 then
+  begin
+    Read32Bits(data, offset); // modelId
+    ReadSignedShort(data, offset); // offsetX2d
+    ReadSignedShort(data, offset); // offsetY2d
+    Read16Bits(data, offset); // rotationX
+    Read16Bits(data, offset); // rotationZ
+    Read16Bits(data, offset); // rotationY
+    Read16Bits(data, offset); // modelZoom
+    Read16Bits(data, offset); // animation
+    Read8Bits(data, offset);  // orthogonal
+    Read16Bits(data, offset); // unused
+    if widthMode <> 0 then
+      Read16Bits(data, offset); // modelHeightOverride
+    if heightMode <> 0 then
+      Read16Bits(data, offset); // unused
+  end;
+
+  if Result.IfType = 4 then
+  begin
+    Read16Bits(data, offset); // fontId
+    data.ReadCString(offset); // text
+    Read8Bits(data, offset);  // lineHeight
+    Read8Bits(data, offset);  // xTextAlignment
+    Read8Bits(data, offset);  // yTextAlignment
+    Read8Bits(data, offset);  // textShadowed
+    Read32Bits(data, offset); // textColor
+  end;
+
+  if Result.IfType = 3 then
+  begin
+    Read32Bits(data, offset); // textColor
+    Read8Bits(data, offset);  // filled
+    Read8Bits(data, offset);  // opacity
+  end;
+
+  if Result.IfType = 9 then
+  begin
+    Read8Bits(data, offset);  // lineWidth
+    Read32Bits(data, offset); // textColor
+    Read8Bits(data, offset);  // lineDirection
+  end;
+
+  Read24Bits(data, offset); // clickMask
+  Result.Name := data.ReadCString(offset);
+
+  // Stop here — everything needed (Type, dimensions, SpriteId, Name) is captured.
+end;
+{$R+}
+

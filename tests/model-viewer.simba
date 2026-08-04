@@ -1,0 +1,121 @@
+{$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/main.simba}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+function TModelDefinition.ToTModel(): TModel;
+const
+  SCALE = 4 / 128;
+var
+  i: Integer;
+  x1, y1, z1, x2, y2, z2: Single;
+  vx, vy, vz: Single;
+begin
+  SetLength(Result.Vertices, Self.VertexCount);
+  for i := 0 to Self.VertexCount - 1 do
+  begin
+    vx := Self.VertexX[i] * SCALE;
+    vy := -Self.VertexZ[i] * SCALE;
+    vz := -Self.VertexY[i] * SCALE;
+    Result.Vertices[i] := [vx, vy, vz];
+  end;
+
+  SetLength(Result.Faces, Self.FaceCount);
+  for i := 0 to Self.FaceCount - 1 do
+  begin
+    Result.Faces[i].Vertices[0] := Self.FaceIndices1[i];
+    Result.Faces[i].Vertices[1] := Self.FaceIndices2[i];
+    Result.Faces[i].Vertices[2] := Self.FaceIndices3[i];
+    Result.Faces[i].Material := 0;
+  end;
+
+  Result.Materials := [];
+  Result.Alphas := [];
+
+  if Self.VertexCount = 0 then
+    Exit;
+
+  x1 := Result.Vertices[0].X; x2 := x1;
+  y1 := Result.Vertices[0].Y; y2 := y1;
+  z1 := Result.Vertices[0].Z; z2 := z1;
+
+  for i := 1 to Self.VertexCount - 1 do
+  begin
+    if Result.Vertices[i].X < x1 then x1 := Result.Vertices[i].X;
+    if Result.Vertices[i].X > x2 then x2 := Result.Vertices[i].X;
+    if Result.Vertices[i].Y < y1 then y1 := Result.Vertices[i].Y;
+    if Result.Vertices[i].Y > y2 then y2 := Result.Vertices[i].Y;
+    if Result.Vertices[i].Z < z1 then z1 := Result.Vertices[i].Z;
+    if Result.Vertices[i].Z > z2 then z2 := Result.Vertices[i].Z;
+  end;
+
+  Result.Width := x2 - x1;
+  Result.Depth := y2 - y1;
+  Result.Height := z2 - z1;
+  Result.Center := [x1 + Result.Width / 2, y1 + Result.Depth / 2, z1 + Result.Height / 2];
+end;
+
+var
+  img: TImage;
+  model: TModel;
+  tpa: TPointArray;
+  rads: Single;
+
+  cacheReader: TCacheReader;
+  modelIdx: TCacheIndex;
+  modelSector: TArchiveSector;
+  modelData: TByteArray;
+  modelDef: TModelDefinition;
+
+  idStr: String;
+  modelId, i: Integer;
+begin
+  cacheReader := new TCacheReader();
+  modelIdx := new TCacheIndex(ECacheIndex.MODELS, cacheReader);
+  modelIdx.Load();
+
+  while ShowQueryDialog('Model ID:', 'Type a model ID:', idStr) do
+  begin
+    modelId := StrToInt(idStr, 0);
+
+    modelSector := modelIdx.ReadArchiveSector(modelId, modelIdx.ID, modelIdx.IndexData);
+    if Length(modelSector.Data) = 0 then
+    begin
+      WriteLn('Could not read model sector for model ID ', modelId);
+      Continue;
+    end;
+
+    modelData := modelSector.Decompress();
+    if Length(modelData) = 0 then
+    begin
+      WriteLn('Model data decompressed to 0 bytes.');
+      Continue;
+    end;
+
+    WriteLn('Model data length: ', Length(modelData));
+
+    WriteLn('Model data length: ', Length(modelData));
+    WriteLn('Compression type: ', modelSector.CompressionType);
+    WriteLn('Last 20 bytes: ');
+
+    for i := Length(modelData) - 20 to Length(modelData) - 1 do
+      Write(modelData[i], ' ');
+    WriteLn('');
+
+    WriteLn('Model format: ', TModelDefinition.DetectFormat(modelData));
+    modelDef := TModelDefinition.Create(modelId, modelData);
+    WriteLn modelDef;
+
+    model := modelDef.ToTModel();
+
+    rads := 0;
+    while not Target.KeyPressed(EKeyCode.ESCAPE) do
+    begin
+      Options.GetZoomLevel(False);
+      img := Target.GetImage(MainScreen.Bounds);
+      tpa := Projection.ProjectModel(model, Minimap.Center.ToVec3(), rads, 0);
+      model.DrawModel(img, tpa, True);
+      img.Show();
+      rads += 0.004;
+    end;
+  end;
+end.

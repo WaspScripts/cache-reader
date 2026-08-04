@@ -1,0 +1,83 @@
+{.$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+const
+  GRID_COLS = 16;
+  PADDING = 2;
+
+var
+  cacheReader: TCacheReader;
+  fontsIdx, spritesIdx: TCacheIndex;
+  fontArchiveId, spriteArchiveId: Integer;
+  fontArchive: TArchive;
+  spriteSector: TArchiveSector;
+  spriteData: TByteArray;
+  fontDef: TFontDefinition;
+
+  i, idx, row, col: Integer;
+  maxW, maxH, cellW, cellH: Integer;
+  glyphImg, img: TImage;
+begin
+  cacheReader := new TCacheReader();
+  fontsIdx := new TCacheIndex(ECacheIndex.FONTS, cacheReader);
+  fontsIdx.Load();
+  fontsIdx.Cache();
+
+  spritesIdx := new TCacheIndex(ECacheIndex.SPRITES, cacheReader);
+  spritesIdx.Load();
+
+  while True do
+  begin
+    i := ShowComboDialog('Font viewer', 'Pick a font:', FONT_NAMES);
+    if i < 0 then
+      Break;
+
+    fontArchiveId := fontsIdx.ReferenceTable.ArchiveID(FONT_NAMES[i]);
+    if fontArchiveId = -1 then
+    begin
+      WriteLn('Font archive not found: ', FONT_NAMES[i]);
+      Continue;
+    end;
+
+    spriteArchiveId := spritesIdx.ReferenceTable.ArchiveID(FONT_NAMES[i]);
+    if spriteArchiveId = -1 then
+    begin
+      WriteLn('Sprite archive not found: ', FONT_NAMES[i]);
+      Continue;
+    end;
+
+    fontArchive := fontsIdx.ReferenceTable.Archives.Value[fontArchiveId];
+
+    spriteSector := spritesIdx.ReadArchiveSector(spriteArchiveId, spritesIdx.ID, spritesIdx.IndexData);
+    spriteData := spriteSector.Decompress();
+
+    fontDef := TFontDefinition.Create(fontArchive.HashName, fontArchive.Files.Value[0].Data, spriteData);
+
+    maxW := 0;
+    maxH := 0;
+    for idx := 0 to 255 do
+    begin
+      if fontDef.Glyphs[idx].Width > maxW then maxW := fontDef.Glyphs[idx].Width;
+      if fontDef.Glyphs[idx].Height > maxH then maxH := fontDef.Glyphs[idx].Height;
+    end;
+
+    cellW := maxW + PADDING;
+    cellH := maxH + PADDING;
+
+    img := new TImage(GRID_COLS * cellW, ((256 div GRID_COLS) + 1) * cellH);
+
+    for idx := 0 to 255 do
+    begin
+      row := idx div GRID_COLS;
+      col := idx mod GRID_COLS;
+
+      if (fontDef.Glyphs[idx].Width = 0) or (fontDef.Glyphs[idx].Height = 0) then
+        Continue;
+
+      glyphImg := fontDef.GetGlyphImage(idx);
+      img.DrawImage(glyphImg, [col * cellW, row * cellH]);
+    end;
+
+    img.Show();
+  end;
+end.

@@ -1,0 +1,27 @@
+{.$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+var
+  cacheReader: TCacheReader;
+  idx: TCacheIndex;
+  archive: TArchive;
+  itemData: TByteArray;
+  def: TItemDefinition;
+  idStr: String;
+  itemId: Integer;
+begin
+  cacheReader := new TCacheReader();
+  idx := new TCacheIndex(ECacheIndex.CONFIGS, cacheReader);
+  idx.Load();
+  idx.Cache();
+
+  archive := idx.ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+
+  while ShowQueryDialog('Item ID:', 'Type an item ID:', idStr) do
+  begin
+    itemId := StrToInt(idStr, 0);
+    itemData := archive.Files.Value[itemId].Data;
+    def := TItemDefinition.Create(itemId, itemData);
+    WriteLn def;
+  end;
+end.

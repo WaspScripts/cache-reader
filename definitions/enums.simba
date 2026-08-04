@@ -1,0 +1,82 @@
+{$include_once ../utils/helpers.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+
+type
+  TEnumDefinition = record
+    ID: Integer;
+    KeyTypeChar, ValTypeChar: Integer;
+
+    DefaultString: String;
+    DefaultInt: Integer;
+    DefaultLong: Int64;
+
+    Size: Integer;
+    Keys: TIntegerArray;
+    IntVals: TIntegerArray;
+    StringVals: TStringArray;
+    LongVals: array of Int64;
+  end;
+
+function TEnumDefinition.Create(id: Integer; const data: TByteArray): TEnumDefinition; static;
+var
+  offset, opcode, size, i: Integer;
+begin
+  if (Length(data) = 1) and (data[0] = 0) then
+    Exit; // empty/null enum
+
+  Result.ID := id;
+  Result.DefaultString := 'null';
+
+  offset := 0;
+  while True do
+  begin
+    opcode := Read8Bits(data, offset);
+    if opcode = 0 then
+      Break;
+
+    case opcode of
+      1: Result.KeyTypeChar := Read8Bits(data, offset);
+      2: Result.ValTypeChar := Read8Bits(data, offset);
+      3: Result.DefaultString := data.ReadCString(offset);
+      4: Result.DefaultInt := Read32Bits(data, offset);
+      5: begin
+           size := Read16Bits(data, offset);
+           SetLength(Result.Keys, size);
+           SetLength(Result.StringVals, size);
+           for i := 0 to size - 1 do
+           begin
+             Result.Keys[i] := Read32Bits(data, offset);
+             Result.StringVals[i] := data.ReadCString(offset);
+           end;
+           Result.Size := size;
+         end;
+      6: begin
+           size := Read16Bits(data, offset);
+           SetLength(Result.Keys, size);
+           SetLength(Result.IntVals, size);
+           for i := 0 to size - 1 do
+           begin
+             Result.Keys[i] := Read32Bits(data, offset);
+             Result.IntVals[i] := Read32Bits(data, offset);
+           end;
+           Result.Size := size;
+         end;
+      7: begin
+           size := Read16Bits(data, offset);
+           SetLength(Result.Keys, size);
+           SetLength(Result.LongVals, size);
+           for i := 0 to size - 1 do
+           begin
+             Result.Keys[i] := Read32Bits(data, offset);
+             Result.LongVals[i] := Read64Bits(data, offset);
+           end;
+           Result.Size := size;
+         end;
+      8: Result.DefaultLong := Read64Bits(data, offset);
+    else
+      WriteLn('Unrecognized enum opcode ', opcode, ' at offset ', offset - 1);
+    end;
+  end;
+end;
+{$R+}
+

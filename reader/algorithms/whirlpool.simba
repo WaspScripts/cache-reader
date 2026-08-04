@@ -35,7 +35,6 @@ var
   i, j, offset: Integer;
   word: UInt16;
   value, shifted1, shifted2, mixed1, shifted3, mixed2: UInt64;
-  s: String;
 begin
   if Self.IsSetup then
     Exit;

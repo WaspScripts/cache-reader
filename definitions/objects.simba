@@ -39,7 +39,7 @@ type
 
 function TObjectDefinition.Create(objID, revision: Integer; const data: TByteArray): TObjectDefinition; static;
 var
-  offset, opcode, i, len, paramCount: Integer;
+  offset, opcode, i, len: Integer;
   rev220SoundData: Boolean;
   varpID, configId, cfgLen, varTmp: Integer;
 begin

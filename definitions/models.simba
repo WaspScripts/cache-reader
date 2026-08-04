@@ -306,7 +306,7 @@ end;
 
 function TModelDefinition.DecodeType2(id: Integer; const data: TByteArray): TModelDefinition; static;
 var
-  c1, c2, c3, c4, c5, c6, c7: Integer; //data cursors
+  c1, c2, c3, c4, c5: Integer; //data cursors
 
   vertexCount, faceCount, textureCount,
   faceTexturedFlag, faceRenderPriorityFlag, faceTransparenciesFlag,
@@ -623,7 +623,7 @@ var
   simpleTexCount, complexTexCount, dualComplexTexCount,
   totalOffset: Integer;
 
-  offsetOfVertexFlags, offsetOfFaceRenderTypes, offsetOfFaceIndexCompressionTypes,
+  offsetOfFaceRenderTypes, offsetOfFaceIndexCompressionTypes,
   offsetOfFaceRenderPriorities, offsetOfPackedTransparencyVertexGroups,
   offsetOfFaceTransparencies, offsetOfFaceIndexData, offsetOfFaceTextures,
   offsetOfTextureCoords, offsetOfFaceColorsOrFaceTextures, offsetOfVertexXData,
@@ -634,9 +634,9 @@ var
   vertexFlags, deltaX, deltaY, deltaZ,
   previousVertexX, previousVertexY, previousVertexZ,
   faceIndexCompressionType,
-  previousIndex1, previousIndex2, previousIndex3, swapTmp, coord: Integer;
+  previousIndex1, previousIndex2, previousIndex3, swapTmp: Integer;
 
-  usesFaceRenderTypes, usesFaceTextures, usesTextureCoords, hasOffsets: Boolean;
+  usesFaceRenderTypes, usesFaceTextures, hasOffsets: Boolean;
   unusedByte: Integer;
 begin
   Result.ID := id;

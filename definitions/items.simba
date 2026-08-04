@@ -41,7 +41,7 @@ type
 
 function TItemDefinition.Create(id: Integer; const data: TByteArray): TItemDefinition; static;
 var
-  offset, opcode, i, count, paramCount, opID, subopID: Integer;
+  offset, opcode, i, paramCount, opID, subopID: Integer;
   valid: Boolean;
   text: String;
 begin

@@ -1,3 +1,7 @@
+(*
+## Archive Sector
+Types and methods to handle archive sectors.
+*)
 {$include_once ../../utils/helpers.simba}
 {$include_once ../algorithms/bzip2.simba}
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
@@ -5,15 +9,14 @@
 type
   ECacheCompression = enum(NONE, BZIP2, GZIP, LZMA);
 
-  PArchiveSector = ^TArchiveSector;
-
   TArchiveSector = object
-    BigSector: Boolean;
-    Size, Position, ID, Index, Chunk, NextPosition: Integer;
+    ID, Index, Size, Position, Chunk, NextPosition: Integer;
+    Big: Boolean;
     Data: TByteArray;
 
     CompressionType: ECacheCompression;
 
+    GetID: function (constref data: TByteArray; var offset: Integer): Integer;
     const INDEX_SIZE: Integer = 6;
     const HEADER_SIZE_SMALL: Integer = 8;
     const HEADER_SIZE_BIG: Integer = 10;
@@ -23,74 +26,53 @@ type
     const WHIRLPOOL_SIZE: Integer = 64;
   end;
 
-function TArchiveSector.Construct(bigSector: Boolean; size, position: Integer): TArchiveSector; static;
+function TArchiveSector.Construct(position, size: Integer; big: Boolean): TArchiveSector; static;
 begin
-  Result.BigSector := bigSector;
-  Result.Size := size;
   Result.Position := position;
-  Result.ID := 0;
-  Result.Index := 0;
-  Result.Chunk := 0;
-  Result.NextPosition := 0;
+  Result.Size := size;
+  Result.Big := big;
   SetLength(Result.Data, size);
   Result.CompressionType := ECacheCompression.NONE;
+  if big then
+    Result.GetID := @Read32Bits
+  else
+    Result.GetID := @Read16Bits;
 end;
 
-function TArchiveSector.Construct(bigSector: Boolean; size, position, id, index: Integer): TArchiveSector; static; overload;
-begin
-  Result := new TArchiveSector(bigSector, size, position);
-  Result.ID := id;
-  Result.Index := index;
-end;
+(*
+## ArchiveSector.Read
+```pascal
+procedure TArchiveSector.Read(constref data: TByteArray; var offset: Integer);
+```
+Reads information about the archive sector.
+`offset` should be "pointing" to the start of the sector information and will be modified to hold the
+offset of what comes next.
 
+This is not really used for anything as `CacheIndex.ReadArchiveSector` already does this
+in a slightly more efficient way but you may use it if you need and know what you are doing.
+*)
 procedure TArchiveSector.Read(constref data: TByteArray; var offset: Integer);
 begin
-  if Self.BigSector then
-    Self.ID := Read32Bits(data, offset)
-  else
-    Self.ID := Read16Bits(data, offset);
-
+  Self.ID := Self.GetID(data, offset);
   Self.Chunk := Read16Bits(data, offset);
   Self.NextPosition := Read24Bits(data, offset);
   Self.Index := Read8Bits(data, offset);
 end;
 
-function TArchiveSector.Write(): TByteArray;
-var
-  offset: Integer;
-begin
-  if Self.BigSector then
-    SetLength(Result, TArchiveSector.HEADER_SIZE_BIG)
-  else
-    SetLength(Result, TArchiveSector.HEADER_SIZE_SMALL);
 
-  if Self.BigSector then
-  begin
-    Result[offset] := (Self.ID shr 24) and $FF;
-    Result[offset+1] := (Self.ID shr 16) and $FF;
-    Result[offset+2] := (Self.ID shr 8) and $FF;
-    Result[offset+3] := Self.ID and $FF;
-    Inc(offset, 4);
-  end
-  else
-  begin
-    Result[offset] := (Self.ID shr 8) and $FF;
-    Result[offset+1] := Self.ID and $FF;
-    Inc(offset, 2);
-  end;
+(*
+## ArchiveSector.Decompress
+```pascal
+function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
+function TArchiveSector.GZipDecompress(compressed: TByteArray): TByteArray; static;
+function TArchiveSector.LzmaDecompress(compressed: TByteArray): TByteArray; static; unimplemented;
+function TArchiveSector.Decompress(): TByteArray;
+```
+The name of the functions should be self explanatory but these decompresses the `compressed` data with
+the associated algorithm.
 
-  Result[offset] := (Self.Chunk shr 8) and $FF;
-  Result[offset+1] := Self.Chunk and $FF;
-  Inc(offset, 2);
-
-  Result[offset] := (Self.Position shr 16) and $FF;
-  Result[offset+1] := (Self.Position shr 8) and $FF;
-  Result[offset+2] := Self.Position and $FF;
-  Inc(offset, 3);
-  Result[offset] := Self.Index;
-end;
-
-
+For the regular `TArchiveSector.Decompress` it just decompresses the archive.
+*)
 //function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
 //var
 //  fullData: TByteArray;
@@ -138,10 +120,11 @@ begin
   FreeMem(outData);
 end;
 
-function TArchiveSector.LzmaDecompress(compressed: TByteArray): TByteArray; static;
+function TArchiveSector.LzmaDecompress(compressed: TByteArray): TByteArray; static; unimplemented;
 begin
-
+  raise 'TArchiveSector.LzmaDecompress: Not implemented.';
 end;
+
 
 function TArchiveSector.Decompress(): TByteArray;
 var
@@ -161,6 +144,7 @@ begin
   decompressedLen := Read32Bits(Self.Data, offset);
 
   compressed := Copy(Self.Data, offset, compressedLen);
+
   case compression of
     ECacheCompression.BZIP2: Result := TArchiveSector.BZip2Decompress(compressed);
     ECacheCompression.GZIP:  Result := TArchiveSector.GZipDecompress(compressed);

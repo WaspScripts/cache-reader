@@ -129,6 +129,17 @@ begin
   Result := Self.Values[idx];
 end;
 
+property TArchiveMap.Value(key: EConfigArchive; const val: TArchive);
+begin
+  Self.Value[Ord(key), val];
+end;
+
+property TArchiveMap.Value(key: EConfigArchive): TArchive;
+begin
+  Result := Self.Value[Ord(key)];
+end;
+
+
 property TArchiveMap.ValueFromIndex(i: Integer): TArchive;
 begin
   Result := Self.Values[i];

@@ -144,9 +144,6 @@ begin
 end;
 
 function TSpriteDefinition.ToImage(): TImage;
-var
-  y, x, pixel: Integer;
-  bgra: TColorBGRA;
 begin
   Result := new TImage(Self.Width, Self.Height);
   Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);

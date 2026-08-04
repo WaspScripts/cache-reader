@@ -1,0 +1,108 @@
+{.$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+const
+  //597=small castable, 598=small grayed, 599=large castable, 600=large grayed
+  SPELL_GRAPHIC1_OFF_KEY = 599;
+
+  SPELLBOOK_NAMES: TStringArray = ['Standard', 'Ancient', 'Lunar', 'Arceuus'];
+  SPELLBOOK_ENUMS: array [0..3] of Integer = [1982, 1983, 1984, 1985];
+  GRID_COLS = 8;
+var
+  cacheReader: TCacheReader;
+  configIdx, spritesIdx: TCacheIndex;
+  enumArchive, itemArchive: TArchive;
+  enumDef: TEnumDefinition;
+  itemDef: TItemDefinition;
+  spriteSector: TArchiveSector;
+  spriteData: TByteArray;
+  sprites: TSpriteDefinitionArray;
+
+  i, j, itemId, spriteId, choice, enumId: Integer;
+  glyphImg, gridImg: TImage;
+  cellW, cellH, row, col, count: Integer;
+  spriteList: array of TSpriteDefinition;
+begin
+  cacheReader := new TCacheReader();
+
+  configIdx := new TCacheIndex(ECacheIndex.CONFIGS, cacheReader);
+  configIdx.Load();
+  configIdx.Cache();
+
+  spritesIdx := new TCacheIndex(ECacheIndex.SPRITES, cacheReader);
+  spritesIdx.Load();
+
+  enumArchive := configIdx.ReferenceTable.Archives.Value[EConfigArchive.ENUMS];
+  itemArchive := configIdx.ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+
+  while True do
+  begin
+    choice := ShowComboDialog('Spellbook viewer', 'Pick a spellbook:', SPELLBOOK_NAMES);
+    if choice < 0 then
+      Break;
+
+    enumId := SPELLBOOK_ENUMS[choice];
+    enumDef := TEnumDefinition.Create(enumId, enumArchive.Files.Value[enumId].Data);
+
+    WriteLn('Loaded ', SPELLBOOK_NAMES[choice], ' spellbook (enum ', enumId, '), ', enumDef.Size, ' spells.');
+
+    SetLength(spriteList, 0);
+
+    for i := 0 to enumDef.Size - 1 do
+    begin
+      itemId := enumDef.IntVals[i];
+      itemDef := TItemDefinition.Create(itemId, itemArchive.Files.Value[itemId].Data);
+
+      spriteId := -1;
+      for j := 0 to High(itemDef.Params) do
+        if itemDef.Params[j].Key = SPELL_GRAPHIC1_OFF_KEY then
+          spriteId := itemDef.Params[j].IntValue;
+
+      if spriteId = -1 then
+        Continue;
+
+      spriteSector := spritesIdx.ReadArchiveSector(spriteId, spritesIdx.ID, spritesIdx.IndexData);
+      if Length(spriteSector.Data) = 0 then
+        Continue;
+
+      spriteData := spriteSector.Decompress();
+      sprites := TSpriteDefinition.Create(spriteId, spriteData);
+
+      count := Length(spriteList);
+      SetLength(spriteList, count + 1);
+      spriteList[count] := sprites[0];
+    end;
+
+    if Length(spriteList) = 0 then
+    begin
+      WriteLn('No spell icons resolved for this spellbook.');
+      Continue;
+    end;
+
+    cellW := 1;
+    cellH := 1;
+    for i := 0 to High(spriteList) do
+    begin
+      if spriteList[i].Width > cellW then cellW := spriteList[i].Width;
+      if spriteList[i].Height > cellH then cellH := spriteList[i].Height;
+    end;
+    Inc(cellW, 2);
+    Inc(cellH, 2);
+
+    gridImg := new TImage(GRID_COLS * cellW, ((Length(spriteList) + GRID_COLS - 1) div GRID_COLS) * cellH);
+
+    for i := 0 to High(spriteList) do
+    begin
+      if (spriteList[i].Width = 0) or (spriteList[i].Height = 0) then
+        Continue;
+
+      row := i div GRID_COLS;
+      col := i mod GRID_COLS;
+
+      glyphImg := spriteList[i].ToImage();
+      gridImg.DrawImage(glyphImg, [col * cellW, row * cellH]);
+    end;
+
+    gridImg.Show();
+  end;
+end.

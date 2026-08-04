@@ -1,32 +1,96 @@
+(*
+# CacheReader Helpers
+Helper functions required for cache reading.
+*)
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
-function Read8Bits(const data: TByteArray; var offset: Integer): Integer;
+
+(*
+## Read N Bits
+```pascal
+function Read8Bits(constref data: TByteArray; var offset: Integer): Integer;
+function Read16Bits(constref data: TByteArray; var offset: Integer): Integer;
+function Read24Bits(constref data: TByteArray; var offset: Integer): Integer;
+function Read32Bits(constref data: TByteArray; var offset: Integer): Integer;
+function Read64Bits(constref data: TByteArray; var offset: Integer): Int64;
+```
+Reads the next `N` amount of bits from `data` as an `Integer`.
+
+`offset` is the position where we want to start reading from `data` and gets permanently modified
+so future reads continue reading from where the `integer` that was read finished.
+
+All reads are big-endian (most significant byte first) and `offset` always advances by the number
+of *bytes* consumed (N/8), landing exactly on the first byte of whatever comes next.
+
+For example, imagine the following data represented in hexadecimal and that our starting offset is 3:
+```
+Data:   4A F3 02 C1 01 06 FF AB 2A C2 DF D7 66
+Offset:          ^^
+```
+If we use `Read16Bits` the following happens:
+```
+Data:   4A F3 02 C1 01 06 FF AB 2A C2 DF D7 66
+Offset:          ¯¯ ¯¯ ^^
+```
+Our result will be `$C101` (`49409` in decimal), and `offset` will now be `5`.
+Now right after we use `Read32Bits`:
+```
+Data:   4A F3 02 C1 01 06 FF AB 2A C2 DF D7 66
+Offset:                ¯¯ ¯¯ ¯¯ ¯¯ ^^
+```
+The result will be `$06FFAB2A` (`117370154` in decimal) and our `offset`will now be at `9`.
+*)
+function Read8Bits(constref data: TByteArray; var offset: Integer): Integer;
 begin
   Result := data[offset];
   Inc(offset);
 end;
 
-function Read16Bits(const data: TByteArray; var offset: Integer): Integer;
+function Read16Bits(constref data: TByteArray; var offset: Integer): Integer;
 begin
   Result := (data[offset] shl 8) or data[offset+1];
   Inc(offset, 2);
 end;
 
-function Read16SignedBits(const data: TByteArray; var offset: Integer): Integer;
-begin
-  Result := Read16Bits(data, offset);
-  if Result > 32767 then Result -= 65536;
-end;
-
-function Read24Bits(const data: TByteArray; var offset: Integer): Integer;
+function Read24Bits(constref data: TByteArray; var offset: Integer): Integer;
 begin
   Result := (data[offset] shl 16) or (data[offset+1] shl 8) or data[offset+2];
   Inc(offset, 3);
 end;
 
-function Read32Bits(const data: TByteArray; var offset: Integer): Integer;
+function Read32Bits(constref data: TByteArray; var offset: Integer): Integer;
 begin
   Result := (data[offset] shl 24) or (data[offset+1] shl 16) or (data[offset+2] shl 8) or data[offset+3];
   Inc(offset, 4);
+end;
+
+function Read64Bits(constref data: TByteArray; var offset: Integer): Int64;
+begin
+  Result := (Int64(Read32Bits(data, offset)) and $FFFFFFFF) shl 32;
+  Result := Result or (Int64(Read32Bits(data, offset)) and $FFFFFFFF);
+end;
+
+(*
+## Read16SignedBits
+```pascal
+function Read16SignedBits(constref data: TByteArray; var offset: Integer): Integer;
+```
+Reads the next 16 bits from `data` the same way {ref}`Read16Bits` does, but reinterprets the
+result as a **signed** two's complement value instead of an unsigned one.
+
+`offset` behaves identically to the other `ReadNBits` functions: it advances by 2 bytes,
+landing on the first byte of whatever comes next.
+
+Unsigned 16-bit values range from `0` to `65535`. Signed 16-bit values represent that same
+range of bit patterns as `-32768` to `32767` instead, by treating any value `> 32767` as
+negative: subtracting `65536` from it recovers the correctly signed result.
+
+For example, the raw bytes `$FFFF` read as an unsigned `Read16Bits` give `65535`,
+but read as `Read16SignedBits` give `-1`.
+*)
+function Read16SignedBits(constref data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := Read16Bits(data, offset);
+  if Result > 32767 then Result -= 65536;
 end;
 
 function BigSmartSize(value: Integer): Integer;
@@ -37,7 +101,7 @@ begin
     Result := 2;
 end;
 
-function ReadBigSmart(const data: TByteArray; var offset: Integer): Integer;
+function ReadBigSmart(constref data: TByteArray; var offset: Integer): Integer;
 begin
   if data[offset] < 128 then
     Result := Read16Bits(data, offset)
@@ -63,7 +127,7 @@ begin
   end;
 end;
 
-function ReadShortSmart(const data: TByteArray; var offset: Integer): Integer;
+function ReadShortSmart(constref data: TByteArray; var offset: Integer): Integer;
 begin
   if data[offset] < 128 then
     Result := Read8Bits(data, offset) - 64

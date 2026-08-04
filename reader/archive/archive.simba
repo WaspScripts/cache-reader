@@ -1,9 +1,17 @@
+(*
+# Archive
+Types and methods to handle cache archives.
+*)
+
 {$include_once ./maps/filemap.simba}
 {$include_once ./archive_sector.simba}
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
-  PArchive = ^TArchive;
+    EConfigArchive = enum(
+      UNDERLAY=1, OBJ=6, ENUMS=8, NPC=9, ITEM=10, PARAM=11, ANIMATION=12, HITSPLAT=32,
+      HEALTHBAR=33, STRUCT=34, DBROW=38, DBTABLE=39, WORLDENTITY=72
+    );
 
   TArchive = object
     ID, HashName, Revision, CRC,

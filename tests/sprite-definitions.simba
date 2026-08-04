@@ -1,0 +1,46 @@
+{$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+var
+  cacheReader: TCacheReader;
+  spriteIdx: TCacheIndex;
+  spriteSector: TArchiveSector;
+  spriteData: TByteArray;
+  sprites: TSpriteDefinitionArray;
+  img: TImage;
+  idStr: String;
+  spriteId, frame: Integer;
+begin
+  cacheReader := new TCacheReader();
+  spriteIdx := new TCacheIndex(ECacheIndex.SPRITES, cacheReader);
+  spriteIdx.Load();
+
+  while ShowQueryDialog('Sprite ID:', 'Type a sprite ID:', idStr) do
+  begin
+    spriteId := StrToInt(idStr, 0);
+
+    spriteSector := spriteIdx.ReadArchiveSector(spriteId, spriteIdx.ID, spriteIdx.IndexData);
+    if Length(spriteSector.Data) = 0 then
+    begin
+      WriteLn('Could not read sprite sector for ID ', spriteId);
+      Continue;
+    end;
+
+    spriteData := spriteSector.Decompress();
+    if Length(spriteData) = 0 then
+    begin
+      WriteLn('Sprite data decompressed to 0 bytes.');
+      Continue;
+    end;
+
+    sprites := TSpriteDefinition.Create(spriteId, spriteData);
+    WriteLn('Sprite ', spriteId, ' has ', Length(sprites), ' frame(s).');
+
+    for frame := 0 to High(sprites) do
+    begin
+      WriteLn('Frame ', frame, ': ', sprites[frame].Width, 'x', sprites[frame].Height);
+      img := sprites[frame].ToImage();
+      img.Show();
+    end;
+  end;
+end.
