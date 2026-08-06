@@ -2,7 +2,6 @@
 # Cache Index
 Cache index docs
 *)
-{$include_once ./algorithms/whirlpool.simba}
 {$include_once ./reference_table.simba}
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
@@ -138,7 +137,8 @@ procedure TCacheIndex.Load();
 var
   sector: TArchiveSector;
   data: TByteArray;
-  offset: Integer;
+  i, offset: Integer;
+  digest: String;
 begin
   if (Self.ID < 0) or (Self.ID >= 255) then
     Exit;
@@ -147,9 +147,12 @@ begin
   if Length(sector.Data) = 0 then
     Exit;
 
-  Self.CRC := StrToInt('$' + HashData(EHashAlgo.CRC32, @sector.Data[0], Length(sector.Data)));
+  Self.CRC := CrcData(@sector.Data[0], Length(sector.Data));
 
-  Self.Whirlpool := Whirlpool.Generate(sector.Data);
+  digest := DigestData(EDigest.WHIRLPOOL, @sector.Data[0], Length(sector.Data));
+  SetLength(Self.Whirlpool, 64);
+  for i := 0 to 63 do
+    Self.Whirlpool[i] := StrToInt('$' + digest[i*2+1] + digest[i*2+2]);
 
   data := sector.Decompress();
 

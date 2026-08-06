@@ -3,7 +3,6 @@
 Types and methods to handle archive sectors.
 *)
 {$include_once ../../utils/helpers.simba}
-{$include_once ../algorithms/bzip2.simba}
 {$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
@@ -63,74 +62,18 @@ end;
 (*
 ## ArchiveSector.Decompress
 ```pascal
-function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
-function TArchiveSector.GZipDecompress(compressed: TByteArray): TByteArray; static;
-function TArchiveSector.LzmaDecompress(compressed: TByteArray): TByteArray; static; unimplemented;
 function TArchiveSector.Decompress(): TByteArray;
 ```
-The name of the functions should be self explanatory but these decompresses the `compressed` data with
-the associated algorithm.
-
-For the regular `TArchiveSector.Decompress` it just decompresses the archive.
+The name of the function should be self explanatory, decompresses the compressed data in the
+current archive sector.
 *)
-//function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
-//var
-//  fullData: TByteArray;
-//  outData: Pointer;
-//  outSize: Int64;
-//begin
-//  SetLength(fullData, Length(compressed) + 4);
-//  fullData[0] := Ord('B');
-//  fullData[1] := Ord('Z');
-//  fullData[2] := Ord('h');
-//  fullData[3] := Ord('1');
-//  Move(compressed[0], fullData[4], Length(compressed));
-//
-//  outData := nil;
-//  outSize := 0;
-//
-//  DecompressData(ECompressAlgo.BZIP2, @fullData[0], Length(fullData), outData, outSize);
-//  if outSize <= 0 then
-//    Exit([]);
-//
-//  SetLength(Result, outSize);
-//  Move(outData^, Result[0], outSize);
-//  FreeMem(outData);
-//end;
-
-function TArchiveSector.BZip2Decompress(compressed: TByteArray): TByteArray; static;
-begin
-  Result := BZip2FullDecompress(compressed);
-end;
-
-function TArchiveSector.GZipDecompress(compressed: TByteArray): TByteArray; static;
-var
-  outData: Pointer;
-  outSize: Int64;
-begin
-  outData := nil;
-  outSize := 0;
-
-  DecompressData(ECompressAlgo.GZ, @compressed[0], Length(compressed), outData, outSize);
-  if outSize <= 0 then
-    Exit([]);
-
-  SetLength(Result, outSize);
-  Move(outData^, Result[0], outSize);
-  FreeMem(outData);
-end;
-
-function TArchiveSector.LzmaDecompress(compressed: TByteArray): TByteArray; static; unimplemented;
-begin
-  raise 'TArchiveSector.LzmaDecompress: Not implemented.';
-end;
-
-
 function TArchiveSector.Decompress(): TByteArray;
 var
   offset, compressedLen, decompressedLen: Integer;
   compressed: TByteArray;
   compression: ECacheCompression;
+  output: Pointer;
+  size: Int64;
 begin
   compression := ECacheCompression(Read8Bits(Self.Data, offset));
   Self.CompressionType := compression;
@@ -140,15 +83,27 @@ begin
   if compression = ECacheCompression.NONE then
     Exit(Copy(Self.Data, offset, compressedLen));
 
-  //not used but we need offset to skip these 4 bits anyway.
   decompressedLen := Read32Bits(Self.Data, offset);
-
   compressed := Copy(Self.Data, offset, compressedLen);
 
   case compression of
-    ECacheCompression.BZIP2: Result := TArchiveSector.BZip2Decompress(compressed);
-    ECacheCompression.GZIP:  Result := TArchiveSector.GZipDecompress(compressed);
-    ECacheCompression.LZMA:  Result := TArchiveSector.LzmaDecompress(compressed);
+    ECacheCompression.BZIP2:
+    begin
+      compressed := [66,90,104,49] + compressed; //Add 'BZh1' bytes, the bzip2 header
+      DecompressData(ECompressAlgo.BZIP2, @compressed[0], Length(compressed), output, size);
+    end;
+    ECacheCompression.GZIP:  DecompressData(ECompressAlgo.GZ, @compressed[0], Length(compressed), output, size);
+    ECacheCompression.LZMA:  DecompressData(ECompressAlgo.LZMA, @compressed[0], Length(compressed), output, size);
   end;
+
+  if decompressedLen <> size then
+    raise 'Decompressed expected length and actual length don''t match.';
+
+  if size <= 0 then
+    Exit;
+
+  SetLength(Result, size);
+  Move(output^, Result[0], size);
+  FreeMem(output);
 end;
 {$R+}
