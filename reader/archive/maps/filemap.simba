@@ -1,5 +1,4 @@
 {$include_once ../file.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 type
   TFileMap = record
     Keys: TIntegerArray;
@@ -170,4 +169,3 @@ begin
   for j := 0 to High(Self.Keys) do
     Self.HashSlots[Self.FindSlot(Self.Keys[j])] := j + 1;
 end;
-{$R+}

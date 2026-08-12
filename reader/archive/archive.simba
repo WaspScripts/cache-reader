@@ -5,13 +5,17 @@ Types and methods to handle cache archives.
 
 {$include_once ./maps/filemap.simba}
 {$include_once ./archive_sector.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
-    EConfigArchive = enum(
-      UNDERLAY=1, OBJ=6, ENUMS=8, NPC=9, ITEM=10, PARAM=11, ANIMATION=12, HITSPLAT=32,
-      HEALTHBAR=33, STRUCT=34, DBROW=38, DBTABLE=39, WORLDENTITY=72
-    );
+  EConfigArchive = enum(
+    UNDERLAY=1, IDENTKIT=3, OVERLAY=4, INV=5,
+    OBJ=6, ENUMS=8, NPC=9, ITEM=10,
+    PARAM=11, ANIMATION=12, SPOTANIM=13, VARBIT=14, VARCLIENTSTRING=15,
+    VARPLAYER=16, VARCLIENT=19,
+    HITSPLAT=32, HEALTHBAR=33, STRUCT=34, AREA=35,
+    DBROW=38, DBTABLE=39,
+    WORLDENTITY=72
+  );
 
   TArchive = object
     ID, HashName, Revision, CRC,
@@ -280,5 +284,4 @@ begin
   else
     Result := 2;
 end;
-{$R+}
 

@@ -1,5 +1,4 @@
 {$include_once ./sprites.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 const
   FONT_NAMES: TStringArray = [
@@ -39,5 +38,4 @@ begin
 
   Result := Self.Glyphs[charCode].ToImage();
 end;
-{$R+}
 

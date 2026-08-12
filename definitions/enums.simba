@@ -1,5 +1,4 @@
 {$include_once ../utils/helpers.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   TEnumDefinition = record
@@ -78,5 +77,4 @@ begin
     end;
   end;
 end;
-{$R+}
 

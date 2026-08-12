@@ -1,7 +1,6 @@
 {$include_once ./index.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
-//Type defined in index.simba
 
+//Type defined in index.simba
 function TCacheReader.Construct(): TCacheReader; static;
 begin
   Result.Path := {$IFDEF WINDOWS}GetEnvVar('USERPROFILE'){$ELSE}GetEnvVar('HOME'){$ENDIF} +
@@ -28,4 +27,6 @@ begin
       Self.Indices[i].Load();
   end;
 end;
-{$R+}
+
+var
+  CacheReader: TCacheReader;

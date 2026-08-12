@@ -3,7 +3,6 @@
 Cache index docs
 *)
 {$include_once ./reference_table.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   ECacheIndex = enum(
@@ -52,45 +51,44 @@ end;
 
 function TCacheIndex.ReadArchiveSector(id, owner: Integer; constref data: TByteArray): TArchiveSector;
 var
-  sectorData: TByteArray;
   sector: TArchiveSector;
   offset, position, size, readBytes, chunk,
-  requiredToRead,
-  sectorHeaderSize, sectorDataSize,
-  sectorOffset, bufferOffset: Integer;
+  requiredToRead, sectorHeaderSize, sectorDataSize,
+  sectorOffset, mainLength, maxPosition: Integer;
   big: Boolean;
 begin
   offset := id * TArchiveSector.INDEX_SIZE;
-  if offset + TArchiveSector.INDEX_SIZE > Length(data) then
+  if (offset < 0) or (offset + TArchiveSector.INDEX_SIZE > Length(data)) then
     Exit;
 
-  sectorData := Copy(data, offset, TArchiveSector.INDEX_SIZE);
   big := id > 65535;
 
-  offset := 0;
-  size := Read24Bits(sectorData, offset);
-  position := Read24Bits(sectorData, offset);
+  size     := Read24Bits(data, offset);
+  position := Read24Bits(data, offset);
 
-  if (size < 0) or (position <= 0) or (position > Length(Self.MainData) div TArchiveSector.SECTOR_SIZE) then
+  mainLength  := Length(Self.MainData);
+  maxPosition := mainLength div TArchiveSector.SECTOR_SIZE;
+
+  if (size < 0) or not InRange(position, 1, maxPosition) then
     Exit;
 
   sector := new TArchiveSector(position, size, big);
 
-  readBytes := 0;
-  chunk := 0;
-
   if big then
   begin
     sectorHeaderSize := TArchiveSector.HEADER_SIZE_BIG;
-    sectorDataSize := TArchiveSector.DATA_SIZE_BIG;
+    sectorDataSize   := TArchiveSector.DATA_SIZE_BIG;
   end
   else
   begin
     sectorHeaderSize := TArchiveSector.HEADER_SIZE_SMALL;
-    sectorDataSize := TArchiveSector.DATA_SIZE_SMALL;
+    sectorDataSize   := TArchiveSector.DATA_SIZE_SMALL;
   end;
 
   SetLength(sector.Data, size);
+
+  readBytes := 0;
+  chunk     := 0;
 
   while readBytes < size do
   begin
@@ -100,30 +98,28 @@ begin
     requiredToRead := Min(size - readBytes, sectorDataSize);
 
     sectorOffset := sector.Position * TArchiveSector.SECTOR_SIZE;
-    if sectorOffset + sectorHeaderSize + requiredToRead > Length(Self.MainData) then
+    if sectorOffset + sectorHeaderSize + requiredToRead > mainLength then
       Exit;
 
-    sectorData := Copy(Self.MainData, sectorOffset, sectorHeaderSize + requiredToRead);
+    offset := sectorOffset;
 
-    bufferOffset := 0;
-
-    sector.ID := sector.GetID(sectorData, bufferOffset);
+    sector.ID := sector.GetID(Self.MainData, offset);
     if sector.ID <> id then
       Exit;
 
-    sector.Chunk := Read16Bits(sectorData, bufferOffset);
+    sector.Chunk := Read16Bits(Self.MainData, offset);
     if sector.Chunk <> chunk then
       Exit;
 
-    sector.NextPosition := Read24Bits(sectorData, bufferOffset);
-    if (sector.NextPosition < 0) or (sector.NextPosition > Length(Self.MainData) div TArchiveSector.SECTOR_SIZE) then
+    sector.NextPosition := Read24Bits(Self.MainData, offset);
+    if (sector.NextPosition < 0) or (sector.NextPosition > maxPosition) then
       Exit;
 
-    sector.Index := Read8Bits(sectorData, bufferOffset);
+    sector.Index := Read8Bits(Self.MainData, offset);
     if owner <> sector.Index then
       Exit;
 
-    Move(sectorData[sectorHeaderSize], sector.Data[readBytes], requiredToRead);
+    Move(Self.MainData[sectorOffset + sectorHeaderSize], sector.Data[readBytes], requiredToRead);
     Inc(readBytes, requiredToRead);
 
     sector.Position := sector.NextPosition;
@@ -134,13 +130,22 @@ begin
 end;
 
 procedure TCacheIndex.Load();
+  function _CharToHex(c: Char): Integer;
+  begin
+    case c of
+      '0'..'9': Result := Ord(c) - Ord('0');
+      'a'..'f': Result := Ord(c) - Ord('a') + 10;
+      'A'..'F': Result := Ord(c) - Ord('A') + 10;
+      else      Result := 0;
+    end;
+  end;
 var
   sector: TArchiveSector;
   data: TByteArray;
   i, offset: Integer;
   digest: String;
 begin
-  if (Self.ID < 0) or (Self.ID >= 255) then
+  if not InRange(Self.ID, 1, 255) then
     Exit;
 
   sector := Self.ReadArchiveSector(Self.ID, 255, Self.Index255);
@@ -150,9 +155,17 @@ begin
   Self.CRC := CrcData(@sector.Data[0], Length(sector.Data));
 
   digest := DigestData(EDigest.WHIRLPOOL, @sector.Data[0], Length(sector.Data));
-  SetLength(Self.Whirlpool, 64);
-  for i := 0 to 63 do
-    Self.Whirlpool[i] := StrToInt('$' + digest[i*2+1] + digest[i*2+2]);
+
+  SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
+  if Length(digest) < TArchiveSector.WHIRLPOOL_SIZE * 2 then
+    raise 'Something is wrong with whirlpool digest';
+
+  SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
+  if Length(digest) < TArchiveSector.WHIRLPOOL_SIZE * 2 then
+    raise 'Something is wrong with whirlpool digest';
+
+  for i := 0 to TArchiveSector.WHIRLPOOL_SIZE - 1 do
+    Self.Whirlpool[i] := (_CharToHex(digest[i*2+1]) shl 4) or _CharToHex(digest[i*2+2]);
 
   data := sector.Decompress();
 
@@ -232,6 +245,7 @@ begin
   Self.CRC := 0;
   SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
   FillMem(Self.Whirlpool[0], TArchiveSector.WHIRLPOOL_SIZE, 0);
+  Self.Cached := False;
 end;
 
 function TCacheIndex.FlaggedArchives(): TArchiveArray;
@@ -239,19 +253,16 @@ var
   archive: TArchive;
   count: Integer;
 begin
-  SetLength(Result, Self.ReferenceTable.Archives.Count());
+  SetLength(Result, Self.ReferenceTable.Archives.Count);
   count := 0;
 
   for archive in Self.ReferenceTable.Archives.Values do
-  begin
     if archive.NeedUpdate then
     begin
       Result[count] := archive;
       Inc(count);
     end;
-  end;
 
   SetLength(Result, count);
 end;
-{$R+}
 

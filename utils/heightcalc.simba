@@ -1,0 +1,98 @@
+type
+  THeightCalc = record
+    Sin, Cos: array [0..2047] of Integer;
+    IsSetup: Boolean;
+  end;
+
+procedure THeightCalc.Setup();
+var
+  i: Integer;
+  rads: Double;
+begin
+  if Self.IsSetup then
+    Exit;
+
+  rads := PI/1024;
+
+  for i := 0 to 2047 do
+  begin
+    Self.Sin[i] := Trunc(65536 * Sin(i * rads));
+    Self.Cos[i] := Trunc(65536 * Cos(i * rads));
+  end;
+
+  Self.IsSetup := True;
+end;
+
+function THeightCalc.Noise(x, y: Integer): Integer;
+var
+  n: Integer;
+  hash: Integer;
+begin
+  n := (x + y * 57);
+  n := n xor (n shl 13);
+
+  //idk where these numbers come from but this looks like some kind of polynomial hash
+  hash := (n * n * $3D73 + $C0AE5) + $5208DD0D;
+  //High(Int32) = $7FFFFFFF
+  Result := ((n * hash) and $7FFFFFFF) shr 19 and $FF;
+end;
+
+function THeightCalc.SmoothedNoise(x, y: Integer): Integer;
+var
+  corners, sides, center: Integer;
+begin
+  corners := Self.Noise(x - 1, y - 1) + Self.Noise(x + 1, y - 1) +
+             Self.Noise(x - 1, y + 1) + Self.Noise(x + 1, y + 1);
+
+  sides :=   Self.Noise(x - 1, y) + Self.Noise(x + 1, y) +
+             Self.Noise(x, y - 1) + Self.Noise(x, y + 1);
+
+  center := Self.Noise(x, y);
+  Result := (center div 4) + (sides div 8) + (corners div 16);
+end;
+
+function THeightCalc.Interpolate(a, b, x, y: Integer): Integer;
+var
+  f: Integer;
+begin
+  Self.Setup();
+  f := (65536 - Self.Cos[1024 * x div y]) shr 1;
+  Result := ((f * b) shr 16) + ((a * (65536 - f)) shr 16);
+end;
+
+function THeightCalc.InterpolateNoise(x, y, frequency: Integer): Integer;
+var
+  intX, fracX, intY, fracY,
+  v1, v2, v3, v4, i1, i2: Integer;
+begin
+  intX := x div frequency;
+  fracX := x and (frequency - 1);
+  intY := y div frequency;
+  fracY := y and (frequency - 1);
+
+  v1 := Self.SmoothedNoise(intX, intY);
+  v2 := Self.SmoothedNoise(intX + 1, intY);
+  v3 := Self.SmoothedNoise(intX, intY + 1);
+  v4 := Self.SmoothedNoise(intX + 1, intY + 1);
+
+  i1 := Self.Interpolate(v1, v2, fracX, frequency);
+  i2 := Self.Interpolate(v3, v4, fracX, frequency);
+  Result := Self.Interpolate(i1, i2, fracY, frequency);
+end;
+
+function THeightCalc.Calculate(x, y: Integer): Integer;
+var
+  n: Integer;
+begin
+  n := Self.InterpolateNoise(x + 45365, y + 91923, 4) - 128 +
+       ((Self.InterpolateNoise(10294 + x, y + 37821, 2) - 128) shr 1) +
+       ((Self.InterpolateNoise(x, y, 1) - 128) shr 2);
+
+  Result := 35 + Trunc(n * 0.3);
+
+
+  Result := Min(Max(Result, 10), 60);
+end;
+
+var
+  HeightCalc: THeightCalc;

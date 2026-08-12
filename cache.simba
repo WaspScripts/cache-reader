@@ -2,6 +2,7 @@
 # CacheReader
 Suite of tools to read the cache files of a popular MMORPG
 *)
+{$IFNDEF ENABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 {$include_once ./reader/reader.simba}
 {$include_once ./definitions/items.simba}
@@ -12,3 +13,7 @@ Suite of tools to read the cache files of a popular MMORPG
 {$include_once ./definitions/enums.simba}
 {$include_once ./definitions/interfaces.simba}
 
+begin
+  ColorUtils.Setup();
+end;
+{$R+}

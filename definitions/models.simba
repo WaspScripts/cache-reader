@@ -1,5 +1,4 @@
 {$include_once ../utils/helpers.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   TModelDefinition = record
@@ -943,4 +942,4 @@ begin
     3: Result := TModelDefinition.DecodeType3(id, data);
   end;
 end;
-{$R+}
+

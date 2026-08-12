@@ -1,5 +1,4 @@
 {$include_once ../archive.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   TArchiveMap = record
@@ -145,7 +144,7 @@ begin
   Result := Self.Values[i];
 end;
 
-function TArchiveMap.Count(): Integer;
+property TArchiveMap.Count: Integer;
 begin
   Result := Length(Self.Keys);
 end;
@@ -174,5 +173,4 @@ begin
   for j := 0 to High(Self.Keys) do
     Self.HashSlots[Self.FindSlot(Self.Keys[j])] := j + 1;
 end;
-{$R+}
 

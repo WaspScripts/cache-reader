@@ -3,7 +3,6 @@
 Types and methods to handle archive sectors.
 *)
 {$include_once ../../utils/helpers.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   ECacheCompression = enum(NONE, BZIP2, GZIP, LZMA);
@@ -106,4 +105,4 @@ begin
   Move(output^, Result[0], size);
   FreeMem(output);
 end;
-{$R+}
+

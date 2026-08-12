@@ -1,5 +1,4 @@
 {$include_once ../utils/helpers.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   TInterfaceDefinition = record
@@ -110,5 +109,4 @@ begin
 
   // Stop here — everything needed (Type, dimensions, SpriteId, Name) is captured.
 end;
-{$R+}
 

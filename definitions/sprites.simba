@@ -1,5 +1,4 @@
 {$include_once ../utils/helpers.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   TSpriteDefinition = record
@@ -148,5 +147,4 @@ begin
   Result := new TImage(Self.Width, Self.Height);
   Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);
 end;
-{$R+}
 

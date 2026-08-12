@@ -1,5 +1,4 @@
 {$include_once ./archive/maps/archivemap.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   TReferenceTable = object
@@ -38,7 +37,7 @@ function TReferenceTable.NextID(): Integer;
 var
   count: Integer;
 begin
-  count := Self.Archives.Count();
+  count := Self.Archives.Count;
   if count = 0 then
     Exit(0);
 
@@ -173,10 +172,8 @@ begin
       archive.DecompressedLength := Read32Bits(data, offset);
     end;
 
-
   for archive in archives do // revisions
     archive.Revision := Read32Bits(data, offset);
-
 
   SetLength(fileCounts, Length(archives)); // file counts
 
@@ -187,7 +184,6 @@ begin
     else
       fileCounts[i] := Read16Bits(data, offset);
   end;
-
 
   for i := 0 to High(archives) do // file IDs
   begin
@@ -207,7 +203,6 @@ begin
 
   if not named then
     Exit;
-
 
   for i := 0 to High(archives) do // File name hashes
   begin
@@ -487,5 +482,4 @@ begin
   Self.Archives.DeleteIndex(i);
   Result := True;
 end;
-{$R+}
 

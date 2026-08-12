@@ -1,5 +1,3 @@
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
-
 type
   TFile = object
     ID, HashName: Integer;
@@ -34,4 +32,3 @@ begin
   Result.Data := Copy(other.Data);
   Result.HashName := other.HashName;
 end;
-{$R+}
