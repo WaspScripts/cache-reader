@@ -60,8 +60,6 @@ var
   tpa: TPointArray;
   rads: Single;
 
-  cacheReader: TCacheReader;
-  modelIdx: TCacheIndex;
   modelSector: TArchiveSector;
   modelData: TByteArray;
   modelDef: TModelDefinition;
@@ -69,15 +67,13 @@ var
   idStr: String;
   modelId, i: Integer;
 begin
-  cacheReader := new TCacheReader();
-  modelIdx := new TCacheIndex(ECacheIndex.MODELS, cacheReader);
-  modelIdx.Load();
+  CacheReader := TCacheReader.Create();
 
   while ShowQueryDialog('Model ID:', 'Type a model ID:', idStr) do
   begin
     modelId := StrToInt(idStr, 0);
 
-    modelSector := modelIdx.ReadArchiveSector(modelId, modelIdx.ID, modelIdx.IndexData);
+    modelSector := CacheReader.Indices[ECacheIndex.MODELS].ReadArchiveSector(modelId, modelIdx.ID, modelIdx.IndexData);
     if Length(modelSector.Data) = 0 then
     begin
       WriteLn('Could not read model sector for model ID ', modelId);

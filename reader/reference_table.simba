@@ -1,20 +1,15 @@
 {$include_once ./archive/maps/archivemap.simba}
 
 type
-  TReferenceTable = object
+  TReferenceTable = record
     ID, Revision, Version, Mask: Integer;
     NeedUpdate: Boolean;
     Archives: TArchiveMap;
   end;
 
-function TReferenceTable.Construct(id: Integer): TReferenceTable; static;
+function TReferenceTable.Create(id: Integer): TReferenceTable; static;
 begin
   Result.ID := id;
-end;
-
-property TReferenceTable.Get(id: Integer): TArchive;
-begin
-  Result := Self.Archives.Value[id];
 end;
 
 function TReferenceTable.Contains(id: Integer): Boolean;
@@ -22,41 +17,9 @@ begin
   Result := Self.Archives.Exists(id);
 end;
 
-function TReferenceTable.ArchiveIds(): TIntegerArray;
-begin
-  Result := Self.Archives.Keys;
-end;
-
-function TReferenceTable.GetArchives(): TArchiveArray;
-begin
-  Result := Self.Archives.Values;
-end;
 
 
-function TReferenceTable.NextID(): Integer;
-var
-  count: Integer;
-begin
-  count := Self.Archives.Count;
-  if count = 0 then
-    Exit(0);
-
-  Result := Self.Archives.ValueFromIndex[count-1].ID + 1;
-end;
-
-
-procedure TReferenceTable.FlagMask(flag: Integer);
-begin
-  Self.Mask := Self.Mask or flag;
-end;
-
-procedure TReferenceTable.UnFlagMask(flag: Integer);
-begin
-  Self.Mask := Self.Mask and not flag;
-end;
-
-
-function TReferenceTable.IsNamed(): Boolean;
+function TReferenceTable.HasName(): Boolean;
 begin
   Result := (Self.Mask and $1) <> 0;
 end;
@@ -77,40 +40,13 @@ begin
 end;
 
 
-
-function TReferenceTable.ArchiveID(const name: String): Integer;
-var
-  hash: Integer;
-  archive: TArchive;
-begin
-  hash := CacheString2Hash(name);
-  for archive in Self.Archives.Values do
-    if archive.HashName = hash then
-      Exit(archive.ID);
-  Result := -1;
-end;
-
-function TReferenceTable.CopyArchives(): TArchiveArray;
-var
-  archives: TArchiveArray;
-  i: Integer;
-begin
-  archives := Self.Archives.Values;
-  SetLength(Result, Length(archives));
-  for i := 0 to High(archives) do
-    Result[i] := new TArchive(archives[i]);
-end;
-
-
 procedure TReferenceTable.Read(const data: TByteArray; var offset: Integer);
 var
-  named, whirlpool: Boolean;
-  archiveCount, archiveID, fileID: Integer;
-  archive: TArchive;
+  named: Boolean;
+  i, j, count, id: Integer;
   archives: TArchiveArray;
   fileCounts: TIntegerArray;
-  i, j: Integer;
-  _file: TFile;
+  _ReadFunc: function (constref data: TByteArray; var offset: Integer): Integer;
 begin
   Self.Version := Read8Bits(data, offset);
 
@@ -124,362 +60,83 @@ begin
 
   Self.Mask := Read8Bits(data, offset);
 
-  named := (Self.Mask and $1) <> 0;
-  whirlpool := (Self.Mask and $2) <> 0;
+  named := Self.HasName();
 
   if Self.Version >= 7 then
-    archiveCount := ReadBigSmart(data, offset)
+    _ReadFunc := @ReadBigSmart
   else
-    archiveCount := Read16Bits(data, offset);
+    _ReadFunc := @Read16Bits;
 
-  archiveID := 0;
+  count := _ReadFunc(data, offset);
 
-  for i := 0 to archiveCount - 1 do
+  for i := 0 to count - 1 do
   begin
-    if Self.Version >= 7 then
-      archiveID := archiveID + ReadBigSmart(data, offset)
-    else
-      archiveID := archiveID + Read16Bits(data, offset);
-
-    Self.Archives.Value[archiveID] := new TArchive(archiveID);
+    id += _ReadFunc(data, offset);
+    Self.Archives.Value[id] := TArchive.Create(id);
   end;
 
   archives := Self.Archives.Values;
 
   if named then
-    for archive in archives do
-      archive.HashName := Read32Bits(data, offset);
+    for i := 0 to High(archives) do
+      archives[i].HashName := Read32Bits(data, offset);
 
-  for archive in archives do // CRCs
-    archive.CRC := Read32Bits(data, offset);
+  for i := 0 to High(archives) do
+    archives[i].CRC := Read32Bits(data, offset);
 
-  if Self.HasChecksums() then // checksums
-    for archive in archives do
-      archive.Checksum := Read32Bits(data, offset);
+  if Self.HasChecksums() then
+    for i := 0 to High(archives) do
+      archives[i].Checksum := Read32Bits(data, offset);
 
-  if whirlpool then
-    for archive in archives do
+  if Self.HasWhirlpool() then
+    for i := 0 to High(archives) do
     begin
-      SetLength(archive.Whirlpool, 64);
-      Move(data[offset], archive.Whirlpool[0], 64);
+      SetLength(archives[i].Whirlpool, 64);
+      Move(data[offset], archives[i].Whirlpool[0], 64);
       Inc(offset, 64);
     end;
 
-  if Self.HasLengths() then // lengths
-    for archive in archives do
+  if Self.HasLengths() then
+    for i := 0 to High(archives) do
     begin
-      archive.CompressedLength := Read32Bits(data, offset);
-      archive.DecompressedLength := Read32Bits(data, offset);
+      archives[i].CompressedLength := Read32Bits(data, offset);
+      archives[i].DecompressedLength := Read32Bits(data, offset);
     end;
 
-  for archive in archives do // revisions
-    archive.Revision := Read32Bits(data, offset);
+  for i := 0 to High(archives) do
+    archives[i].Revision := Read32Bits(data, offset);
 
-  SetLength(fileCounts, Length(archives)); // file counts
+  SetLength(fileCounts, Self.Archives.Count);
+  for i := 0 to High(archives) do
+    fileCounts[i] := _ReadFunc(data, offset);
 
   for i := 0 to High(archives) do
   begin
-    if Self.Version >= 7 then
-      fileCounts[i] := ReadBigSmart(data, offset)
-    else
-      fileCounts[i] := Read16Bits(data, offset);
-  end;
-
-  for i := 0 to High(archives) do // file IDs
-  begin
-    archive := archives[i];
-    fileID := 0;
-
+    id := 0;
     for j := 0 to fileCounts[i] - 1 do
     begin
-      if Self.Version >= 7 then
-        fileID := fileID + ReadBigSmart(data, offset)
-      else
-        fileID := fileID + Read16Bits(data, offset);
-
-      archive.Files.Value[fileID] := new TFile(fileID);
+      id += _ReadFunc(data, offset);
+      archives[i].Files.Value[id] := TFile.Create(id);
     end;
   end;
 
   if not named then
     Exit;
 
-  for i := 0 to High(archives) do // File name hashes
-  begin
-    archive := archives[i];
-
-    for j := 0 to archive.Files.Count() - 1 do
-    begin
-      _file := archive.Files.ValueFromIndex[j];
-      _file.HashName := Read32Bits(data, offset);
-      archive.Files.Value[_file.ID] := _file;
-    end;
-  end;
+  for i := 0 to High(archives) do
+    for j := 0 to archives[i].Files.Count - 1 do
+      archives[i].Files.Values[j].HashName := Read32Bits(data, offset);
 end;
 
-function TReferenceTable.Write(): TByteArray;
+function TReferenceTable.ArchiveID(const name: String): Integer;
 var
-  archives: TArchiveArray;
+  hash: Integer;
   archive: TArchive;
-  fileIDs: TIntegerArray;
-  offset, i, j, totalSize, delta: Integer;
 begin
-  archives := Self.Archives.Values;
-
-  totalSize := 1; // version
-
-  if Self.Version >= 6 then
-    Inc(totalSize, 4);
-
-  Inc(totalSize, 1); // mask
-
-  // archive count
-  if Self.Version >= 7 then
-    Inc(totalSize, BigSmartSize(Length(archives)))
-  else
-    Inc(totalSize, 2);
-
-  // archive IDs (delta encoded)
-  delta := 0;
-  for archive in archives do
-  begin
-    if Self.Version >= 7 then
-      Inc(totalSize, BigSmartSize(archive.ID - delta))
-    else
-      Inc(totalSize, 2);
-    delta := archive.ID;
-  end;
-
-  if Self.IsNamed() then
-    Inc(totalSize, Length(archives) * 4);
-
-  Inc(totalSize, Length(archives) * 4); // CRCs
-
-  if Self.HasChecksums() then
-    Inc(totalSize, Length(archives) * 4);
-
-  if Self.HasWhirlpool() then
-    Inc(totalSize, Length(archives) * 64);
-
-  if Self.HasLengths() then
-    Inc(totalSize, Length(archives) * 8);
-
-  Inc(totalSize, Length(archives) * 4); // Revisions
-
-  for archive in archives do
-  begin
-    // file count
-    if Self.Version >= 7 then
-      Inc(totalSize, BigSmartSize(archive.Files.Count()))
-    else
-      Inc(totalSize, 2);
-
-    // file IDs (delta encoded)
-    fileIDs := archive.FileIDs();
-    delta := 0;
-    for i := 0 to High(fileIDs) do
-    begin
-      if Self.Version >= 7 then
-        Inc(totalSize, BigSmartSize(fileIDs[i] - delta))
-      else
-        Inc(totalSize, 2);
-      delta := fileIDs[i];
-    end;
-
-    if Self.IsNamed() then
-      Inc(totalSize, archive.Files.Count() * 4);
-  end;
-
-  SetLength(Result, totalSize);
-  offset := 0;
-
-
-  Result[offset] := Self.Version; // Version
-  Inc(offset);
-
-  if Self.Version >= 6 then // Revision
-  begin
-    Result[offset] := Self.Revision shr 24;
-    Result[offset+1] := Self.Revision shr 16;
-    Result[offset+2] := Self.Revision shr 8;
-    Result[offset+3] := Self.Revision;
-    Inc(offset, 4);
-  end;
-
-
-  Result[offset] := Self.Mask; // Mask
-  Inc(offset);
-
-  // Archive count
-  if Self.Version >= 7 then
-    WriteBigSmart(Result, offset, Length(archives))
-  else
-  begin
-    Result[offset] := Length(archives) shr 8;
-    Result[offset+1] := Length(archives);
-    Inc(offset, 2);
-  end;
-
-  // Archive IDs (delta encoded)
-  delta := 0;
-  for archive in archives do
-  begin
-    if Self.Version >= 7 then
-      WriteBigSmart(Result, offset, archive.ID - delta)
-    else
-    begin
-      Result[offset] := (archive.ID - delta) shr 8;
-      Result[offset+1] := (archive.ID - delta);
-      Inc(offset, 2);
-    end;
-    delta := archive.ID;
-  end;
-
-  if Self.IsNamed() then
-    for archive in archives do
-    begin
-      Result[offset] := archive.HashName shr 24;
-      Result[offset+1] := archive.HashName shr 16;
-      Result[offset+2] := archive.HashName shr 8;
-      Result[offset+3] := archive.HashName;
-      Inc(offset, 4);
-    end;
-
-  // CRCs
-  for archive in archives do
-  begin
-    Result[offset] := archive.CRC shr 24;
-    Result[offset+1] := archive.CRC shr 16;
-    Result[offset+2] := archive.CRC shr 8;
-    Result[offset+3] := archive.CRC;
-    Inc(offset, 4);
-  end;
-
-  // Checksums
-  if Self.HasChecksums() then
-    for archive in archives do
-    begin
-      Result[offset] := archive.Checksum shr 24;
-      Result[offset+1] := archive.Checksum shr 16;
-      Result[offset+2] := archive.Checksum shr 8;
-      Result[offset+3] := archive.Checksum;
-      Inc(offset, 4);
-    end;
-
-  // Whirlpool
-  if Self.HasWhirlpool() then
-    for archive in archives do
-    begin
-      if Length(archive.Whirlpool) > 0 then
-        Move(archive.Whirlpool[0], Result[offset], 64);
-      Inc(offset, 64);
-    end;
-
-  // Lengths
-  if Self.HasLengths() then
-    for archive in archives do
-    begin
-      Result[offset] := archive.CompressedLength shr 24;
-      Result[offset+1] := archive.CompressedLength shr 16;
-      Result[offset+2] := archive.CompressedLength shr 8;
-      Result[offset+3] := archive.CompressedLength;
-      Inc(offset, 4);
-
-      Result[offset] := archive.DecompressedLength shr 24;
-      Result[offset+1] := archive.DecompressedLength shr 16;
-      Result[offset+2] := archive.DecompressedLength shr 8;
-      Result[offset+3] := archive.DecompressedLength;
-      Inc(offset, 4);
-    end;
-
-  // Revisions
-  for archive in archives do
-  begin
-    Result[offset] := archive.Revision shr 24;
-    Result[offset+1] := archive.Revision shr 16;
-    Result[offset+2] := archive.Revision shr 8;
-    Result[offset+3] := archive.Revision;
-    Inc(offset, 4);
-  end;
-
-  // File counts
-  for archive in archives do
-    if Self.Version >= 7 then
-      WriteBigSmart(Result, offset, archive.Files.Count())
-    else
-    begin
-      Result[offset] := archive.Files.Count() shr 8;
-      Result[offset+1] := archive.Files.Count();
-      Inc(offset, 2);
-    end;
-
-  // File IDs (delta encoded)
-  for archive in archives do
-  begin
-    fileIDs := archive.FileIDs();
-    delta := 0;
-
-    for i := 0 to High(fileIDs) do
-    begin
-      if Self.Version >= 7 then
-        WriteBigSmart(Result, offset, fileIDs[i] - delta)
-      else
-      begin
-        Result[offset] := (fileIDs[i] - delta) shr 8;
-        Result[offset+1] := (fileIDs[i] - delta);
-        Inc(offset, 2);
-      end;
-      delta := fileIDs[i];
-    end;
-  end;
-
-  // File name hashes
-  if Self.IsNamed() then
-    for archive in archives do
-      for j := 0 to archive.Files.Count()-1 do
-      begin
-        Result[offset] := archive.Files.ValueFromIndex[j].HashName shr 24;
-        Result[offset+1] := archive.Files.ValueFromIndex[j].HashName shr 16;
-        Result[offset+2] := archive.Files.ValueFromIndex[j].HashName shr 8;
-        Result[offset+3] := archive.Files.ValueFromIndex[j].HashName;
-        Inc(offset, 4);
-      end;
-end;
-
-function TReferenceTable.Add(id: Integer; hashName: Integer = -1): TArchive;
-var
-  i: Integer;
-begin
-  i := Self.Archives.IndexOf(id);
-
-  if i > -1 then
-  begin
-    Result := Self.Archives.ValueFromIndex[i];
-
-    if hashName <> -1 then
-      Result.HashName := hashName;
-
-    Exit;
-  end;
-
-  Result := new TArchive(id);
-
-  if hashName <> -1 then
-    Result.HashName := hashName;
-
-  Self.Archives.Value[id] := Result;
-  Self.NeedUpdate := True;
-end;
-
-function TReferenceTable.Remove(id: Integer): Boolean;
-var
-  i: Integer;
-begin
-  i := Self.Archives.IndexOf(id);
-  if i < 0 then
-    Exit;
-
-  Self.Archives.DeleteIndex(i);
-  Result := True;
+  hash := CacheString2Hash(name);
+  for archive in Self.Archives.Values do
+    if archive.HashName = hash then
+      Exit(archive.ID);
+  Result := -1;
 end;
 

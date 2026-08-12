@@ -6,25 +6,17 @@ const
   PADDING = 2;
 
 var
-  cacheReader: TCacheReader;
-  fontsIdx, spritesIdx: TCacheIndex;
   fontArchiveId, spriteArchiveId: Integer;
   fontArchive: TArchive;
   spriteSector: TArchiveSector;
   spriteData: TByteArray;
   fontDef: TFontDefinition;
-
   i, idx, row, col: Integer;
   maxW, maxH, cellW, cellH: Integer;
   glyphImg, img: TImage;
 begin
-  cacheReader := new TCacheReader();
-  fontsIdx := new TCacheIndex(ECacheIndex.FONTS, cacheReader);
-  fontsIdx.Load();
-  fontsIdx.Cache();
-
-  spritesIdx := new TCacheIndex(ECacheIndex.SPRITES, cacheReader);
-  spritesIdx.Load();
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.FONTS].Cache();
 
   while True do
   begin
@@ -32,23 +24,25 @@ begin
     if i < 0 then
       Break;
 
-    fontArchiveId := fontsIdx.ReferenceTable.ArchiveID(FONT_NAMES[i]);
+    fontArchiveId := CacheReader.Indices[ECacheIndex.FONTS].ReferenceTable.ArchiveID(FONT_NAMES[i]);
     if fontArchiveId = -1 then
     begin
       WriteLn('Font archive not found: ', FONT_NAMES[i]);
       Continue;
     end;
 
-    spriteArchiveId := spritesIdx.ReferenceTable.ArchiveID(FONT_NAMES[i]);
+    spriteArchiveId := CacheReader.Indices[ECacheIndex.SPRITES].ReferenceTable.ArchiveID(FONT_NAMES[i]);
     if spriteArchiveId = -1 then
     begin
       WriteLn('Sprite archive not found: ', FONT_NAMES[i]);
       Continue;
     end;
 
-    fontArchive := fontsIdx.ReferenceTable.Archives.Value[fontArchiveId];
+    fontArchive := CacheReader.Indices[ECacheIndex.FONTS].ReferenceTable.Archives.Value[fontArchiveId];
 
-    spriteSector := spritesIdx.ReadArchiveSector(spriteArchiveId, spritesIdx.ID, spritesIdx.IndexData);
+    spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
+      spriteArchiveId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
+    );
     spriteData := spriteSector.Decompress();
 
     fontDef := TFontDefinition.Create(fontArchive.HashName, fontArchive.Files.Value[0].Data, spriteData);

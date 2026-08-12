@@ -1,11 +1,11 @@
 {$include_once ../file.simba}
+
 type
   TFileMap = record
-    Keys: TIntegerArray;
+    Keys, HashSlots: TIntegerArray;
     Values: TFileArray;
-    HashSlots: TIntegerArray;
     HashSize: Integer;
-    Initialized: Boolean;
+    IsSetup: Boolean;
   end;
 
 function MapHash(key, size: Integer): Integer; static;
@@ -15,7 +15,8 @@ begin
     Result := Result + size;
 end;
 
-procedure TFileMap.Init(expectedCount: Integer);
+
+procedure TFileMap._Init(expectedCount: Integer);
 var
   i: Integer;
 begin
@@ -25,15 +26,15 @@ begin
   SetLength(Self.HashSlots, Self.HashSize);
   for i := 0 to Self.HashSize - 1 do
     Self.HashSlots[i] := 0;
-  Self.Initialized := True;
+  Self.IsSetup := True;
 end;
 
-function TFileMap.FindSlot(key: Integer): Integer;
+function TFileMap._FindSlot(key: Integer): Integer;
 var
   slot: Integer;
 begin
-  if not Self.Initialized then
-    Self.Init(16);
+  if not Self.IsSetup then
+    Self._Init(16);
 
   slot := MapHash(key, Self.HashSize);
   while (Self.HashSlots[slot] <> 0) and (Self.Keys[Self.HashSlots[slot] - 1] <> key) do
@@ -41,28 +42,7 @@ begin
   Result := slot;
 end;
 
-function TFileMap.Exists(key: Integer): Boolean;
-begin
-  if not Self.Initialized then
-    Exit(False);
-  Result := Self.HashSlots[Self.FindSlot(key)] <> 0;
-end;
-
-function TFileMap.IndexOf(key: Integer): Integer;
-var
-  slot: Integer;
-begin
-  if not Self.Initialized then
-    Exit(-1);
-  slot := Self.FindSlot(key);
-  if Self.HashSlots[slot] = 0 then
-    Result := -1
-  else
-    Result := Self.HashSlots[slot] - 1;
-end;
-
-
-procedure TFileMap.Grow();
+procedure TFileMap._Grow();
 var
   i: Integer;
 begin
@@ -71,20 +51,42 @@ begin
   for i := 0 to Self.HashSize - 1 do
     Self.HashSlots[i] := 0;
   for i := 0 to High(Self.Keys) do
-    Self.HashSlots[Self.FindSlot(Self.Keys[i])] := i + 1;
+    Self.HashSlots[Self._FindSlot(Self.Keys[i])] := i + 1;
 end;
+
+
+function TFileMap.Exists(key: Integer): Boolean;
+begin
+  if not Self.IsSetup then
+    Exit(False);
+  Result := Self.HashSlots[Self._FindSlot(key)] <> 0;
+end;
+
+function TFileMap.IndexOf(key: Integer): Integer;
+var
+  slot: Integer;
+begin
+  if not Self.IsSetup then
+    Exit(-1);
+  slot := Self._FindSlot(key);
+  if Self.HashSlots[slot] = 0 then
+    Result := -1
+  else
+    Result := Self.HashSlots[slot] - 1;
+end;
+
 
 property TFileMap.Value(key: Integer; const val: TFile);
 var
   slot, idx, i, insertPos: Integer;
 begin
-  if not Self.Initialized then
-    Self.Init(16);
+  if not Self.IsSetup then
+    Self._Init(16);
 
   if (Length(Self.Keys) + 1) * 10 > Self.HashSize * 6 then
-    Self.Grow();
+    Self._Grow();
 
-  slot := Self.FindSlot(key);
+  slot := Self._FindSlot(key);
 
   if Self.HashSlots[slot] <> 0 then
   begin
@@ -99,7 +101,7 @@ begin
     SetLength(Self.Values, idx + 1);
     Self.Keys[idx] := key;
     Self.Values[idx] := val;
-    slot := Self.FindSlot(key);
+    slot := Self._FindSlot(key);
     Self.HashSlots[slot] := idx + 1;
   end
   else
@@ -121,7 +123,7 @@ begin
     for i := 0 to Self.HashSize - 1 do
       Self.HashSlots[i] := 0;
     for i := 0 to idx do
-      Self.HashSlots[Self.FindSlot(Self.Keys[i])] := i + 1;
+      Self.HashSlots[Self._FindSlot(Self.Keys[i])] := i + 1;
   end;
 end;
 
@@ -135,37 +137,16 @@ begin
   Result := Self.Values[idx];
 end;
 
-function TFileMap.Count(): Integer;
+
+property TFileMap.Count: Integer;
 begin
   Result := Length(Self.Keys);
-end;
-
-property  TFileMap.ValueFromIndex(i: Integer): TFile;
-begin
-  Result := Self.Values[i];
 end;
 
 procedure TFileMap.Clear();
 begin
   SetLength(Self.Keys, 0);
   SetLength(Self.Values, 0);
-  Self.Initialized := False;
+  Self.IsSetup := False;
 end;
 
-procedure TFileMap.DeleteIndex(i: Integer);
-var
-  j: Integer;
-begin
-  for j := i to High(Self.Keys) - 1 do
-  begin
-    Self.Keys[j] := Self.Keys[j + 1];
-    Self.Values[j] := Self.Values[j + 1];
-  end;
-  SetLength(Self.Keys, Length(Self.Keys) - 1);
-  SetLength(Self.Values, Length(Self.Values) - 1);
-
-  for j := 0 to Self.HashSize - 1 do
-    Self.HashSlots[j] := 0;
-  for j := 0 to High(Self.Keys) do
-    Self.HashSlots[Self.FindSlot(Self.Keys[j])] := j + 1;
-end;

@@ -14,7 +14,7 @@ type
     GAMEVALS=24
   );
 
-  TCacheIndex = object
+  TCacheIndex = record
     ReferenceTable: TReferenceTable;
     ID, CRC: Integer;
     CompressionType: ECacheCompression;
@@ -22,32 +22,32 @@ type
     Cached: Boolean;
   end;
 
-  TCacheReader = object
+  TCacheReader = record
     Path: String;
     MainData, Index255Data: TByteArray;
     Indices: array of TCacheIndex;
   end;
 
-function TCacheIndex.Construct(id: Integer; constref reader: TCacheReader): TCacheIndex; static;
+function TCacheIndex.Create(id: Integer; constref reader: TCacheReader): TCacheIndex; static;
 var
   path: String;
 begin
   path := reader.Path + 'main_file_cache.idx' + ToStr(id);
   if not FileExists(path) then
-    Exit(nil);
+    raise 'Cache Index ' + ToStr(id) + ' file does not exist.';
 
   Result.ID := id;
   Result.MainData := reader.MainData;
   Result.Index255 := reader.Index255Data;
-  Result.ReferenceTable := new TReferenceTable(id);
-  Result.Cached := False;
+  Result.ReferenceTable := TReferenceTable.Create(id);
   Result.IndexData := FileReadBytes(path);
 end;
 
-function TCacheIndex.Construct(id: ECacheIndex; constref reader: TCacheReader): TCacheIndex; static; overload;
+function TCacheIndex.Create(id: ECacheIndex; constref reader: TCacheReader): TCacheIndex; static; overload;
 begin
-  Result := new TCacheIndex(Ord(id), reader);
+  Result := TCacheIndex.Create(Ord(id), reader);
 end;
+
 
 function TCacheIndex.ReadArchiveSector(id, owner: Integer; constref data: TByteArray): TArchiveSector;
 var
@@ -72,7 +72,7 @@ begin
   if (size < 0) or not InRange(position, 1, maxPosition) then
     Exit;
 
-  sector := new TArchiveSector(position, size, big);
+  sector := TArchiveSector.Create(position, size, big);
 
   if big then
   begin
@@ -86,10 +86,6 @@ begin
   end;
 
   SetLength(sector.Data, size);
-
-  readBytes := 0;
-  chunk     := 0;
-
   while readBytes < size do
   begin
     if sector.Position = 0 then
@@ -129,31 +125,22 @@ begin
   Result := sector;
 end;
 
+
 procedure TCacheIndex.Load();
-  function _CharToHex(c: Char): Integer;
-  begin
-    case c of
-      '0'..'9': Result := Ord(c) - Ord('0');
-      'a'..'f': Result := Ord(c) - Ord('a') + 10;
-      'A'..'F': Result := Ord(c) - Ord('A') + 10;
-      else      Result := 0;
-    end;
-  end;
 var
   sector: TArchiveSector;
   data: TByteArray;
   i, offset: Integer;
   digest: String;
 begin
-  if not InRange(Self.ID, 1, 255) then
+  if not InRange(Self.ID, 1, 255) then //TODO: check if min should be 0 (animations)
     Exit;
 
   sector := Self.ReadArchiveSector(Self.ID, 255, Self.Index255);
-  if Length(sector.Data) = 0 then
+  if sector.Data.IsEmpty then
     Exit;
 
   Self.CRC := CrcData(@sector.Data[0], Length(sector.Data));
-
   digest := DigestData(EDigest.WHIRLPOOL, @sector.Data[0], Length(sector.Data));
 
   SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
@@ -165,13 +152,10 @@ begin
     raise 'Something is wrong with whirlpool digest';
 
   for i := 0 to TArchiveSector.WHIRLPOOL_SIZE - 1 do
-    Self.Whirlpool[i] := (_CharToHex(digest[i*2+1]) shl 4) or _CharToHex(digest[i*2+2]);
+    Self.Whirlpool[i] := (digest[i*2+1].ToHex() shl 4) or digest[i*2+2].ToHex();
 
   data := sector.Decompress();
-
-  offset := 0;
   Self.ReferenceTable.Read(data, offset);
-
   Self.CompressionType := sector.CompressionType;
 end;
 
@@ -190,8 +174,6 @@ begin
     sector := Self.ReadArchiveSector(archive.ID, Self.ID, Self.IndexData);
     if Length(sector.Data) = 0 then
     begin
-      archive.HasRead := True;
-      archive.IsNew := True;
       archive.Files.Clear();
       Self.ReferenceTable.Archives.Value[archive.ID] := archive;
       Continue;
@@ -201,13 +183,7 @@ begin
     archive.CompressionType := sector.CompressionType;
 
     if Length(data) > 0 then
-    begin
       archive.Read(data);
-      archive.HasRead := True;
-    end;
-
-    if (Self.ID = Ord(ECacheIndex.MAPS)) and not archive.ContainsData() then
-      archive.HasRead := False;
 
     tailOffset := 1;
     compressedFieldValue := Read32Bits(sector.Data, tailOffset);
@@ -223,46 +199,5 @@ begin
   end;
 
   Self.Cached := True;
-end;
-
-procedure TCacheIndex.UnCache();
-var
-  archive: TArchive;
-begin
-  for archive in Self.ReferenceTable.Archives.Values do
-  begin
-    archive.Restore();
-    Self.ReferenceTable.Archives.Value[archive.ID] := archive;
-  end;
-
-  Self.Cached := False;
-end;
-
-
-procedure TCacheIndex.Clear();
-begin
-  Self.ReferenceTable.Archives.Clear();
-  Self.CRC := 0;
-  SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
-  FillMem(Self.Whirlpool[0], TArchiveSector.WHIRLPOOL_SIZE, 0);
-  Self.Cached := False;
-end;
-
-function TCacheIndex.FlaggedArchives(): TArchiveArray;
-var
-  archive: TArchive;
-  count: Integer;
-begin
-  SetLength(Result, Self.ReferenceTable.Archives.Count);
-  count := 0;
-
-  for archive in Self.ReferenceTable.Archives.Values do
-    if archive.NeedUpdate then
-    begin
-      Result[count] := archive;
-      Inc(count);
-    end;
-
-  SetLength(Result, count);
 end;
 

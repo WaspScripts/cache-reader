@@ -180,6 +180,17 @@ begin
   Inc(offset);
 end;
 
+
+function Char.ToHex(): Integer;
+begin
+  case Self of
+    '0'..'9': Result := Ord(Self) - Ord('0');
+    'a'..'f': Result := Ord(Self) - Ord('a') + 10;
+    'A'..'F': Result := Ord(Self) - Ord('A') + 10;
+    else      Result := 0;
+  end;
+end;
+
 function CacheString2Hash(const s: String): Integer;
 var
   i: Integer;

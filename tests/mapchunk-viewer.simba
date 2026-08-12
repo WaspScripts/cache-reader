@@ -1,0 +1,89 @@
+{.$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+var
+  zSpinner, xSpinner, ySpinner: TLazSpinEdit;
+  chunkLoader: TMapChunkLoader;
+
+procedure ShowImage(sender: TLazObject);
+var
+  img: TImage;
+begin
+  img := chunkLoader.GetChunkImage(xSpinner.Value, ySpinner.Value, zSpinner.Value);
+  img.Show();
+end;
+
+var
+  form: TLazForm;
+  lbl: TLazLabel;
+  btn: TLazButton;
+begin
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.MAPS].Cache();
+
+  chunkLoader.Colors.LoadUnderlays();
+  chunkLoader.Colors.LoadOverlays();
+
+  form := TLazForm.Create();
+  form.Position := ELazFormPosition.DesktopCenter;
+
+  zSpinner := TLazSpinEdit.Create(form);
+  zSpinner.Parent := form;
+  zSpinner.Top := 50;
+  zSpinner.Left := 20;
+  zSpinner.MinValue := 0;
+  zSpinner.MaxValue := 3;
+  zSpinner.Value := 0;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Caption := 'Z:';
+  lbl.AnchorSideBottom.Control := zSpinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := zSpinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  xSpinner := TLazSpinEdit.Create(form);
+  xSpinner.Parent := form;
+  xSpinner.Top := 100;
+  xSpinner.Left := 20;
+  xSpinner.MinValue := 0;
+  xSpinner.MaxValue := 199;
+  xSpinner.Value := 49;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Caption := 'X:';
+  lbl.AnchorSideBottom.Control := xSpinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := xSpinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  ySpinner := TLazSpinEdit.Create(form);
+  ySpinner.Parent := form;
+  ySpinner.Top := 150;
+  ySpinner.Left := 20;
+  ySpinner.MinValue := 0;
+  ySpinner.MaxValue := 199;
+  ySpinner.Value := 54;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Caption := 'Y:';
+  lbl.AnchorSideBottom.Control := ySpinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := ySpinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  btn := TLazButton.Create(form);
+  btn.Parent := form;
+  btn.Top := 200;
+  btn.Left := 20;
+  btn.Width := 200;
+  btn.Caption := 'Render and show';
+  btn.OnClick := @ShowImage;
+
+  form.Show();
+  while form.Showing do
+    Sleep(100);
+end.

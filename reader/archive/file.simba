@@ -1,32 +1,33 @@
 type
-  TFile = object
+  TFile = record
     ID, HashName: Integer;
     Data: TByteArray;
   end;
+
   TFileArray = array of TFile;
 
-function TFile.Construct(id: Integer): TFile; static;
+function TFile.Create(id: Integer): TFile; static;
 begin
   Result.ID := id;
   Result.Data := [];
   Result.HashName := 0;
 end;
 
-function TFile.Construct(id: Integer; const data: TByteArray): TFile; static; overload;
+function TFile.Create(id: Integer; const data: TByteArray): TFile; static; overload;
 begin
   Result.ID := id;
   Result.Data := data;
   Result.HashName := 0;
 end;
 
-function TFile.Construct(id: Integer; const data: TByteArray; hashName: Integer): TFile; static; overload;
+function TFile.Create(id: Integer; const data: TByteArray; hashName: Integer): TFile; static; overload;
 begin
   Result.ID := id;
   Result.Data := data;
   Result.HashName := hashName;
 end;
 
-function TFile.Construct(const other: TFile): TFile; static; overload;
+function TFile.Create(const other: TFile): TFile; static; overload;
 begin
   Result.ID := other.ID;
   Result.Data := Copy(other.Data);

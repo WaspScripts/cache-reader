@@ -2,20 +2,15 @@
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
-  cacheReader: TCacheReader;
-  idx: TCacheIndex;
   archive: TArchive;
   itemData: TByteArray;
   def: TItemDefinition;
   idStr: String;
   itemId: Integer;
 begin
-  cacheReader := new TCacheReader();
-  idx := new TCacheIndex(ECacheIndex.CONFIGS, cacheReader);
-  idx.Load();
-  idx.Cache();
-
-  archive := idx.ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
 
   while ShowQueryDialog('Item ID:', 'Type an item ID:', idStr) do
   begin

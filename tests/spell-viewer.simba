@@ -9,8 +9,6 @@ const
   SPELLBOOK_ENUMS: array [0..3] of Integer = [1982, 1983, 1984, 1985];
   GRID_COLS = 8;
 var
-  cacheReader: TCacheReader;
-  configIdx, spritesIdx: TCacheIndex;
   enumArchive, itemArchive: TArchive;
   enumDef: TEnumDefinition;
   itemDef: TItemDefinition;
@@ -23,17 +21,11 @@ var
   cellW, cellH, row, col, count: Integer;
   spriteList: array of TSpriteDefinition;
 begin
-  cacheReader := new TCacheReader();
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
 
-  configIdx := new TCacheIndex(ECacheIndex.CONFIGS, cacheReader);
-  configIdx.Load();
-  configIdx.Cache();
-
-  spritesIdx := new TCacheIndex(ECacheIndex.SPRITES, cacheReader);
-  spritesIdx.Load();
-
-  enumArchive := configIdx.ReferenceTable.Archives.Value[EConfigArchive.ENUMS];
-  itemArchive := configIdx.ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+  enumArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ENUMS];
+  itemArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
 
   while True do
   begin
@@ -61,7 +53,10 @@ begin
       if spriteId = -1 then
         Continue;
 
-      spriteSector := spritesIdx.ReadArchiveSector(spriteId, spritesIdx.ID, spritesIdx.IndexData);
+      spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
+        spriteId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
+      );
+
       if Length(spriteSector.Data) = 0 then
         Continue;
 

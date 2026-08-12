@@ -7,7 +7,7 @@ Types and methods to handle archive sectors.
 type
   ECacheCompression = enum(NONE, BZIP2, GZIP, LZMA);
 
-  TArchiveSector = object
+  TArchiveSector = record
     ID, Index, Size, Position, Chunk, NextPosition: Integer;
     Big: Boolean;
     Data: TByteArray;
@@ -24,13 +24,13 @@ type
     const WHIRLPOOL_SIZE: Integer = 64;
   end;
 
-function TArchiveSector.Construct(position, size: Integer; big: Boolean): TArchiveSector; static;
+function TArchiveSector.Create(position, size: Integer; big: Boolean): TArchiveSector; static;
 begin
   Result.Position := position;
   Result.Size := size;
   Result.Big := big;
   SetLength(Result.Data, size);
-  Result.CompressionType := ECacheCompression.NONE;
+
   if big then
     Result.GetID := @Read32Bits
   else

@@ -2,8 +2,6 @@
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
-  cacheReader: TCacheReader;
-  spriteIdx: TCacheIndex;
   spriteSector: TArchiveSector;
   spriteData: TByteArray;
   sprites: TSpriteDefinitionArray;
@@ -11,15 +9,16 @@ var
   idStr: String;
   spriteId, frame: Integer;
 begin
-  cacheReader := new TCacheReader();
-  spriteIdx := new TCacheIndex(ECacheIndex.SPRITES, cacheReader);
-  spriteIdx.Load();
+  CacheReader := TCacheReader.Create();
 
   while ShowQueryDialog('Sprite ID:', 'Type a sprite ID:', idStr) do
   begin
     spriteId := StrToInt(idStr, 0);
 
-    spriteSector := spriteIdx.ReadArchiveSector(spriteId, spriteIdx.ID, spriteIdx.IndexData);
+    spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
+      spriteId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
+    );
+
     if Length(spriteSector.Data) = 0 then
     begin
       WriteLn('Could not read sprite sector for ID ', spriteId);
