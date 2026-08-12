@@ -4,7 +4,7 @@ type
   TArchiveMap = record
     Keys, HashSlots: TIntegerArray;
     Values: TArchiveArray;
-    HashSize: Integer;
+    Count, HashSize: Integer;
     IsSetup: Boolean;
   end;
 
@@ -16,8 +16,11 @@ begin
   SetLength(Self.Values, 0);
   Self.HashSize := expectedCount * 2 + 16;
   SetLength(Self.HashSlots, Self.HashSize);
+
   for i := 0 to Self.HashSize - 1 do
     Self.HashSlots[i] := 0;
+
+  Self.Count := 0;
   Self.IsSetup := True;
 end;
 
@@ -90,9 +93,12 @@ begin
   if (idx = 0) or (key > Self.Keys[idx - 1]) then
   begin
     SetLength(Self.Keys, idx + 1);
-    SetLength(Self.Values, idx + 1);
+    SetLength(Self.Values, idx + 1); 
+    Self.Count += 1;
+
     Self.Keys[idx] := key;
     Self.Values[idx] := val;
+
     slot := Self._FindSlot(key);
     Self.HashSlots[slot] := idx + 1;
   end
@@ -104,11 +110,14 @@ begin
 
     SetLength(Self.Keys, idx + 1);
     SetLength(Self.Values, idx + 1);
+    Self.Count += 1;
+
     for i := idx downto insertPos + 1 do
     begin
       Self.Keys[i] := Self.Keys[i - 1];
       Self.Values[i] := Self.Values[i - 1];
     end;
+
     Self.Keys[insertPos] := key;
     Self.Values[insertPos] := val;
 
@@ -140,15 +149,11 @@ begin
 end;
 
 
-property TArchiveMap.Count: Integer;
-begin
-  Result := Length(Self.Keys);
-end;
-
 procedure TArchiveMap.Clear();
 begin
   SetLength(Self.Keys, 0);
   SetLength(Self.Values, 0);
+  Self.Count := 0;
   Self.IsSetup := False;
 end;
 

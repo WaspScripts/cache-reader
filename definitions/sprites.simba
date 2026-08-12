@@ -148,3 +148,10 @@ begin
   Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);
 end;
 
+function TSpriteDefinitionArray.IndexOf(id: Integer): Integer;
+begin
+  if InRange(id, 0, High(Self)) then
+    Exit(id);
+  Result := -1;
+end;
+

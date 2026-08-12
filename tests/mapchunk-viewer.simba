@@ -21,8 +21,7 @@ begin
   CacheReader := TCacheReader.Create();
   CacheReader.Indices[ECacheIndex.MAPS].Cache();
 
-  chunkLoader.Colors.LoadUnderlays();
-  chunkLoader.Colors.LoadOverlays();
+  chunkLoader.MapData.Load();
 
   form := TLazForm.Create();
   form.Position := ELazFormPosition.DesktopCenter;

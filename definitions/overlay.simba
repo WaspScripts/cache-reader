@@ -1,0 +1,54 @@
+{$include_once ../utils/helpers.simba}
+
+type
+  TOverlayDefinition = record
+    ID, RGBColor, Texture, SecondaryRGBColor: Integer;
+    HideUnderlay: Boolean;
+    Hue, Saturation, Lightness,
+    OtherHue, OtherSaturation, OtherLightness: Integer;
+  end;
+
+  TOverlayDefinitionArray = array of TOverlayDefinition;
+
+function TOverlayDefinition.Create(id: Integer; const data: TByteArray): TOverlayDefinition; static;
+var
+  offset, opcode: Integer;
+  hsl: TColorHSLEx;
+begin
+  Result.ID := id;
+  Result.RgbColor := 0;
+  Result.Texture := -1;
+  Result.SecondaryRgbColor := -1;
+  Result.HideUnderlay := True;
+
+  repeat
+    opcode := Read8Bits(data, offset);
+
+    case opcode of
+      1: Result.RgbColor := Read24Bits(data, offset);
+      2: Result.Texture := Read8Bits(data, offset);
+      5: Result.HideUnderlay := False;
+      7: Result.SecondaryRgbColor := Read24Bits(data, offset);
+    end;
+  until opcode = 0;
+
+  if Result.SecondaryRgbColor <> -1 then
+  begin
+    hsl := TColor(Result.SecondaryRgbColor).ToHSLEx();
+    Result.OtherHue := Trunc(256.0 * hsl.H);
+    Result.OtherSaturation := hsl.Saturation;
+    Result.OtherLightness := hsl.Lightness;
+  end;
+
+  hsl := TColor(Result.RgbColor).ToHSLEx();
+  Result.Hue := Trunc(256.0 * hsl.H);
+  Result.Saturation := hsl.Saturation;
+  Result.Lightness := hsl.Lightness;
+end;
+
+function TOverlayDefinitionArray.IndexOf(id: Integer): Integer;
+begin
+  if InRange(id, 0, High(Self)) then
+    Exit(id);
+  Result := -1;
+end;

@@ -1,0 +1,87 @@
+{$include_once ../utils/helpers.simba}
+
+type
+  TAreaDefinition = record
+    ID, SpriteId, Field3294, TextColor, Category, TextScale: Integer;
+    Name, Field3308: String;
+    Field3298: array [0..4] of String;
+    Field3300, Field3292: TIntegerArray;
+    Field3309: TByteArray;
+  end;
+
+  TAreaDefinitionArray = array of TAreaDefinition;
+
+function TAreaDefinition.Create(id: Integer; const data: TByteArray): TAreaDefinition; static;
+var
+  offset, opcode, i, count, count2: Integer;
+begin
+  Result.ID := id;
+  Result.SpriteId := -1;
+  Result.Field3294 := -1;
+  Result.Category := -1;
+
+  while True do
+  begin
+    opcode := Read8Bits(data, offset);
+
+    case opcode of
+      0: Break;
+      1: Result.SpriteId := ReadBigSmart2(data, offset);
+      2: Result.Field3294 := ReadBigSmart2(data, offset);
+      3: Result.Name := data.ReadCString(offset);
+      4: Result.TextColor := Read24Bits(data, offset);
+      6: Result.TextScale := Read8Bits(data, offset);
+      10..14: Result.Field3298[opcode-10] := data.ReadCString(offset);
+      15:
+        begin
+          count := Read8Bits(data, offset);
+          SetLength(Result.Field3300, count * 2);
+          for i := 0 to count * 2 - 1 do
+            Result.Field3300[i] := Read16Bits(data, offset);
+
+          Read32Bits(data, offset); // discarded
+
+          count2 := Read8Bits(data, offset);
+          SetLength(Result.Field3292, count2);
+          for i := 0 to count2 - 1 do
+            Result.Field3292[i] := Read32Bits(data, offset);
+
+          SetLength(Result.Field3309, count);
+          for i := 0 to count - 1 do
+            Result.Field3309[i] := Read8Bits(data, offset);
+        end;
+      16: ; //no bytes read
+      17: Result.Field3308 := data.ReadCString(offset);
+      19: Result.Category := Read16Bits(data, offset);
+
+      //all below are discarded
+      5: Read24Bits(data, offset);
+      7: Read8Bits(data, offset);
+      8: Read8Bits(data, offset);
+      18: ReadBigSmart2(data, offset);
+      21, 22: Read32Bits(data, offset);
+      23:
+        begin
+          Read8Bits(data, offset);
+          Read8Bits(data, offset);
+          Read8Bits(data, offset);
+        end;
+      24:
+        begin
+          Read16Bits(data, offset);
+          Read16Bits(data, offset);
+        end;
+      25: ReadBigSmart2(data, offset);
+      28, 29, 30: Read8Bits(data, offset);
+    end;
+  end;
+end;
+
+
+function TAreaDefinitionArray.IndexOf(id: Integer): Integer;
+begin
+  if InRange(id, 0, High(Self)) then
+    Exit(id);
+  Result := -1;
+end;
+

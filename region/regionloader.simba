@@ -1,0 +1,177 @@
+{$include_once ../reader/reader.simba}
+{$include_once ./region.simba}
+
+type
+  TRegionLoader = record
+    Regions: array of TRegion;  
+    Lookup: TIntegerArray;
+    const REGION_SLOTS: Integer = 256 * 256;
+  end;
+
+procedure TRegionLoader.BuildLookup();
+var
+  i, key, bad: Integer;
+begin
+  SetLength(Self.Lookup, 0);
+  SetLength(Self.Lookup, TRegionLoader.REGION_SLOTS);
+  for i := 0 to TRegionLoader.REGION_SLOTS - 1 do
+    Self.Lookup[i] := -1;
+
+  bad := 0;
+  for i := 0 to High(Self.Regions) do
+  begin
+    if (Self.Regions[i].X < 0) or (Self.Regions[i].X > 255) or
+       (Self.Regions[i].Y < 0) or (Self.Regions[i].Y > 255) then
+    begin
+      Inc(bad);
+      Continue;
+    end;
+    key := (Self.Regions[i].X shl 8) or Self.Regions[i].Y;
+    Self.Lookup[key] := i;
+  end;
+
+  if bad > 0 then
+  begin
+    WriteLn('BuildLookup: ', bad, ' regions have out-of-range X/Y - disabling lookup');
+    SetLength(Self.Lookup, 0);  // fall back to the scan rather than return wrong data
+  end;
+end;
+
+function TRegionLoader.RegionCoordinateIndex(x, y: Integer): Integer;
+begin
+  if not InRange(x, 1, 255) or not InRange(y, 1, 255) then
+    Exit(-1);
+
+  if Length(Self.Lookup) = TRegionLoader.REGION_SLOTS then
+    Exit(Self.Lookup[(x shl 8) or y]);
+
+  for Result := 0 to High(Self.Regions) do
+    if (Self.Regions[Result].X = x) and (Self.Regions[Result].Y = y) then
+      Exit;
+  Result := -1;
+end;
+
+function TRegionLoader.WorldCoordinateIndex(x, y: Integer): Integer;
+begin
+  Result := Self.RegionCoordinateIndex(x shr 6, y shr 6);
+end;
+
+
+function TRegionLoader.LoadMapDef(id: Integer; out map: TMapDefinition): Boolean;
+var
+  x, y: Integer;
+  archive: TArchive;
+begin
+  x := id shr 8;
+  y := id and $FF;
+
+  if not CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Exists(id) then
+    Exit;
+
+  archive := CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Value[id];
+  if not archive.Files.Exists(0) then
+    Exit;
+
+  if archive.Files.Value[0].Data = [] then
+    Exit;
+
+  map := TMapDefinition.Create(x, y, archive.Files.Value[0].Data);
+  Result := True;
+end;
+
+function TRegionLoader.LoadLocDef(id: Integer; out locs: TLocationsDefinition): Boolean;
+var
+  x, y: Integer;
+  archive: TArchive;
+begin
+  x := id shr 8;
+  y := id and $FF;
+
+  if not CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Exists(id) then
+    Exit;
+
+  archive := CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Value[id];
+  if not archive.Files.Exists(1) then
+    Exit;
+
+  if archive.Files.Value[1].Data = [] then
+    Exit;
+
+  locs := TLocationsDefinition.Create(x, y, archive.Files.Value[1].Data);
+  Result := True;
+end;
+
+
+function TRegionLoader.LoadRegion(id: Integer; out region: TRegion): Boolean;
+var
+  map: TMapDefinition;
+  locs: TLocationsDefinition;
+begin
+  if not Self.LoadMapDef(id, map) then
+    Exit;
+
+  region := TRegion.Create(id);
+  region.LoadTerrain(map);
+
+  if Self.LoadLocDef(id, locs) then
+    region.LoadLocations(locs);
+
+  Result := True;
+end;
+
+
+function TRegionLoader.LoadRegionAndNeighbors(regionX, regionY: Integer): Boolean;
+var
+  region: TRegion;
+  rx, ry: array [0..4] of Integer;
+  i: Integer;
+begin
+  rx[0] := regionX;     ry[0] := regionY;     // center
+  rx[1] := regionX - 1; ry[1] := regionY;     // left
+  rx[2] := regionX + 1; ry[2] := regionY;     // right
+  rx[3] := regionX;     ry[3] := regionY - 1; // down
+  rx[4] := regionX;     ry[4] := regionY + 1; // up
+
+  for i := 0 to 4 do
+  begin
+    if Self.RegionCoordinateIndex(rx[i], ry[i]) <> -1 then
+    begin
+      if i = 0 then
+        Result := True;
+      Continue;
+    end;
+
+    if Self.LoadRegion((rx[i] shl 8) or ry[i], region) then
+    begin
+      Self.Regions += region;
+      if i = 0 then
+        Result := True;
+    end;
+  end;
+end;
+
+procedure TRegionLoader.LoadAllRegions();
+const
+  MAX_REGIONS: Integer = 25287;
+var
+  i, count: Integer;
+  region: TRegion;
+begin
+  SetLength(Self.Regions, MAX_REGIONS);
+  count := 0;
+
+  for i := 0 to MAX_REGIONS-1 do
+  begin
+    if Self.LoadRegion(i, region) then
+    begin
+      Self.Regions[count] := region;
+      Inc(count);
+    end;
+
+    if (i mod 100) = 0 then
+      WriteLn('Progress: ', i, ' / ', MAX_REGIONS-1, ' (', count, ' regions loaded so far)');
+  end;
+
+  SetLength(Self.Regions, count);
+end;
+

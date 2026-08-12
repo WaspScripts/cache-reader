@@ -1,0 +1,136 @@
+{$include_once ../definitions/map.simba}
+{$include_once ../definitions/locations.simba}
+{$include_once ../utils/heightcalc.simba}
+
+type
+  TWorldLocation = record
+    ID, LocType, Orientation: Integer;
+    X, Y, Z: Integer;
+  end;
+
+  TWorldLocationArray = array of TWorldLocation;
+
+  TRegion = record
+    RegionID, BaseX, BaseY, X, Y: Integer;
+
+    TileHeights, TileSettings,
+    OverlayIds, OverlayPaths, OverlayRotations,
+    UnderlayIds: array of T2DIntegerArray;
+
+    Locations: array of TWorldLocation;
+  end;
+
+function TRegion.Create(id: Integer): TRegion; static;
+begin
+  Result.RegionID := id;
+
+  Result.X := (id shr 8) and $FF;
+  Result.BaseX := Result.X shl 6;
+
+  Result.Y := id and $FF;
+  Result.BaseY := Result.Y shl 6;
+
+  SetLength(Result.TileHeights, 4, 64, 64);
+  SetLength(Result.TileSettings, 4, 64, 64);
+  SetLength(Result.OverlayIds, 4, 64, 64);
+  SetLength(Result.OverlayPaths, 4, 64, 64);
+  SetLength(Result.OverlayRotations, 4, 64, 64);
+  SetLength(Result.UnderlayIds, 4, 64, 64);
+end;
+
+function TRegion.Create(x, y: Integer): TRegion; static; overload;
+begin
+  Result.RegionID := (x shl 8) or y;
+
+  Result.X := x;
+  Result.BaseX := x shl 6;
+
+  Result.Y := y;
+  Result.BaseY := y shl 6;
+
+  SetLength(Result.TileHeights, 4, 64, 64);
+  SetLength(Result.TileSettings, 4, 64, 64);
+  SetLength(Result.OverlayIds, 4, 64, 64);
+  SetLength(Result.OverlayPaths, 4, 64, 64);
+  SetLength(Result.OverlayRotations, 4, 64, 64);
+  SetLength(Result.UnderlayIds, 4, 64, 64);
+end;
+
+procedure TRegion.LoadTerrain(constref map: TMapDefinition; computeHeight: Boolean = False);
+var
+  z, x, y, height, xOffset, yOffset: Integer;
+  tile: TMapTile;
+begin
+  xOffset := Self.BaseX + $E3B7B;
+  yOffset := Self.BaseY + $87CCE;
+
+  if computeHeight then
+  begin
+    for z := 0 to 3 do
+      for x := 0 to 63 do
+        for y := 0 to 63 do
+        begin
+          tile := map.Tiles[z,x,y];
+
+          if tile.Height = -1 then
+            height := HeightCalc.Calculate(xOffset + x, yOffset + y)
+          else
+          begin
+            height := tile.Height;
+            if height = 1 then
+              height := 0;
+          end;
+
+          if z = 0 then
+            Self.TileHeights[0,x,y] := -height * 8
+          else
+            Self.TileHeights[z,x,y] := Self.TileHeights[z-1,x,y] - height * 8;
+
+          Self.OverlayIds[z,x,y] := tile.OverlayId;
+          Self.OverlayPaths[z,x,y] := tile.OverlayPath;
+          Self.OverlayRotations[z,x,y] := tile.OverlayRotation;
+          Self.TileSettings[z,x,y] := tile.Settings;
+          Self.UnderlayIds[z,x,y] := tile.UnderlayId;
+        end;
+    Exit;
+  end;
+
+  for z := 0 to 3 do
+    for x := 0 to 63 do
+      for y := 0 to 63 do
+      begin
+        tile := map.Tiles[z,x,y];
+        Self.OverlayIds[z,x,y] := tile.OverlayId;
+        Self.OverlayPaths[z,x,y] := tile.OverlayPath;
+        Self.OverlayRotations[z,x,y] := tile.OverlayRotation;
+        Self.TileSettings[z,x,y] := tile.Settings;
+        Self.UnderlayIds[z,x,y] := tile.UnderlayId;
+      end;
+end;
+
+procedure TRegion.LoadLocations(constref locs: TLocationsDefinition);
+var
+  i: Integer;
+begin
+  SetLength(Self.Locations, Length(locs.Locations));
+  for i := 0 to High(locs.Locations) do
+  begin
+    Self.Locations[i].ID := locs.Locations[i].ID;
+    Self.Locations[i].LocType := locs.Locations[i].LocType;
+    Self.Locations[i].Orientation := locs.Locations[i].Orientation;
+    Self.Locations[i].X := Self.BaseX + locs.Locations[i].LocalX;
+    Self.Locations[i].Y := Self.BaseY + locs.Locations[i].LocalY;
+    Self.Locations[i].Z := locs.Locations[i].Height;
+  end;
+end;
+
+function TRegion.GetOverlayId(z, x, y: Integer): Integer;
+begin
+  Result := Self.OverlayIds[z,x,y] and $7FFF;
+end;
+
+function TRegion.GetUnderlayId(z, x, y: Integer): Integer;
+begin
+  Result := Self.UnderlayIds[z,x,y] and $7FFF;
+end;
+

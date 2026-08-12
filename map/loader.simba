@@ -1,0 +1,133 @@
+{$include_once ../reader/reader.simba}
+{$include_once ../definitions/objects.simba}
+{$include_once ../definitions/underlay.simba}
+{$include_once ../definitions/overlay.simba}
+{$include_once ../definitions/sprites.simba}
+{$include_once ../definitions/area.simba}
+
+type
+  TMapDataLoader = record
+    Underlays: TUnderlayDefinitionArray;
+    Overlays: TOverlayDefinitionArray;
+    Objects: TObjectDefinitionArray;
+    MapScenes: TSpriteDefinitionArray;
+    Areas: TAreaDefinitionArray;
+    AreaIcons: TSpriteDefinitionArray;
+  end;
+
+procedure TMapDataLoader.LoadUnderlays();
+var
+  archive: TArchive;
+  ids: TIntegerArray;
+  i: Integer;
+begin
+  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.UNDERLAY];
+
+  ids := archive.FileIds();
+  SetLength(Self.Underlays, Length(ids));
+  for i := 0 to High(ids) do
+    Self.Underlays[i] := TUnderlayDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
+end;
+
+procedure TMapDataLoader.LoadOverlays();
+var
+  archive: TArchive;
+  ids: TIntegerArray;
+  i: Integer;
+begin
+  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.OVERLAY];
+
+  ids := archive.FileIds();
+  SetLength(Self.Overlays, Length(ids));
+  for i := 0 to High(ids) do
+    Self.Overlays[i] := TOverlayDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
+end;
+
+procedure TMapDataLoader.LoadObjects();
+var
+  archive: TArchive;
+  ids: TIntegerArray;
+  i: Integer;
+begin
+  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.OBJ];
+
+  ids := archive.FileIds();
+  SetLength(Self.Objects, Length(ids));
+  for i := 0 to High(ids) do
+    Self.Objects[i] := TObjectDefinition.Create(ids[i], archive.Revision, archive.Files.Value[ids[i]].Data);
+end;
+
+procedure TMapDataLoader.LoadAreas();
+var
+  archive: TArchive;
+  ids: TIntegerArray;
+  i: Integer;
+begin
+  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.AREA];
+
+  ids := archive.FileIds();
+  SetLength(Self.Areas, Length(ids));
+  for i := 0 to High(ids) do
+    Self.Areas[i] := TAreaDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
+end;
+
+function TMapDataLoader.LoadSpriteArchive(archiveId: Integer): TSpriteDefinitionArray;
+var
+  spritesIdx: TCacheIndex;
+  sector: TArchiveSector;
+  data: TByteArray;
+begin
+  if archiveId < 0 then
+    Exit;
+
+  spritesIdx := CacheReader.Indices[ECacheIndex.SPRITES];
+
+  sector := spritesIdx.ReadArchiveSector(archiveId, spritesIdx.ID, spritesIdx.IndexData);
+  if Length(sector.Data) = 0 then
+    Exit;
+
+  data := sector.Decompress();
+  if Length(data) = 0 then
+    Exit;
+
+  Result := TSpriteDefinition.Create(archiveId, data);
+end;
+
+procedure TMapDataLoader.LoadMapScenes();
+var
+  spritesIdx: TCacheIndex;
+begin
+  spritesIdx := CacheReader.Indices[ECacheIndex.SPRITES];
+  Self.MapScenes := Self.LoadSpriteArchive(spritesIdx.ReferenceTable.ArchiveID('mapscene'));
+end;
+
+procedure TMapDataLoader.LoadAreaIcons();
+var
+  i: Integer;
+  frames: TSpriteDefinitionArray;
+begin
+  SetLength(Self.AreaIcons, Length(Self.Areas));
+
+  for i := 0 to High(Self.Areas) do
+  begin
+    if Self.Areas[i].SpriteId < 0 then
+      Continue;
+
+    frames := Self.LoadSpriteArchive(Self.Areas[i].SpriteId);
+    if Length(frames) > 0 then
+      Self.AreaIcons[i] := frames[0];
+  end;
+end;
+
+procedure TMapDataLoader.Load();
+begin
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+
+  Self.LoadUnderlays();
+  Self.LoadOverlays();
+  Self.LoadObjects();
+  Self.LoadAreas();
+
+  Self.LoadMapScenes();
+  Self.LoadAreaIcons();
+end;

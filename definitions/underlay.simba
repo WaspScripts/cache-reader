@@ -1,0 +1,45 @@
+{$include_once ../utils/helpers.simba}
+
+type
+  TUnderlayDefinition = record
+    ID, Hue, Saturation, Lightness, HueMultiplier: Integer;
+    Color: TColor;
+  end;
+
+  TUnderlayDefinitionArray = array of TUnderlayDefinition;
+
+function TUnderlayDefinition.Create(id: Integer; const data: TByteArray): TUnderlayDefinition; static;
+var
+  offset, opcode: Integer;
+  hsl: TColorHSLEx;
+begin
+  Result.ID := id;
+
+  repeat
+    opcode := Read8Bits(data, offset);
+    if opcode = 1 then
+      Result.Color := TColor(Read24Bits(data, offset));
+  until opcode = 0;
+
+  hsl := Result.Color.ToHSLEx();
+
+  Result.Saturation := hsl.Saturation;
+  Result.Lightness := hsl.Lightness;
+
+  if hsl.L > 0.5 then
+    Result.HueMultiplier := Trunc(hsl.S * (1.0 - hsl.L) * 512.0)
+  else
+    Result.HueMultiplier := Trunc(hsl.S * hsl.L * 512.0);
+
+  if Result.HueMultiplier < 1 then
+    Result.HueMultiplier := 1;
+
+  Result.Hue := Trunc(Result.HueMultiplier * hsl.H);
+end;
+
+function TUnderlayDefinitionArray.IndexOf(id: Integer): Integer;
+begin
+  if InRange(id, 0, High(Self)) then
+    Exit(id);
+  Result := -1;
+end;

@@ -1,0 +1,69 @@
+{$include_once ../utils/helpers.simba}
+
+type
+  TMapTile = record
+    Height,
+    AttrOpcode,
+    Settings,
+    OverlayId, OverlayPath, OverlayRotation,
+    UnderlayId: Integer;
+  end;
+
+  TMapDefinition = record
+    RegionX, RegionY: Integer;
+    Tiles: array [0..3] of array [0..63] of array [0..63] of TMapTile;
+    const MAX_X: Integer = 64;
+    const MAX_Y: Integer = 64;
+    const MAX_Z: Integer = 4;
+  end;
+
+function TMapDefinition.Create(regionX, regionY: Integer; const data: TByteArray): TMapDefinition; static;
+var
+  offset, z, x, y, attribute: Integer;
+  tile: TMapTile;
+begin
+  Result.RegionX := regionX;
+  Result.RegionY := regionY;
+
+  offset := 0;
+
+  for z := 0 to TMapDefinition.MAX_Z - 1 do
+    for x := 0 to TMapDefinition.MAX_X - 1 do
+      for y := 0 to TMapDefinition.MAX_Y - 1 do
+      begin
+        tile.Height := -1;
+        tile.AttrOpcode := 0;
+        tile.Settings := 0;
+        tile.OverlayId := 0;
+        tile.OverlayPath := 0;
+        tile.OverlayRotation := 0;
+        tile.UnderlayId := 0;
+
+        while True do
+        begin
+          attribute := Read16Bits(data, offset);
+
+          if attribute = 0 then
+            Break
+          else if attribute = 1 then
+          begin
+            tile.Height := Read8Bits(data, offset);
+            Break;
+          end
+          else if attribute <= 49 then
+          begin
+            tile.AttrOpcode := attribute;
+            tile.OverlayId := Read16SignedBits(data, offset);
+            tile.OverlayPath := (attribute - 2) div 4;
+            tile.OverlayRotation := (attribute - 2) and 3;
+          end
+          else if attribute <= 81 then
+            tile.Settings := attribute - 49
+          else
+            tile.UnderlayId := attribute - 81;
+        end;
+
+        Result.Tiles[z,x,y] := tile;
+      end;
+end;
+

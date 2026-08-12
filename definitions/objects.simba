@@ -1,4 +1,4 @@
-{$include_once ../utils/helpers.simba}
+{$include_once ../reader/reader.simba}
 {$include_once ./entityops.simba}
 
 type
@@ -36,6 +36,8 @@ type
       StrValue: String;
     end;
   end;
+
+  TObjectDefinitionArray = array of TObjectDefinition;
 
 function TObjectDefinition.Create(objID, revision: Integer; const data: TByteArray): TObjectDefinition; static;
 var
@@ -319,3 +321,9 @@ begin
   end;
 end;
 
+function TObjectDefinitionArray.IndexOf(id: Integer): Integer;
+begin
+  if InRange(id, 0, High(Self)) then
+    Exit(id);
+  Result := -1;
+end;

@@ -4,7 +4,7 @@ type
   TFileMap = record
     Keys, HashSlots: TIntegerArray;
     Values: TFileArray;
-    HashSize: Integer;
+    Count, HashSize: Integer;
     IsSetup: Boolean;
   end;
 
@@ -26,6 +26,7 @@ begin
   SetLength(Self.HashSlots, Self.HashSize);
   for i := 0 to Self.HashSize - 1 do
     Self.HashSlots[i] := 0;
+  Self.Count := 0;
   Self.IsSetup := True;
 end;
 
@@ -103,6 +104,7 @@ begin
     Self.Values[idx] := val;
     slot := Self._FindSlot(key);
     Self.HashSlots[slot] := idx + 1;
+    Self.Count += 1;
   end
   else
   begin
@@ -112,6 +114,8 @@ begin
 
     SetLength(Self.Keys, idx + 1);
     SetLength(Self.Values, idx + 1);
+    Self.Count += 1;
+
     for i := idx downto insertPos + 1 do
     begin
       Self.Keys[i] := Self.Keys[i - 1];
@@ -138,15 +142,11 @@ begin
 end;
 
 
-property TFileMap.Count: Integer;
-begin
-  Result := Length(Self.Keys);
-end;
-
 procedure TFileMap.Clear();
 begin
   SetLength(Self.Keys, 0);
   SetLength(Self.Values, 0);
+  Self.Count := 0;
   Self.IsSetup := False;
 end;
 

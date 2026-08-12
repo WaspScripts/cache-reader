@@ -12,6 +12,7 @@ Suite of tools to read the cache files of a popular MMORPG
 {$include_once ./definitions/fonts.simba}   
 {$include_once ./definitions/enums.simba}
 {$include_once ./definitions/interfaces.simba}
+{$include_once ./map/mapchunkloader.simba}
 
 begin
   ColorUtils.Setup();
