@@ -5,50 +5,34 @@ type
   TRegionLoader = record
     Regions: array of TRegion;  
     Lookup: TIntegerArray;
-    const REGION_SLOTS: Integer = 256 * 256;
   end;
 
 procedure TRegionLoader.BuildLookup();
+const
+  LOOKUP_SIZE: Integer = 256*256;
 var
-  i, key, bad: Integer;
+  i, rx, ry: Integer;
 begin
-  SetLength(Self.Lookup, 0);
-  SetLength(Self.Lookup, TRegionLoader.REGION_SLOTS);
-  for i := 0 to TRegionLoader.REGION_SLOTS - 1 do
-    Self.Lookup[i] := -1;
+  if Length(Self.Lookup) = LOOKUP_SIZE then
+    Exit;
 
-  bad := 0;
+  SetLength(Self.Lookup, LOOKUP_SIZE);
+  FillMem(Self.Lookup[0], LOOKUP_SIZE * SizeOf(Integer), $FF); // -1 everywhere
+
   for i := 0 to High(Self.Regions) do
   begin
-    if (Self.Regions[i].X < 0) or (Self.Regions[i].X > 255) or
-       (Self.Regions[i].Y < 0) or (Self.Regions[i].Y > 255) then
-    begin
-      Inc(bad);
-      Continue;
-    end;
-    key := (Self.Regions[i].X shl 8) or Self.Regions[i].Y;
-    Self.Lookup[key] := i;
-  end;
-
-  if bad > 0 then
-  begin
-    WriteLn('BuildLookup: ', bad, ' regions have out-of-range X/Y - disabling lookup');
-    SetLength(Self.Lookup, 0);  // fall back to the scan rather than return wrong data
+    rx := Self.Regions[i].X;
+    ry := Self.Regions[i].Y;
+    if InRange(rx, 0, 255) and InRange(ry, 0, 255) then
+      Self.Lookup[(rx shl 8) or ry] := i;
   end;
 end;
 
 function TRegionLoader.RegionCoordinateIndex(x, y: Integer): Integer;
 begin
-  if not InRange(x, 1, 255) or not InRange(y, 1, 255) then
+  if not InRange(x, 0, 255) or not InRange(y, 0, 255) then
     Exit(-1);
-
-  if Length(Self.Lookup) = TRegionLoader.REGION_SLOTS then
-    Exit(Self.Lookup[(x shl 8) or y]);
-
-  for Result := 0 to High(Self.Regions) do
-    if (Self.Regions[Result].X = x) and (Self.Regions[Result].Y = y) then
-      Exit;
-  Result := -1;
+  Result := Self.Lookup[(x shl 8) or y];
 end;
 
 function TRegionLoader.WorldCoordinateIndex(x, y: Integer): Integer;
@@ -72,7 +56,7 @@ begin
   if not archive.Files.Exists(0) then
     Exit;
 
-  if archive.Files.Value[0].Data = [] then
+  if archive.Files.Value[0].Data.IsEmpty then
     Exit;
 
   map := TMapDefinition.Create(x, y, archive.Files.Value[0].Data);
@@ -94,7 +78,7 @@ begin
   if not archive.Files.Exists(1) then
     Exit;
 
-  if archive.Files.Value[1].Data = [] then
+  if archive.Files.Value[1].Data.IsEmpty then
     Exit;
 
   locs := TLocationsDefinition.Create(x, y, archive.Files.Value[1].Data);
@@ -126,6 +110,8 @@ var
   rx, ry: array [0..4] of Integer;
   i: Integer;
 begin
+  Self.BuildLookup();
+
   rx[0] := regionX;     ry[0] := regionY;     // center
   rx[1] := regionX - 1; ry[1] := regionY;     // left
   rx[2] := regionX + 1; ry[2] := regionY;     // right
@@ -144,6 +130,8 @@ begin
     if Self.LoadRegion((rx[i] shl 8) or ry[i], region) then
     begin
       Self.Regions += region;
+      if InRange(rx[i], 0, 255) and InRange(ry[i], 0, 255) then
+        Self.Lookup[(rx[i] shl 8) or ry[i]] := High(Self.Regions);
       if i = 0 then
         Result := True;
     end;
@@ -158,6 +146,8 @@ var
   region: TRegion;
 begin
   SetLength(Self.Regions, MAX_REGIONS);
+  Self.BuildLookup();
+
   count := 0;
 
   for i := 0 to MAX_REGIONS-1 do
@@ -165,6 +155,9 @@ begin
     if Self.LoadRegion(i, region) then
     begin
       Self.Regions[count] := region;
+
+       if InRange(region.X, 0, 255) and InRange(region.Y, 0, 255) then
+        Self.Lookup[(region.X shl 8) or region.Y] := count;
       Inc(count);
     end;
 

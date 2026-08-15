@@ -1,4 +1,4 @@
-{.$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
+{$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
@@ -8,8 +8,15 @@ var
 procedure ShowImage(sender: TLazObject);
 var
   img: TImage;
+  t: Double;
 begin
-  img := chunkLoader.GetChunkImage(xSpinner.Value, ySpinner.Value, zSpinner.Value);
+  for 1 to 1 do
+    img := chunkLoader.GetChunkImage(xSpinner.Value, ySpinner.Value, zSpinner.Value);
+
+  t := PerformanceTime();
+  for 1 to 1 do
+    img := chunkLoader.GetChunkImage(xSpinner.Value, ySpinner.Value, zSpinner.Value);
+  WriteLn('Took: ', PerformanceTime()-t, 'ms to run.');
   img.Show();
 end;
 
@@ -35,6 +42,7 @@ begin
   zSpinner.Value := 0;
 
   lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
   lbl.Caption := 'Z:';
   lbl.AnchorSideBottom.Control := zSpinner;
   lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
@@ -48,9 +56,10 @@ begin
   xSpinner.Left := 20;
   xSpinner.MinValue := 0;
   xSpinner.MaxValue := 199;
-  xSpinner.Value := 49;
+  xSpinner.Value := 50;
 
   lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
   lbl.Caption := 'X:';
   lbl.AnchorSideBottom.Control := xSpinner;
   lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
@@ -64,9 +73,10 @@ begin
   ySpinner.Left := 20;
   ySpinner.MinValue := 0;
   ySpinner.MaxValue := 199;
-  ySpinner.Value := 54;
+  ySpinner.Value := 50;
 
   lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
   lbl.Caption := 'Y:';
   lbl.AnchorSideBottom.Control := ySpinner;
   lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;

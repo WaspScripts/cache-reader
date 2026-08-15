@@ -124,12 +124,12 @@ begin
   end;
 end;
 
-function TRegion.GetOverlayId(z, x, y: Integer): Integer;
+function TRegion.GetOverlayID(z, x, y: Integer): Integer;
 begin
   Result := Self.OverlayIds[z,x,y] and $7FFF;
 end;
 
-function TRegion.GetUnderlayId(z, x, y: Integer): Integer;
+function TRegion.GetUnderlayID(z, x, y: Integer): Integer;
 begin
   Result := Self.UnderlayIds[z,x,y] and $7FFF;
 end;

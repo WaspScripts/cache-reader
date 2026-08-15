@@ -4,15 +4,16 @@
 {$include_once ../definitions/overlay.simba}
 {$include_once ../definitions/sprites.simba}
 {$include_once ../definitions/area.simba}
+{$include_once ../definitions/texture.simba}
 
 type
   TMapDataLoader = record
     Underlays: TUnderlayDefinitionArray;
     Overlays: TOverlayDefinitionArray;
     Objects: TObjectDefinitionArray;
-    MapScenes: TSpriteDefinitionArray;
     Areas: TAreaDefinitionArray;
-    AreaIcons: TSpriteDefinitionArray;
+    Textures: TTextureDefinitionArray;
+    MapScenes, AreaIcons: TSpriteDefinitionArray;
   end;
 
 procedure TMapDataLoader.LoadUnderlays();
@@ -95,10 +96,10 @@ end;
 
 procedure TMapDataLoader.LoadMapScenes();
 var
-  spritesIdx: TCacheIndex;
+  idx: TCacheIndex;
 begin
-  spritesIdx := CacheReader.Indices[ECacheIndex.SPRITES];
-  Self.MapScenes := Self.LoadSpriteArchive(spritesIdx.ReferenceTable.ArchiveID('mapscene'));
+  idx := CacheReader.Indices[ECacheIndex.SPRITES];
+  Self.MapScenes := Self.LoadSpriteArchive(idx.ReferenceTable.ArchiveID('mapscene'));
 end;
 
 procedure TMapDataLoader.LoadAreaIcons();
@@ -119,6 +120,47 @@ begin
   end;
 end;
 
+function TMapDataLoader.LoadSpriteFrame(archiveId, frame: Integer): TSpriteDefinition; static;
+var
+  sector: TArchiveSector;
+  data: TByteArray;
+  sprites: TSpriteDefinitionArray;
+begin
+  sector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
+    archiveId,
+    CacheReader.Indices[ECacheIndex.SPRITES].ID,
+    CacheReader.Indices[ECacheIndex.SPRITES].IndexData
+  );
+
+  if sector.Data.IsEmpty then
+    Exit;
+
+  data := sector.Decompress();
+  if data.IsEmpty then
+    Exit;
+
+  sprites := TSpriteDefinition.Create(archiveId, data);
+  if frame <= High(sprites) then
+    Result := sprites[frame];
+end;
+
+
+procedure TMapDataLoader.LoadTextures();
+var
+  archive: TArchive;
+  ids: TIntegerArray;
+  i: Integer;
+begin
+  CacheReader.Indices[ECacheIndex.TEXTURES].Cache();
+  archive := CacheReader.Indices[ECacheIndex.TEXTURES].ReferenceTable.Archives.Value[0];
+
+  ids := archive.FileIds();
+  SetLength(Self.Textures, Length(ids));
+  for i := 0 to High(ids) do
+    Self.Textures[i] := TTextureDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
+end;
+
+
 procedure TMapDataLoader.Load();
 begin
   CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
@@ -126,8 +168,8 @@ begin
   Self.LoadUnderlays();
   Self.LoadOverlays();
   Self.LoadObjects();
-  Self.LoadAreas();
-
+  Self.LoadAreas(); 
+  Self.LoadTextures();
   Self.LoadMapScenes();
   Self.LoadAreaIcons();
 end;

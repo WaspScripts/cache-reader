@@ -19,19 +19,18 @@ type
 procedure TSpriteDefinition.Normalize();
 var
   newIdx: TByteArray;
-  x, y, srcPos: Integer;
+  x, y, pos: Integer;
 begin
   if (Self.Width = Self.MaxWidth) and (Self.Height = Self.MaxHeight) then
     Exit;
 
   SetLength(newIdx, Self.MaxWidth * Self.MaxHeight);
-  srcPos := 0;
 
   for y := 0 to Self.Height - 1 do
     for x := 0 to Self.Width - 1 do
     begin
-      newIdx[x + (y + Self.OffsetY) * Self.MaxWidth + Self.OffsetX] := Self.PixelIdx[srcPos];
-      Inc(srcPos);
+      newIdx[x + (y + Self.OffsetY) * Self.MaxWidth + Self.OffsetX] := Self.PixelIdx[pos];
+      Inc(pos);
     end;
 
   Self.PixelIdx := newIdx;

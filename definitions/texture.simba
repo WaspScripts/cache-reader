@@ -1,0 +1,83 @@
+{$include_once ../utils/helpers.simba}
+{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+
+type
+  TTextureDefinition = record
+    ID,
+    AverageRGB,
+    AnimationDirection, AnimationSpeed: Integer;
+    IsTransparent: Boolean;
+    BlendWeights1, BlendWeights2: TByteArray;
+    FileIds, ColorTransforms: TIntegerArray;
+  end;
+
+  TTextureDefinitionArray = array of TTextureDefinition;
+
+function TTextureDefinition.Create(id: Integer; const data: TByteArray; rev233: Boolean = True): TTextureDefinition; static;
+var
+  offset, count, i: Integer;
+begin
+  Result.ID := id;
+  offset := 0;
+
+  if rev233 then
+  begin
+    SetLength(Result.FileIds, 1);
+    Result.FileIds[0] := Read16Bits(data, offset);
+
+    Result.AverageRGB := Read16Bits(data, offset);
+    Result.IsTransparent := Read8Bits(data, offset) = 1;
+    Result.AnimationDirection := Read8Bits(data, offset);
+    Result.AnimationSpeed := Read8Bits(data, offset);
+  end
+  else
+  begin
+    Result.AverageRGB := Read16Bits(data, offset);
+    Result.IsTransparent := Read8Bits(data, offset) <> 0;
+
+    count := Read8Bits(data, offset);
+    SetLength(Result.FileIds, count);
+    for i := 0 to count - 1 do
+      Result.FileIds[i] := Read16Bits(data, offset);
+
+    if count > 1 then
+    begin
+      SetLength(Result.BlendWeights1, count - 1);
+      Move(data[offset], Result.BlendWeights1[0], count - 1);
+      Inc(offset, count - 1);
+
+      SetLength(Result.BlendWeights2, count - 1);
+      Move(data[offset], Result.BlendWeights2[0], count - 1);
+      Inc(offset, count - 1);
+    end;
+
+    SetLength(Result.ColorTransforms, count);
+    for i := 0 to count - 1 do
+      Result.ColorTransforms[i] := Read32Bits(data, offset);
+
+    Result.AnimationDirection := Read8Bits(data, offset);
+    Result.AnimationSpeed := Read8Bits(data, offset);
+  end;
+end;
+
+function TTextureDefinition.GetAverageColor(): Integer;
+var
+  r, g, b: Integer;
+begin
+  r := (Self.AverageRGB shr 11) and $1F;
+  g := (Self.AverageRGB shr 5) and $3F;
+  b := Self.AverageRGB and $1F;
+
+  r := (r shl 3) or (r shr 2);
+  g := (g shl 2) or (g shr 4);
+  b := (b shl 3) or (b shr 2);
+
+  Result := (b shl 16) or (g shl 8) or r;
+end;
+
+function TTextureDefinitionArray.IndexOf(id: Integer): Integer;
+begin
+  if InRange(id, 0, High(Self)) then
+    Exit(id);
+  Result := -1;
+end;
