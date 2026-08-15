@@ -7,6 +7,9 @@ type
     Loader: TRegionLoader;
     MapData: TMapDataLoader;
 
+    CachedX, CachedY: Integer;
+    CachedPlanes: array [0..3] of TIntegerMatrix;
+
     const REGION_X: Integer = 64;
     const REGION_Y: Integer = 64;
     const REGION_Z: Integer = 4;
@@ -14,8 +17,9 @@ type
     const IMAGE_SIZE: Integer = 64 * 4;
 
     const BLEND: Integer = 5;
+    const CACHE_REGIONS: Integer = 4;  // 4 regions * 4 planes * 256 KB = 4 MB ceiling
 
-    const TILE_SHAPE_2D: T2DIntegerArray = [
+    const TILE_SHAPE_2D: TIntegerMatrix = [
       [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0], [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
       [1,0,0,0,1,1,0,0,1,1,1,0,1,1,1,1], [1,1,0,0,1,1,0,0,1,0,0,0,1,0,0,0],
       [0,0,1,1,0,0,1,1,0,0,0,1,0,0,0,1], [0,1,1,1,0,1,1,1,1,1,1,1,1,1,1,1],
@@ -25,13 +29,24 @@ type
       [0,0,0,0,0,0,0,0,0,1,1,0,1,1,1,1]
     ];
 
-    const TILE_ROTATION_2D: T2DIntegerArray = [
+    const TILE_ROTATION_2D: TIntegerMatrix = [
       [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
       [12,8,4,0,13,9,5,1,14,10,6,2,15,11,7,3],
       [15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0],
       [3,7,11,15,2,6,10,14,1,5,9,13,0,4,8,12]
     ];
   end;
+
+procedure TMapChunkLoader.InvalidateCache();
+var
+  z: Integer;
+begin
+  for z := 0 to TMapChunkLoader.REGION_Z - 1 do
+    SetLength(Self.CachedPlanes[z], 0);
+
+  Self.CachedX := -1;
+  Self.CachedY := -1;
+end;
 
 function TMapChunkLoader.ConvertLocal(d: Integer): Integer; static;
 begin
@@ -51,15 +66,6 @@ begin
   bounds.X2 := bounds.X1 + TMapChunkLoader.MAP_SCALE - 1;
   bounds.Y2 := bounds.Y1 + TMapChunkLoader.MAP_SCALE - 1;
   pixels.Fill(bounds, color);
-end;
-
-procedure TMapChunkLoader.PlacePixel(var pixels: TIntegerMatrix; x, y, color: Integer); static;
-begin
-  if not InRange(x, 0, High(pixels)) then
-    Exit;
-  if (y < 0) or (y >= Length(pixels[x])) then
-    Exit;
-  pixels[x, y] := color;
 end;
 
 
@@ -122,109 +128,124 @@ begin
 end;
 
 
-procedure TMapChunkLoader.DrawObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; localX, localY: Integer);
+procedure TMapChunkLoader.DrawObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
-  k, rotation, drawX, drawY, rgb, objIdx, scale: Integer;
+  i, color, scale: Integer;
   obj: TObjectDefinition;
-  isWall, isDecorOnly: Boolean;
 begin
-  // 0..3 are walls/doors
-  // 9 draws a diagonal walls/doors
-  // 10, 11 and 22 draw decorations
-
-  isWall      := InRange(loc.LocType, 0, 3);
-  isDecorOnly := (loc.LocType = 22) or InRange(loc.LocType, 9, 11);
-
-  if not (isWall or isDecorOnly) then
+  // 0..3 normal walls/doors and 9 are diagonal walls/doors
+  if not (InRange(loc.LocType, 0, 3) or InRange(loc.LocType, 9, 11) or (loc.LocType = 22)) then
     Exit;
 
-  objIdx := Self.MapData.Objects.IndexOf(loc.ID);
-  if objIdx = -1 then
+  i := Self.MapData.Objects.IndexOf(loc.ID);
+  if i = -1 then
     Exit;
-  obj := Self.MapData.Objects[objIdx];
 
-  scale    := TMapChunkLoader.MAP_SCALE;
-  rotation := loc.Orientation;
-  drawX    := localX * scale;
-  drawY    := (TMapChunkLoader.REGION_Y - obj.SizeY - localY) * scale;
+  obj := Self.MapData.Objects[i];
 
-  // A map scene replaces the primitive for every type that has one.
+  scale := TMapChunkLoader.MAP_SCALE;
+
+
+  x := x * scale;
   if obj.MapSceneID <> -1 then
   begin
-    Self.BlitMapDecoration(pixels, drawX, drawY, obj);
+    Self.BlitMapDecoration(pixels, x, (TMapChunkLoader.REGION_Y - obj.SizeY - y) * scale, obj);
     Exit;
   end;
 
-  if isWall then
+  y := (TMapChunkLoader.REGION_Y - obj.SizeY - y) * scale;
+
+  if loc.LocType > 9 then
+    Exit;
+
+  if obj.WallOrDoor <> 0 then
+    color := TColorUtils.DOOR_COLOR
+  else
+    color := TColorUtils.WALL_COLOR;
+
+  if (loc.LocType = 0) then
   begin
-    if obj.WallOrDoor <> 0 then
-      rgb := TColorUtils.DOOR_COLOR
-    else
-      rgb := TColorUtils.WALL_COLOR;
-    rgb := rgb or Integer($FF000000);
-
-    if (loc.LocType = 0) or (loc.LocType = 2) then
-      for k := 0 to scale - 1 do
-        case rotation of
-          0: TMapChunkLoader.PlacePixel(pixels, drawX, drawY + k, rgb);
-          1: TMapChunkLoader.PlacePixel(pixels, drawX + k, drawY, rgb);
-          2: TMapChunkLoader.PlacePixel(pixels, drawX + scale - 1, drawY + k, rgb);
-          3: TMapChunkLoader.PlacePixel(pixels, drawX + k, drawY + scale - 1, rgb);
-        end;
-
-    if loc.LocType = 3 then
-      case rotation of
-        0: TMapChunkLoader.PlacePixel(pixels, drawX, drawY, rgb);
-        1: TMapChunkLoader.PlacePixel(pixels, drawX + scale - 1, drawY, rgb);
-        2: TMapChunkLoader.PlacePixel(pixels, drawX + scale - 1, drawY + scale - 1, rgb);
-        3: TMapChunkLoader.PlacePixel(pixels, drawX, drawY + scale - 1, rgb);
-      end;
-
-    // Corner walls occupy two edges: draw the second one.
-    if loc.LocType = 2 then
-      for k := 0 to scale - 1 do
-        case rotation of
-          0: TMapChunkLoader.PlacePixel(pixels, drawX + k, drawY, rgb);
-          1: TMapChunkLoader.PlacePixel(pixels, drawX + scale - 1, drawY + k, rgb);
-          2: TMapChunkLoader.PlacePixel(pixels, drawX + k, drawY + scale - 1, rgb);
-          3: TMapChunkLoader.PlacePixel(pixels, drawX, drawY + k, rgb);
-        end;
-  end
-  else if loc.LocType = 9 then
-  begin
-    if obj.WallOrDoor <> 0 then
-      rgb := Integer($FF0000EE) // red: TColor is BGR-packed
-    else
-      rgb := Integer($FFEEEEEE);
-
-    for k := 0 to scale - 1 do
-      if (rotation <> 0) and (rotation <> 2) then
-        TMapChunkLoader.PlacePixel(pixels, drawX + k, drawY + k, rgb)
-      else
-        TMapChunkLoader.PlacePixel(pixels, drawX + k, drawY + (scale - 1 - k), rgb);
+    case loc.Orientation of
+      0: for i := 0 to scale - 1 do pixels[x, y + i] := color;
+      1: for i := 0 to scale - 1 do pixels[x + i, y] := color;
+      2: for i := 0 to scale - 1 do pixels[x + scale - 1, y + i] := color;
+      3: for i := 0 to scale - 1 do pixels[x + i, y + scale - 1] := color;
+    end;
+    Exit;
   end;
 
-  // Types 10, 11 and 22 without a map scene have nothing to draw.
+  if (loc.LocType = 2) then
+  begin
+    //Corner walls occupy two edges so they draw more pixels
+    case loc.Orientation of
+      0: for i := 0 to scale - 1 do
+         begin
+           pixels[x, y + i] := color;
+           pixels[x + i, y] := color;
+         end;
+      1: for i := 0 to scale - 1 do
+         begin
+           pixels[x + i, y] := color;
+           pixels[x + scale - 1, y + i] := color;
+         end;
+      2: for i := 0 to scale - 1 do
+         begin
+           pixels[x + scale - 1, y + i] := color;
+           pixels[x + i, y + scale - 1] := color;
+         end;
+      3: for i := 0 to scale - 1 do
+         begin
+           pixels[x + i, y + scale - 1] := color;
+           pixels[x, y + i] := color;
+         end;
+    end;
+    Exit;
+  end;
+
+  if loc.LocType = 3 then
+  begin
+    case loc.Orientation of
+      0: for i := 0 to scale - 1 do pixels[x, y] := color;
+      1: for i := 0 to scale - 1 do pixels[x + scale - 1, y] := color;
+      2: for i := 0 to scale - 1 do pixels[x + scale - 1, y + scale - 1] := color;
+      3: for i := 0 to scale - 1 do pixels[x, y + scale - 1] := color;
+    end;
+    Exit;
+  end;
+
+  if loc.LocType = 9 then
+  begin
+    if (loc.Orientation <> 0) and (loc.Orientation <> 2) then
+    begin
+      for i := 0 to scale - 1 do
+        pixels[x + i, y + i] := color;
+      Exit;
+    end;
+
+    for i := 0 to scale - 1 do
+      pixels[x + i, y + (scale - 1 - i)] := color;
+  end;
 end;
 
 procedure TMapChunkLoader.DrawObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
 var
-  i, localX, localY: Integer;
+  x, y: Integer;
+  location: TWorldLocation;
 begin
-  for i := 0 to High(region.Locations) do
+  for location in region.Locations do
   begin
-    if region.Locations[i].Z <> z then
+    if location.Z <> z then
       Continue;
 
-    localX := region.Locations[i].X - region.BaseX;
-    localY := region.Locations[i].Y - region.BaseY;
+    x := location.X - region.BaseX;
+    y := location.Y - region.BaseY;
 
-    if not InRange(localX, 0, TMapChunkLoader.REGION_X-1) then
+    if not InRange(x, 0, TMapChunkLoader.REGION_X-1) then
       Continue;
-    if not InRange(localY, 0, TMapChunkLoader.REGION_Y-1) then
+    if not InRange(y, 0, TMapChunkLoader.REGION_Y-1) then
       Continue;
 
-    Self.DrawObjectAtTile(pixels, region.Locations[i], localX, localY);
+    Self.DrawObjectAtTile(pixels, location, x, y);
   end;
 end;
 
@@ -364,9 +385,6 @@ begin
     outterBounds.Y2 := regionY + TMapChunkLoader.BLEND - 1;
   end;
 
-
-
-
   for x := outterBounds.X1 to outterBounds.X2 do
   begin
     for dir in DIRS do
@@ -502,12 +520,15 @@ begin
 end;
 
 function TMapChunkLoader.GetChunkImage(regionX, regionY, z: Integer): TImage;
+const
+  PIXEL_SIZE: Integer = TMapChunkLoader.MAP_SCALE - 1;
 var
-  planes: array [0..3] of T2DIntegerArray;
-  zList: array [0..2] of Integer;
-  settings: array of T2DIntegerArray;
-  idx, x, y, i, j, k, n, px, py, color: Integer;
+  needed: array [0..3] of Boolean;
+  tileZList, tileCount: TIntegerArray;
+  settings: array of TIntegerMatrix;
+  i, x, y, j, k, n, t, px, py, color,
   invertedY, isBridge, tileZ: Integer;
+  region: TRegion;
 begin
   Result := new TImage(
     TMapChunkLoader.REGION_X * TMapChunkLoader.MAP_SCALE,
@@ -517,17 +538,23 @@ begin
   if not Self.Loader.LoadRegionAndNeighbors(regionX, regionY) then
     Exit;
 
-  idx := Self.Loader.RegionCoordinateIndex(regionX, regionY);
-  if idx = -1 then
+  i := Self.Loader.RegionCoordinateIndex(regionX, regionY);
+  if i = -1 then
     Exit;
 
-  settings := Self.Loader.Regions[idx].TileSettings;
+  region   := Self.Loader.Regions[i];
+  settings := region.TileSettings;
 
-  for x := 0 to TMapChunkLoader.REGION_X - 1 do
-    for y := 0 to TMapChunkLoader.REGION_Y - 1 do
+  SetLength(tileZList, TMapChunkLoader.REGION_X * TMapChunkLoader.REGION_Y * 3);
+  SetLength(tileCount, TMapChunkLoader.REGION_X * TMapChunkLoader.REGION_Y);
+
+  //Classify tiles
+  for y := 0 to TMapChunkLoader.REGION_Y - 1 do
+  begin
+    invertedY := TMapChunkLoader.REGION_Y - y - 1;
+
+    for x := 0 to TMapChunkLoader.REGION_X - 1 do
     begin
-      invertedY := TMapChunkLoader.REGION_Y - y - 1;
-
       if (settings[1, x, invertedY] and 2) <> 0 then
         isBridge := 1
       else
@@ -537,43 +564,70 @@ begin
       if tileZ >= TMapChunkLoader.REGION_Z then
         Continue;
 
+      t := (y * TMapChunkLoader.REGION_X + x) * 3;
+
       n := 0;
       if (settings[z, x, invertedY] and 24) = 0 then
       begin
         if (z = 0) and (isBridge = 1) then
         begin
-          zList[n] := 0;
+          tileZList[t + n] := 0;
           Inc(n);
         end;
-        zList[n] := tileZ;
+
+        tileZList[t + n] := tileZ;
         Inc(n);
       end;
 
-      if (tileZ < TMapChunkLoader.REGION_Z - 1) and ((settings[z + 1, x, invertedY] and 8) <> 0) then
+      if (tileZ < TMapChunkLoader.REGION_Z - 1) and
+         ((settings[z + 1, x, invertedY] and 8) <> 0) then
       begin
-        zList[n] := tileZ + 1;
+        tileZList[t + n] := tileZ + 1;
         Inc(n);
       end;
 
+      tileCount[y * TMapChunkLoader.REGION_X + x] := n;
+      for k := 0 to n - 1 do
+        needed[tileZList[t + k]] := True;
+    end;
+  end;
+
+  //Drop cached planes if needed
+  if (Self.CachedX <> regionX) or (Self.CachedY <> regionY) then
+  begin
+    Self.InvalidateCache();
+    Self.CachedX := regionX;
+    Self.CachedY := regionY;
+  end;
+
+  //Build the planes for this chunk if not cached
+  for i := 0 to TMapChunkLoader.REGION_Z - 1 do
+    if needed[i] and Self.CachedPlanes[i].IsEmpty then
+      Self.CachedPlanes[i] := Self.BuildRegionPlane(region, i);
+
+  for y := 0 to TMapChunkLoader.REGION_Y - 1 do
+    for x := 0 to TMapChunkLoader.REGION_X - 1 do
+    begin
+      n := tileCount[y * TMapChunkLoader.REGION_X + x];
       if n = 0 then
         Continue;
 
-      for k := 0 to n - 1 do
-        if Length(planes[zList[k]]) = 0 then
-          planes[zList[k]] := Self.BuildRegionPlane(Self.Loader.Regions[idx], zList[k]);
+      t := (y * TMapChunkLoader.REGION_X + x) * 3;
 
-      for i := 0 to TMapChunkLoader.MAP_SCALE - 1 do
+      for i := 0 to PIXEL_SIZE do
       begin
-        px := x * TMapChunkLoader.MAP_SCALE + i;
-        for j := 0 to TMapChunkLoader.MAP_SCALE - 1 do
+        pX := x * TMapChunkLoader.MAP_SCALE + i;
+
+        for j := 0 to PIXEL_SIZE do
         begin
-          py := y * TMapChunkLoader.MAP_SCALE + j;
+          pY := y * TMapChunkLoader.MAP_SCALE + j;
+
           for k := n - 1 downto 0 do
           begin
-            color := planes[zList[k], px, py];
+            color := Self.CachedPlanes[tileZList[t + k], pX, pY];
             if color <> 0 then
             begin
-              Result.Pixel[px, py] := color;
+              Result.Pixel[pX, pY] := color;
               Break;
             end;
           end;
@@ -581,6 +635,6 @@ begin
       end;
     end;
 
-  Self.DrawMapIcons(Result, Self.Loader.Regions[idx], z);
+  Self.DrawMapIcons(Result, region, z);
 end;
 

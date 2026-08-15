@@ -3,8 +3,8 @@
 //TODO: delete most of this I think... most is not used
 type
   TColorUtils = record
-    const WALL_COLOR: TColor = $EEEEEE;
-    const DOOR_COLOR: TColor = $0000EE;
+    const WALL_COLOR: TColor = $FFEEEEEE;
+    const DOOR_COLOR: TColor = $FF0000EE;
 
     const BRIGHTNESS_MAX: Double = 0.5;
     const BRIGHTNESS_HIGH: Double = 0.7;

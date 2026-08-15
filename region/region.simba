@@ -15,7 +15,7 @@ type
 
     TileHeights, TileSettings,
     OverlayIds, OverlayPaths, OverlayRotations,
-    UnderlayIds: array of T2DIntegerArray;
+    UnderlayIds: array of TIntegerMatrix;
 
     Locations: array of TWorldLocation;
   end;
