@@ -10,6 +10,8 @@ type
     CachedX, CachedY: Integer;
     CachedPlanes: array [0..3] of TIntegerMatrix;
 
+    LastIndex: Integer;
+
     const REGION_X: Integer = 64;
     const REGION_Y: Integer = 64;
     const REGION_Z: Integer = 4;
@@ -55,6 +57,7 @@ begin
   Result := 64 - (-(d mod 64)) - 1;
 end;
 
+
 procedure TMapChunkLoader.DrawMapSquare(var pixels: TIntegerMatrix; x, y, color: Integer); static;
 var
   bounds: TBox;
@@ -66,26 +69,6 @@ begin
   bounds.X2 := bounds.X1 + TMapChunkLoader.MAP_SCALE - 1;
   bounds.Y2 := bounds.Y1 + TMapChunkLoader.MAP_SCALE - 1;
   pixels.Fill(bounds, color);
-end;
-
-
-procedure TMapChunkLoader.AccumulateUnderlay(var hues, sats, light, mul, num: TIntegerArray; slot: Integer; constref u: TUnderlayDefinition; sign: Integer); static;
-begin
-  hues[slot] := hues[slot] + sign * u.Hue;
-  sats[slot] := sats[slot] + sign * u.Saturation;
-  light[slot] := light[slot] + sign * u.Lightness;
-  mul[slot] := mul[slot] + sign * u.HueMultiplier;
-  num[slot] := num[slot] + sign;
-end;
-
-procedure TMapChunkLoader.AccumulateRunning(var runningHues, runningSat, runningLight, runningMultiplier, runningNumber: Integer;
-  constref hues, sats, light, mul, num: TIntegerArray; slot, sign: Integer); static;
-begin
-  runningHues := runningHues + sign * hues[slot];
-  runningSat := runningSat + sign * sats[slot];
-  runningLight := runningLight + sign * light[slot];
-  runningMultiplier := runningMultiplier + sign * mul[slot];
-  runningNumber := runningNumber + sign * num[slot];
 end;
 
 
@@ -250,7 +233,7 @@ begin
 end;
 
 
-procedure TMapChunkLoader.DrawMapIcons(img: TImage; constref region: TRegion; z: Integer);
+procedure TMapChunkLoader.DrawMapIcons(img: TImage; constref region: TRegion; z, offsetX, offsetY: Integer);
 var
   i, localX, localY, isBridge, tileZ,
   objIdx, drawX, drawY, areaIdx: Integer;
@@ -294,8 +277,8 @@ begin
     if (sprite.Width <= 0) or (sprite.Height <= 0) then
       Continue;
 
-    drawX := 2 + (localX * TMapChunkLoader.MAP_SCALE) - (sprite.MaxWidth div 2);
-    drawY := 2 + ((TMapChunkLoader.REGION_Y - 1 - localY) * TMapChunkLoader.MAP_SCALE) - (sprite.MaxHeight div 2);
+    drawX := offsetX + 2 + (localX * TMapChunkLoader.MAP_SCALE) - (sprite.MaxWidth div 2);
+    drawY := offsetY + 2 + ((TMapChunkLoader.REGION_Y - 1 - localY) * TMapChunkLoader.MAP_SCALE) - (sprite.MaxHeight div 2);
 
     img.DrawImage(sprite.ToImage(), [drawX + sprite.OffsetX, drawY + sprite.OffsetY]);
   end;
@@ -312,12 +295,13 @@ var
   xNeighbor, yNeighbor, localX, localY,
   underlayID, overlayID,
 
-  runHue, runSat, runLight, runMul, runNum,
+  runHue, runSat, runLight, runMul, runNum, slot,
   underlayBGR, overlayBGR, shape, rotation, drawX, drawY: Integer;
   bounds, outterBounds: TBox;
   hues, sats, light, mul, num: TIntegerArray;
   tileShapes, tileRotations: TIntegerArray;
   selfRegion: TRegion;
+  underlay: TUnderlayDefinition;
 begin
   regionX := TMapChunkLoader.REGION_X;
   regionY := TMapChunkLoader.REGION_Y;
@@ -406,9 +390,15 @@ begin
 
         i := underlayID - 1;
         if i <= High(Self.MapData.Underlays) then
-          TMapChunkLoader.AccumulateUnderlay(
-            hues, sats, light, mul, num, y + TMapChunkLoader.BLEND, Self.MapData.Underlays[i], dir
-          );
+        begin
+          underlay := Self.MapData.Underlays[i];
+          slot := y + TMapChunkLoader.BLEND;
+          hues[slot] += dir * underlay.Hue;
+          sats[slot] += dir * underlay.Saturation;
+          light[slot] += dir * underlay.Lightness;
+          mul[slot] += dir * underlay.HueMultiplier;
+          num[slot] += dir;
+        end;
       end;
     end;
 
@@ -427,10 +417,13 @@ begin
         yNeighbor := y + TMapChunkLoader.BLEND * dir;
         if (yNeighbor < bounds.Y1) or (yNeighbor >= bounds.Y2) then
           Continue;
-        TMapChunkLoader.AccumulateRunning(
-          runHue, runSat, runLight, runMul, runNum,
-          hues, sats, light, mul, num, yNeighbor + TMapChunkLoader.BLEND, dir
-        );
+
+        slot := yNeighbor + TMapChunkLoader.BLEND;
+        runHue   += dir * hues[slot];
+        runSat   += dir * sats[slot];
+        runLight += dir * light[slot];
+        runMul   += dir * mul[slot];
+        runNum   += dir * num[slot];
       end;
 
       if (y < 0) or (y >= regionY) then
@@ -514,12 +507,10 @@ begin
     end;
   end;
 
-  // Objects sit on top of the terrain of their own plane. Bridge/upper-level
-  // resolution is left to GetChunkImage, which composites the planes.
   Self.DrawObjectsOnPlane(Result, region, z);
 end;
 
-function TMapChunkLoader.GetChunkImage(regionX, regionY, z: Integer): TImage;
+function TMapChunkLoader.GetChunkImage(regionX, regionY, z: Integer; drawIcons: Boolean = True): TImage;
 const
   PIXEL_SIZE: Integer = TMapChunkLoader.MAP_SCALE - 1;
 var
@@ -539,6 +530,8 @@ begin
     Exit;
 
   i := Self.Loader.RegionCoordinateIndex(regionX, regionY);
+  Self.LastIndex := i;
+
   if i = -1 then
     Exit;
 
@@ -635,6 +628,43 @@ begin
       end;
     end;
 
-  Self.DrawMapIcons(Result, region, z);
+  if drawIcons then
+    Self.DrawMapIcons(Result, region, z, 0, 0);
 end;
 
+function TMapChunkLoader.GetChunksImage(bounds: TBox; z: Integer): TImage;
+var
+  x, y, drawX, drawY, i: Integer;
+  chunk: TImage;
+  idx, offX, offY: TIntegerArray;
+begin
+  if bounds.X1 > bounds.X2 then
+    Swap(bounds.X1, bounds.X2);
+
+  if bounds.Y1 > bounds.Y2 then
+    Swap(bounds.Y1, bounds.Y2);
+
+  Result := new TImage(bounds.Width * TMapChunkLoader.IMAGE_SIZE, bounds.Height * TMapChunkLoader.IMAGE_SIZE);
+
+  for x := bounds.X1 to bounds.X2 do
+    for y := bounds.Y1 to bounds.Y2 do
+    begin
+      chunk := Self.GetChunkImage(x, y, z, False);
+
+      drawX := (x - bounds.X1) * TMapChunkLoader.IMAGE_SIZE;
+      drawY := (bounds.Y2 - y) * TMapChunkLoader.IMAGE_SIZE;
+
+      Result.DrawImage(chunk, [drawX, drawY]);
+
+      if Self.LastIndex = -1 then
+        Continue;
+
+      idx  += Self.LastIndex;
+      offX += drawX;
+      offY += drawY;
+    end;
+
+  //icons and sprites drawn separately so they are not cut-off every time they are in-between chunks
+  for i := 0 to High(idx) do
+    Self.DrawMapIcons(Result, Self.Loader.Regions[idx[i]], z, offX[i], offY[i]);
+end;

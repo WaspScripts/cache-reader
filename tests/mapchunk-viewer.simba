@@ -2,14 +2,20 @@
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
-  zSpinner, xSpinner, ySpinner: TLazSpinEdit;
+  zSpinner, x1Spinner, y1Spinner, x2Spinner, y2Spinner: TLazSpinEdit;
   chunkLoader: TMapChunkLoader;
 
 procedure ShowImage(sender: TLazObject);
 var
   img: TImage;
+  t: Double;
 begin
-  img := chunkLoader.GetChunkImage(xSpinner.Value, ySpinner.Value, zSpinner.Value);
+  //for 1 to 100 do img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+
+  t := PerformanceTime();
+  //for 1 to 100 do
+    img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+  WriteLn('Took: ', PerformanceTime()-t, 'ms to run.');
   img.Show();
 end;
 
@@ -43,37 +49,72 @@ begin
   lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
   lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
 
-  xSpinner := TLazSpinEdit.Create(form);
-  xSpinner.Parent := form;
-  xSpinner.Top := 100;
-  xSpinner.Left := 20;
-  xSpinner.MinValue := 0;
-  xSpinner.MaxValue := 199;
-  xSpinner.Value := 50;
+  x1Spinner := TLazSpinEdit.Create(form);
+  x1Spinner.Parent := form;
+  x1Spinner.Top := 100;
+  x1Spinner.Left := 20;
+  x1Spinner.MinValue := 0;
+  x1Spinner.MaxValue := 199;
+  x1Spinner.Value := 50;
 
   lbl := TLazLabel.Create(form);
   lbl.Parent := form;
-  lbl.Caption := 'X:';
-  lbl.AnchorSideBottom.Control := xSpinner;
+  lbl.Caption := 'X1:';
+  lbl.AnchorSideBottom.Control := x1Spinner;
   lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
-  lbl.AnchorSideLeft.Control := xSpinner;
+  lbl.AnchorSideLeft.Control := x1Spinner;
   lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
   lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
 
-  ySpinner := TLazSpinEdit.Create(form);
-  ySpinner.Parent := form;
-  ySpinner.Top := 150;
-  ySpinner.Left := 20;
-  ySpinner.MinValue := 0;
-  ySpinner.MaxValue := 199;
-  ySpinner.Value := 50;
+  y1Spinner := TLazSpinEdit.Create(form);
+  y1Spinner.Parent := form;
+  y1Spinner.Top := 150;
+  y1Spinner.Left := 20;
+  y1Spinner.MinValue := 0;
+  y1Spinner.MaxValue := 199;
+  y1Spinner.Value := 50;
 
   lbl := TLazLabel.Create(form);
   lbl.Parent := form;
-  lbl.Caption := 'Y:';
-  lbl.AnchorSideBottom.Control := ySpinner;
+  lbl.Caption := 'Y1:';
+  lbl.AnchorSideBottom.Control := y1Spinner;
   lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
-  lbl.AnchorSideLeft.Control := ySpinner;
+  lbl.AnchorSideLeft.Control := y1Spinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+
+  x2Spinner := TLazSpinEdit.Create(form);
+  x2Spinner.Parent := form;
+  x2Spinner.Top := 100;
+  x2Spinner.Left := 120;
+  x2Spinner.MinValue := 0;
+  x2Spinner.MaxValue := 199;
+  x2Spinner.Value := 50;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := 'X2:';
+  lbl.AnchorSideBottom.Control := x2Spinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := x2Spinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  y2Spinner := TLazSpinEdit.Create(form);
+  y2Spinner.Parent := form;
+  y2Spinner.Top := 150;
+  y2Spinner.Left := 120;
+  y2Spinner.MinValue := 0;
+  y2Spinner.MaxValue := 199;
+  y2Spinner.Value := 50;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := 'Y2:';
+  lbl.AnchorSideBottom.Control := y2Spinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := y2Spinner;
   lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
   lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
 
