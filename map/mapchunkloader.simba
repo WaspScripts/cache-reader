@@ -7,8 +7,7 @@ type
     RegionLoader: TRegionLoader;
     MapData: TMapDataLoader;
 
-    CachedX, CachedY: Integer;
-    CachedPlanes: array of TIntegerMatrix;
+    RegionPlaneCache: array of array of TIntegerMatrix;
 
     LastIndex: Integer;
 
@@ -36,16 +35,20 @@ type
     ];
   end;
 
-procedure TMapChunkLoader.InvalidateCache();
+procedure TMapChunkLoader.EnsurePlaneCache(regionIndex: Integer);
 var
-  z: Integer;
+  i: Integer;
 begin
-  SetLength(Self.CachedPlanes, TMapChunkLoader.REGION_Z);
-  for z := 0 to TMapChunkLoader.REGION_Z - 1 do
-    Self.CachedPlanes[z] := [];
+  if regionIndex < Length(Self.RegionPlaneCache) then
+    Exit;
 
-  Self.CachedX := -1;
-  Self.CachedY := -1;
+  i := Length(Self.RegionPlaneCache);
+  SetLength(Self.RegionPlaneCache, regionIndex + 1);
+  while i <= regionIndex do
+  begin
+    SetLength(Self.RegionPlaneCache[i], TMapChunkLoader.REGION_Z);
+    Inc(i);
+  end;
 end;
 
 function TMapChunkLoader.ConvertLocal(d: Integer): Integer; static;
@@ -471,7 +474,7 @@ var
   needed: array [0..3] of Boolean;
   tileZList, tileCount: TIntegerArray;
   settings: array of TIntegerMatrix;
-  i, x, y, k, n, t, px, py, color,
+  i, regionIdx, x, y, k, n, t, px, py, color,
   invertedY, isBridge, tileZ: Integer;
   region: TRegion;
 begin
@@ -485,14 +488,16 @@ begin
   if not Self.RegionLoader.LoadRegionAndNeighbors(regionX, regionY) then
     Exit;
 
-  i := Self.RegionLoader.RegionCoordinateIndex(regionX, regionY);
-  Self.LastIndex := i;
+  regionIdx := Self.RegionLoader.RegionCoordinateIndex(regionX, regionY);
+  Self.LastIndex := regionIdx;
 
-  if i = -1 then
+  if regionIdx = -1 then
     Exit;
 
-  region   := Self.RegionLoader.Regions[i];
+  region   := Self.RegionLoader.Regions[regionIdx];
   settings := region.TileSettings;
+
+  Self.EnsurePlaneCache(regionIdx);
 
   SetLength(tileZList, TMapChunkLoader.REGION_SIZE * TMapChunkLoader.REGION_SIZE * 3);
   SetLength(tileCount, TMapChunkLoader.REGION_SIZE * TMapChunkLoader.REGION_SIZE);
@@ -541,18 +546,10 @@ begin
     end;
   end;
 
-  //Drop cached planes if needed
-  if (Self.CachedX <> regionX) or (Self.CachedY <> regionY) then
-  begin
-    Self.InvalidateCache();
-    Self.CachedX := regionX;
-    Self.CachedY := regionY;
-  end;
-
   //Build the planes for this chunk if not cached
   for i := 0 to TMapChunkLoader.REGION_Z - 1 do
-    if needed[i] and Self.CachedPlanes[i].IsEmpty then
-      Self.CachedPlanes[i] := Self.BuildRegionPlane(region, i);
+    if needed[i] and Self.RegionPlaneCache[regionIdx][i].IsEmpty then
+      Self.RegionPlaneCache[regionIdx][i] := Self.BuildRegionPlane(region, i);
 
   for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
     for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
@@ -568,7 +565,7 @@ begin
         begin
           for k := n - 1 downto 0 do
           begin
-            color := Self.CachedPlanes[tileZList[t + k], pX, pY];
+            color := Self.RegionPlaneCache[regionIdx][tileZList[t + k]][pX, pY];
             if color = 0 then
               Continue;
 

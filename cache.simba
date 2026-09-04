@@ -2,7 +2,13 @@
 # CacheReader
 Suite of tools to read the cache files of a popular MMORPG
 *)
-{$IFNDEF ENABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
+{$IFNDEF ENABLE_CACHEREADER_RANGE_CHECKS}
+{$R-}
+{$ELSE}
+begin
+  WriteLn('CacheReader: Range checks are on!');
+end;
+{$ENDIF}
 
 {$include_once ./reader/reader.simba}
 {$include_once ./definitions/items.simba}
