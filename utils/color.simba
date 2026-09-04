@@ -6,6 +6,11 @@ type
     const WALL_COLOR: TColor = $FFEEEEEE;
     const DOOR_COLOR: TColor = $FF0000EE;
 
+    const COLLISION_COLOR: Integer = $333333;
+    const COLLISION_WALL_COLOR: Integer = $000000;
+    const COLLISION_DOOR_COLOR: Integer = $0000FF;
+    const COLLISION_WALKABLE_COLOR: Integer = $FFFFFF;
+
     const BRIGHTNESS_MAX: Double = 0.5;
     const BRIGHTNESS_HIGH: Double = 0.7;
     const BRIGHTNESS_LOW: Double = 0.8;
@@ -395,6 +400,16 @@ var
 begin
   v := EnsureRange(Round((-height / MAX_HEIGHT) * 255), 0, 255);
   Result := $FF000000 or (v shl 16) or (v shl 8) or v;
+end;
+
+function TColorUtils.Collision2Color(flag: Integer): Integer; static;
+begin
+  case flag of
+    0: Result := $FFFFFF; // walkable - white
+    1: Result := $000000; // blocked - black
+  else
+    Result := $333333;    // collision object - dark grey
+  end;
 end;
 
 var

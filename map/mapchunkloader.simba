@@ -586,18 +586,17 @@ type
 function THeightMap.ToImage(): TImage;
 var
   w, h, x, y: Integer;
-  pixels: TIntegerMatrix;
 begin
   w := Self.Width;
   h := Self.Height;
 
-  SetLength(pixels, h, w);
-  for x := 0 to h - 1 do
-    for y := 0 to w - 1 do
-      pixels[x, y] := TColorUtils.Height2Color(Self[x, y]);
-
   Result := new TImage(w, h);
-  Result.FromMatrix(pixels);
+
+  h -= 1;
+  w -= 1;
+  for x := 0 to h do
+    for y := 0 to w do
+      Result.Pixel[x, y] := TColorUtils.Height2Color(Self[x, y]);
 end;
 
 function TMapChunkLoader.GetChunkHeightMap(regionX, regionY, z: Integer): THeightMap;
@@ -695,5 +694,370 @@ begin
           drawY := (bounds.Y2 - cy) * TMapChunkLoader.REGION_SIZE + (TMapChunkLoader.REGION_SIZE - 1 - y);
           Result[drawY, drawX] := heights[x, y];
         end;
+    end;
+end;
+
+
+type
+  TCollisionMap = type TIntegerMatrix;
+
+function TCollisionMap.ToImage(): TImage;
+var
+  w, h, x, y: Integer;
+begin
+  w := Self.Width;
+  h := Self.Height;
+
+  Result := new TImage(w, h);
+
+  h -= 1;
+  w -= 1;
+  for x := 0 to h do
+    for y := 0 to w do
+      Result.Pixel[x, y] := TColorUtils.Collision2Color(Self[x, y]);
+end;
+
+function TMapChunkLoader.HasDoorOps(constref obj: TObjectDefinition): Boolean;
+var
+  i: Integer;
+begin
+  if obj.WallOrDoor = 0 then
+    Exit(False);
+
+  if Pos('urtain', obj.Name) > 0 then
+    Exit(False);
+
+  for i := 0 to High(obj.Ops.Ops) do
+    if obj.Ops.Ops[i].Text = 'Close' then
+      Exit(True);
+
+  Result := False;
+end;
+
+procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
+var
+  i, color, scale, drawX, drawY, xSize, ySize, sX, sY: Integer;
+  obj: TObjectDefinition;
+begin
+  if (loc.LocType >= 4) and (loc.LocType <= 8) then
+    Exit;
+
+  i := Self.MapData.Objects.IndexOf(loc.ID);
+  if i = -1 then
+    Exit;
+
+  obj := Self.MapData.Objects[i];
+
+  if obj.InteractType = 0 then
+    Exit;
+
+  if loc.LocType = 22 then
+  begin
+    if obj.InteractType <> 1 then
+      Exit;
+  end;
+
+  scale := TMapChunkLoader.MAP_SCALE;
+
+  drawX := x * scale;
+  drawY := (TMapChunkLoader.REGION_SIZE - obj.SizeY - y) * scale;
+
+  // Types 0-3: walls and corners
+  if (loc.LocType >= 0) and (loc.LocType <= 3) then
+  begin
+    if loc.ID = 24720 then
+      Exit;
+
+    if obj.WallOrDoor <> 0 then
+      color := TColorUtils.COLLISION_DOOR_COLOR
+    else
+      color := TColorUtils.COLLISION_WALL_COLOR;
+
+    if (drawX < 0) or (drawY < 0) or (drawX >= TMapChunkLoader.IMAGE_SIZE) or (drawY >= TMapChunkLoader.IMAGE_SIZE) then
+      Exit;
+
+    if (loc.LocType = 0) or (loc.LocType = 2) then
+    begin
+      if not Self.HasDoorOps(obj) then
+      begin
+        case loc.Orientation of
+          0: for i := 0 to scale - 1 do pixels[drawX, drawY + i] := color;
+          1: for i := 0 to scale - 1 do pixels[drawX + i, drawY] := color;
+          2: for i := 0 to scale - 1 do pixels[drawX + scale - 1, drawY + i] := color;
+          3: for i := 0 to scale - 1 do pixels[drawX + i, drawY + scale - 1] := color;
+        end;
+      end
+      else
+      begin
+        case loc.Orientation of
+          0: for i := 0 to scale - 1 do pixels[drawX + i, drawY] := color;
+          1: for i := 0 to scale - 1 do pixels[drawX + scale - 1, drawY + i] := color;
+          2: for i := 0 to scale - 1 do
+             begin
+               if drawY + scale < TMapChunkLoader.IMAGE_SIZE then
+                 pixels[drawX + i, drawY + scale] := color;
+		     end;
+          3: for i := 0 to scale - 1 do pixels[drawX, drawY + i] := color;
+        end;
+      end;
+    end;
+
+    if loc.LocType = 3 then
+    begin
+      case loc.Orientation of
+        0: pixels[drawX, drawY] := color;
+        1: pixels[drawX + scale - 1, drawY] := color;
+        2: pixels[drawX + scale - 1, drawY + scale - 1] := color;
+        3: pixels[drawX, drawY + scale - 1] := color;
+      end;
+    end;
+
+    if loc.LocType = 2 then
+    begin
+      case loc.Orientation of
+        0: for i := 0 to scale - 1 do pixels[drawX + i, drawY] := color;
+        1: for i := 0 to scale - 1 do pixels[drawX + scale - 1, drawY + i] := color;
+        2: for i := 0 to scale - 1 do pixels[drawX + i, drawY + scale - 1] := color;
+        3: for i := 0 to scale - 1 do pixels[drawX, drawY + i] := color;
+      end;
+    end;
+
+    Exit;
+  end;
+
+  // Type 9: diagonal walls
+  if loc.LocType = 9 then
+  begin
+    if obj.WallOrDoor <> 0 then
+      color := TColorUtils.COLLISION_DOOR_COLOR
+    else
+      color := TColorUtils.COLLISION_WALL_COLOR;
+
+    for i := 0 to scale - 1 do
+    begin
+      if (loc.Orientation <> 0) and (loc.Orientation <> 2) then
+        pixels[drawX + i, drawY + i] := color
+      else
+        pixels[drawX + i, drawY + (scale - 1 - i)] := color;
+    end;
+
+    Exit;
+  end;
+
+  // Types 10-22: collision objects
+  if (loc.LocType >= 10) and (loc.LocType <= 22) then
+  begin
+    if (obj.Name = 'null') or (obj.Name = '') then
+      Exit;
+    if Length(obj.ObjectModels) = 0 then
+      Exit;
+
+    if drawX < 0 then
+      Exit;
+
+    xSize := obj.SizeX * scale;
+    ySize := obj.SizeY * scale;
+
+    if (xSize = ySize) or (loc.Orientation = 0) or (loc.Orientation = 2) then
+    begin
+      if (drawX + xSize >= TMapChunkLoader.IMAGE_SIZE) or (drawY + ySize >= TMapChunkLoader.IMAGE_SIZE) then
+        Exit;
+
+      for sX := 0 to xSize - 1 do
+        for sY := 0 to ySize - 1 do
+          if pixels[drawX + sX, drawY + sY] <> TColorUtils.COLLISION_WALL_COLOR then
+            pixels[drawX + sX, drawY + sY] := TColorUtils.COLLISION_COLOR;
+    end;
+
+    if (loc.Orientation = 1) or (loc.Orientation = 3) then
+    begin
+      drawY := drawY + ySize - 1;
+      if (drawY >= TMapChunkLoader.IMAGE_SIZE) or (drawY - xSize < 0) or (drawX + ySize >= TMapChunkLoader.IMAGE_SIZE) then
+        Exit;
+
+      for sX := 0 to xSize - 1 do
+        for sY := 0 to ySize - 1 do
+          if pixels[drawX + sY, drawY - sX] <> TColorUtils.COLLISION_WALL_COLOR then
+            pixels[drawX + sY, drawY - sX] := TColorUtils.COLLISION_COLOR;
+    end;
+  end;
+end;
+
+procedure TMapChunkLoader.DrawCollisionObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
+var
+  loc: TWorldLocation;
+  localX, localY: Integer;
+  isBridge: Boolean;
+  tileZ: Integer;
+begin
+  for loc in region.Locations do
+  begin
+    localX := loc.X - region.BaseX;
+    localY := loc.Y - region.BaseY;
+
+    if (z = 0) and ((region.TileSettings[1, localX, localY] and 2) <> 0) then
+      isBridge := True
+    else
+      isBridge := False;
+
+    tileZ := z;
+    if (z = 0) and isBridge then
+      tileZ := 1;
+
+    if loc.Z <> tileZ then
+      Continue;
+
+    if (region.TileSettings[z, localX, localY] and 24) <> 0 then
+      Continue;
+
+    Self.DrawCollisionObjectAtTile(pixels, loc, localX, localY);
+  end;
+end;
+
+function TMapChunkLoader.GetChunkCollisionMap(regionX, regionY, z: Integer): TCollisionMap;
+var
+  i, x, y: Integer;
+  region: TRegion;
+  setting: Integer;
+begin
+  SetLength(Result, TMapChunkLoader.REGION_SIZE, TMapChunkLoader.REGION_SIZE);
+
+  if not Self.RegionLoader.LoadRegionAndNeighbors(regionX, regionY) then
+    Exit;
+
+  i := Self.RegionLoader.RegionCoordinateIndex(regionX, regionY);
+  if i = -1 then
+    Exit;
+
+  region := Self.RegionLoader.Regions[i];
+
+  for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+    for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+    begin
+      if (z = 0) and ((region.TileSettings[1, x, y] and 2) <> 0) then
+        setting := region.TileSettings[1, x, y]
+      else
+        setting := region.TileSettings[z, x, y];
+
+      if (setting and 1) <> 0 then
+        Result[x, y] := 1
+      else
+        Result[x, y] := 0;
+    end;
+end;
+
+function TMapChunkLoader.GetChunkCollisionImage(regionX, regionY, z: Integer): TImage;
+var
+  pixels: TIntegerMatrix;
+  i, x, y, invertedY, px, py, setting: Integer;
+  region: TRegion;
+begin
+  SetLength(pixels, TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
+
+  if not Self.RegionLoader.LoadRegionAndNeighbors(regionX, regionY) then
+  begin
+    Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
+    Exit;
+  end;
+
+  i := Self.RegionLoader.RegionCoordinateIndex(regionX, regionY);
+  if i = -1 then
+  begin
+    Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
+    Exit;
+  end;
+
+  region := Self.RegionLoader.Regions[i];
+
+  // Draw tile background
+  for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+    for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+    begin
+      invertedY := TMapChunkLoader.REGION_SIZE - y - 1;
+
+      if (region.TileSettings[z, x, invertedY] and 24) <> 0 then
+      begin
+        if (region.TileSettings[z, x, invertedY] and 1) = 0 then
+          TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALKABLE_COLOR)
+        else
+          TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALL_COLOR);
+        Continue;
+      end;
+
+      if (z = 0) and ((region.TileSettings[1, x, invertedY] and 2) <> 0) then
+      begin
+        setting := region.TileSettings[1, x, invertedY];
+        if (setting and 1) = 0 then
+          TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALKABLE_COLOR)
+        else
+          TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALL_COLOR);
+        Continue;
+      end;
+
+      if (region.TileSettings[z, x, invertedY] and 1) = 0 then
+        TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALKABLE_COLOR)
+      else
+        TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALL_COLOR);
+    end;
+
+  Self.DrawCollisionObjectsOnPlane(pixels, region, z);
+
+  Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
+  for px := 0 to TMapChunkLoader.IMAGE_SIZE - 1 do
+    for py := 0 to TMapChunkLoader.IMAGE_SIZE - 1 do
+      Result.Pixel[px, py] := pixels[px, py];
+end;
+
+function TMapChunkLoader.GetChunksCollisionMap(bounds: TBox; z: Integer): TCollisionMap;
+var
+  cx, cy, x, y, drawX, drawY: Integer;
+  chunkW, chunkH: Integer;
+  collision: TCollisionMap;
+begin
+  if bounds.X1 > bounds.X2 then
+    Swap(bounds.X1, bounds.X2);
+  if bounds.Y1 > bounds.Y2 then
+    Swap(bounds.Y1, bounds.Y2);
+
+  chunkW := (bounds.X2 - bounds.X1 + 1) * TMapChunkLoader.REGION_SIZE;
+  chunkH := (bounds.Y2 - bounds.Y1 + 1) * TMapChunkLoader.REGION_SIZE;
+  SetLength(Result, chunkH, chunkW);
+
+  for cx := bounds.X1 to bounds.X2 do
+    for cy := bounds.Y1 to bounds.Y2 do
+    begin
+      collision := Self.GetChunkCollisionMap(cx, cy, z);
+
+      for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+        for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+        begin
+          drawX := (cx - bounds.X1) * TMapChunkLoader.REGION_SIZE + x;
+          drawY := (bounds.Y2 - cy) * TMapChunkLoader.REGION_SIZE + (TMapChunkLoader.REGION_SIZE - 1 - y);
+          Result[drawY, drawX] := collision[x, y];
+        end;
+    end;
+end;
+
+function TMapChunkLoader.GetChunksCollisionImage(bounds: TBox; z: Integer): TImage;
+var
+  x, y, drawX, drawY: Integer;
+  chunk: TImage;
+begin
+  if bounds.X1 > bounds.X2 then
+    Swap(bounds.X1, bounds.X2);
+  if bounds.Y1 > bounds.Y2 then
+    Swap(bounds.Y1, bounds.Y2);
+
+  Result := new TImage(bounds.Width * TMapChunkLoader.IMAGE_SIZE, bounds.Height * TMapChunkLoader.IMAGE_SIZE);
+
+  for x := bounds.X1 to bounds.X2 do
+    for y := bounds.Y1 to bounds.Y2 do
+    begin
+      chunk := Self.GetChunkCollisionImage(x, y, z);
+
+      drawX := (x - bounds.X1) * TMapChunkLoader.IMAGE_SIZE;
+      drawY := (bounds.Y2 - y) * TMapChunkLoader.IMAGE_SIZE;
+
+      Result.DrawImage(chunk, [drawX, drawY]);
     end;
 end;
