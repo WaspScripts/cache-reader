@@ -1,4 +1,4 @@
-{.$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
+{$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
@@ -10,10 +10,10 @@ var
   img: TImage;
   t: Double;
 begin
-  //for 1 to 100 do img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+  for 1 to 100 do img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
 
   t := PerformanceTime();
-  //for 1 to 100 do
+  for 1 to 100 do
     img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
   WriteLn('Took: ', PerformanceTime()-t, 'ms to run.');
   img.Show();
