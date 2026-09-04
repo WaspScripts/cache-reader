@@ -387,6 +387,16 @@ begin
   Result := Self.Palette[(hsl and 65408) + targetLum];
 end;
 
+function TColorUtils.Height2Color(height: Integer): Integer; static;
+const
+  MAX_HEIGHT: Integer = 6048;
+var
+  v: Integer;
+begin
+  v := EnsureRange(Round((-height / MAX_HEIGHT) * 255), 0, 255);
+  Result := $FF000000 or (v shl 16) or (v shl 8) or v;
+end;
+
 var
   ColorUtils: TColorUtils;
 

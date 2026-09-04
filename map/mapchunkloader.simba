@@ -4,7 +4,7 @@
 
 type
   TMapChunkLoader = record
-    Loader: TRegionLoader;
+    RegionLoader: TRegionLoader;
     MapData: TMapDataLoader;
 
     CachedX, CachedY: Integer;
@@ -292,25 +292,25 @@ begin
   SetLength(num, i);
 
   //hasLeft
-  if Self.Loader.WorldCoordinateIndex(region.BaseX - 1, region.BaseY) <> -1 then
+  if Self.RegionLoader.WorldCoordinateIndex(region.BaseX - 1, region.BaseY) <> -1 then
     bounds.X1 := -TMapChunkLoader.BLEND
   else
     bounds.X1 := 0;
 
   //hasRight
-  if Self.Loader.WorldCoordinateIndex(region.BaseX + TMapChunkLoader.REGION_SIZE, region.BaseY) <> -1 then
+  if Self.RegionLoader.WorldCoordinateIndex(region.BaseX + TMapChunkLoader.REGION_SIZE, region.BaseY) <> -1 then
     bounds.X2 := TMapChunkLoader.REGION_SIZE + TMapChunkLoader.BLEND - 1
   else
     bounds.X2 := TMapChunkLoader.REGION_SIZE - 1;
 
   //hasDown
-  if Self.Loader.WorldCoordinateIndex(region.BaseX, region.BaseY - 1) <> -1 then
+  if Self.RegionLoader.WorldCoordinateIndex(region.BaseX, region.BaseY - 1) <> -1 then
     bounds.Y1 := -TMapChunkLoader.BLEND
   else
     bounds.Y1 := 0;
 
   //hasUp
-  if Self.Loader.WorldCoordinateIndex(region.BaseX, region.BaseY + TMapChunkLoader.REGION_SIZE) <> -1 then
+  if Self.RegionLoader.WorldCoordinateIndex(region.BaseX, region.BaseY + TMapChunkLoader.REGION_SIZE) <> -1 then
     bounds.Y2 := TMapChunkLoader.REGION_SIZE + TMapChunkLoader.BLEND - 1
   else
     bounds.Y2 := TMapChunkLoader.REGION_SIZE - 1;
@@ -328,11 +328,11 @@ begin
       localX := TMapChunkLoader.ConvertLocal(neighbor);
       for y := bounds.Y1 to bounds.Y2 do
       begin
-        i := Self.Loader.WorldCoordinateIndex(region.BaseX + neighbor, region.BaseY + y);
+        i := Self.RegionLoader.WorldCoordinateIndex(region.BaseX + neighbor, region.BaseY + y);
         if i = -1 then
           Continue;
 
-        underlayID := Self.Loader.Regions[i].GetUnderlayID(z, localX, TMapChunkLoader.ConvertLocal(y));
+        underlayID := Self.RegionLoader.Regions[i].GetUnderlayID(z, localX, TMapChunkLoader.ConvertLocal(y));
         if underlayID <= 0 then
           Continue;
 
@@ -482,16 +482,16 @@ begin
 
   Self.LastIndex := -1;
 
-  if not Self.Loader.LoadRegionAndNeighbors(regionX, regionY) then
+  if not Self.RegionLoader.LoadRegionAndNeighbors(regionX, regionY) then
     Exit;
 
-  i := Self.Loader.RegionCoordinateIndex(regionX, regionY);
+  i := Self.RegionLoader.RegionCoordinateIndex(regionX, regionY);
   Self.LastIndex := i;
 
   if i = -1 then
     Exit;
 
-  region   := Self.Loader.Regions[i];
+  region   := Self.RegionLoader.Regions[i];
   settings := region.TileSettings;
 
   SetLength(tileZList, TMapChunkLoader.REGION_SIZE * TMapChunkLoader.REGION_SIZE * 3);
@@ -582,6 +582,58 @@ begin
     Self.DrawMapIcons(Result, region, z, 0, 0);
 end;
 
+
+type
+  THeightMap = type TIntegerMatrix;
+
+function THeightMap.ToImage(): TImage;
+var
+  w, h, x, y: Integer;
+  pixels: TIntegerMatrix;
+begin
+  w := Self.Width;
+  h := Self.Height;
+
+  SetLength(pixels, h, w);
+  for x := 0 to h - 1 do
+    for y := 0 to w - 1 do
+      pixels[x, y] := TColorUtils.Height2Color(Self[x, y]);
+
+  Result := new TImage(w, h);
+  Result.FromMatrix(pixels);
+end;
+
+function TMapChunkLoader.GetChunkHeightMap(regionX, regionY, z: Integer): THeightMap;
+var
+  i, x, y: Integer;
+  region: TRegion;
+begin
+  SetLength(Result, TMapChunkLoader.REGION_SIZE, TMapChunkLoader.REGION_SIZE);
+
+  if not Self.RegionLoader.LoadRegionAndNeighbors(regionX, regionY) then
+    Exit;
+
+  i := Self.RegionLoader.RegionCoordinateIndex(regionX, regionY);
+  if i = -1 then
+    Exit;
+
+  region := Self.RegionLoader.Regions[i];
+
+  for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+    for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+    begin
+      if (region.TileSettings[z, x, y] and 24) = 0 then
+      begin
+        if (z = 0) and ((region.TileSettings[1, x, y] and 2) <> 0) then
+          Result[x, y] := region.TileHeights[1, x, y]
+        else
+          Result[x, y] := region.TileHeights[z, x, y];
+      end
+      else
+        Result[x, y] := region.TileHeights[z, x, y];
+    end;
+end;
+
 function TMapChunkLoader.GetChunksImage(bounds: TBox; z: Integer): TImage;
 var
   x, y, drawX, drawY, i: Integer;
@@ -616,5 +668,35 @@ begin
 
   //icons and sprites drawn separately so they are not cut-off every time they are in-between chunks
   for i := 0 to High(idx) do
-    Self.DrawMapIcons(Result, Self.Loader.Regions[idx[i]], z, offX[i], offY[i]);
+    Self.DrawMapIcons(Result, Self.RegionLoader.Regions[idx[i]], z, offX[i], offY[i]);
+end;
+
+function TMapChunkLoader.GetChunksHeightMap(bounds: TBox; z: Integer): THeightMap;
+var
+  cx, cy, x, y, drawX, drawY: Integer;
+  chunkW, chunkH: Integer;
+  heights: THeightMap;
+begin
+  if bounds.X1 > bounds.X2 then
+    Swap(bounds.X1, bounds.X2);
+  if bounds.Y1 > bounds.Y2 then
+    Swap(bounds.Y1, bounds.Y2);
+
+  chunkW := (bounds.X2 - bounds.X1 + 1) * TMapChunkLoader.REGION_SIZE;
+  chunkH := (bounds.Y2 - bounds.Y1 + 1) * TMapChunkLoader.REGION_SIZE;
+  SetLength(Result, chunkH, chunkW);
+
+  for cx := bounds.X1 to bounds.X2 do
+    for cy := bounds.Y1 to bounds.Y2 do
+    begin
+      heights := Self.GetChunkHeightMap(cx, cy, z);
+
+      for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+        for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+        begin
+          drawX := (cx - bounds.X1) * TMapChunkLoader.REGION_SIZE + x;
+          drawY := (bounds.Y2 - cy) * TMapChunkLoader.REGION_SIZE + (TMapChunkLoader.REGION_SIZE - 1 - y);
+          Result[drawY, drawX] := heights[x, y];
+        end;
+    end;
 end;

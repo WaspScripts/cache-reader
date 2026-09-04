@@ -7,15 +7,26 @@ var
 
 procedure ShowImage(sender: TLazObject);
 var
+  heights: TIntegerMatrix;
+  pixels: TIntegerMatrix;
   img: TImage;
+  cx, cy, x, y, drawX, drawY: Integer;
+  chunkW, chunkH: Integer;
   t: Double;
 begin
   for 1 to 100 do
-    img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+    img := chunkLoader.GetChunksHeightMap(
+      [x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value],
+      zSpinner.Value
+    ).ToImage();
 
   t := PerformanceTime();
   for 1 to 100 do
-    img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+    img := chunkLoader.GetChunksHeightMap(
+      [x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value],
+      zSpinner.Value
+    ).ToImage();
+
   WriteLn('Took: ', PerformanceTime()-t, 'ms to run.');
   img.Show();
 end;
@@ -27,8 +38,6 @@ var
 begin
   CacheReader := TCacheReader.Create();
   CacheReader.Indices[ECacheIndex.MAPS].Cache();
-
-  chunkLoader.MapData.Load();
 
   form := TLazForm.Create();
   form.Position := ELazFormPosition.DesktopCenter;
@@ -84,7 +93,6 @@ begin
   lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
   lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
 
-
   x2Spinner := TLazSpinEdit.Create(form);
   x2Spinner.Parent := form;
   x2Spinner.Top := 100;
@@ -124,7 +132,7 @@ begin
   btn.Top := 200;
   btn.Left := 20;
   btn.Width := 200;
-  btn.Caption := 'Render and show';
+  btn.Caption := 'Show heightmap';
   btn.OnClick := @ShowImage;
 
   form.Show();
