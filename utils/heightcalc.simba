@@ -1,6 +1,6 @@
 type
   THeightCalc = record
-    Sin, Cos: array [0..2047] of Integer;
+    CosTable: array [0..1023] of Integer;
   end;
 
 procedure THeightCalc.Setup();
@@ -8,13 +8,10 @@ var
   i: Integer;
   rads: Double;
 begin
-  rads := PI/1024;
+  rads := PI / 1024;
 
-  for i := 0 to 2047 do
-  begin
-    Self.Sin[i] := Trunc(65536 * Sin(i * rads));
-    Self.Cos[i] := Trunc(65536 * Cos(i * rads));
-  end;
+  for i := 0 to 1023 do
+    Self.CosTable[i] := Trunc(65536 * Cos(i * rads));
 end;
 
 function THeightCalc.Noise(x, y: Integer): Integer;
@@ -22,34 +19,31 @@ var
   n: Integer;
   hash: Integer;
 begin
-  n := (x + y * 57);
+  n := x + y * 57;
   n := n xor (n shl 13);
 
-  //idk where these numbers come from but this looks like some kind of polynomial hash
   hash := (n * n * $3D73 + $C0AE5) + $5208DD0D;
-  //High(Int32) = $7FFFFFFF
   Result := ((n * hash) and $7FFFFFFF) shr 19 and $FF;
 end;
 
 function THeightCalc.SmoothedNoise(x, y: Integer): Integer;
 var
-  corners, sides, center: Integer;
+  corners, sides: Integer;
 begin
   corners := Self.Noise(x - 1, y - 1) + Self.Noise(x + 1, y - 1) +
              Self.Noise(x - 1, y + 1) + Self.Noise(x + 1, y + 1);
 
-  sides :=   Self.Noise(x - 1, y) + Self.Noise(x + 1, y) +
-             Self.Noise(x, y - 1) + Self.Noise(x, y + 1);
+  sides := Self.Noise(x - 1, y) + Self.Noise(x + 1, y) +
+           Self.Noise(x, y - 1) + Self.Noise(x, y + 1);
 
-  center := Self.Noise(x, y);
-  Result := (center div 4) + (sides div 8) + (corners div 16);
+  Result := (Self.Noise(x, y) shr 2) + (sides shr 3) + (corners shr 4);
 end;
 
-function THeightCalc.Interpolate(a, b, x, y: Integer): Integer;
+function THeightCalc.Interpolate(a, b, x, frequency: Integer): Integer;
 var
   f: Integer;
 begin
-  f := (65536 - Self.Cos[1024 * x div y]) shr 1;
+  f := (65536 - Self.CosTable[1024 * x div frequency]) shr 1;
   Result := ((f * b) shr 16) + ((a * (65536 - f)) shr 16);
 end;
 
@@ -58,10 +52,26 @@ var
   intX, fracX, intY, fracY,
   v1, v2, v3, v4, i1, i2: Integer;
 begin
+  if frequency = 1 then
+  begin
+    Result := Self.SmoothedNoise(x, y);
+    Exit;
+  end;
+
   intX := x div frequency;
   fracX := x and (frequency - 1);
   intY := y div frequency;
   fracY := y and (frequency - 1);
+
+  if frequency = 2 then
+  begin
+    case (fracX or (fracY shl 1)) of
+      0: Exit(Self.SmoothedNoise(intX, intY));
+      1: Exit(Self.SmoothedNoise(intX + 1, intY));
+      2: Exit(Self.SmoothedNoise(intX, intY + 1));
+      3: Exit(Self.SmoothedNoise(intX + 1, intY + 1));
+    end;
+  end;
 
   v1 := Self.SmoothedNoise(intX, intY);
   v2 := Self.SmoothedNoise(intX + 1, intY);
@@ -70,6 +80,7 @@ begin
 
   i1 := Self.Interpolate(v1, v2, fracX, frequency);
   i2 := Self.Interpolate(v3, v4, fracX, frequency);
+
   Result := Self.Interpolate(i1, i2, fracY, frequency);
 end;
 
@@ -81,10 +92,12 @@ begin
        ((Self.InterpolateNoise(10294 + x, y + 37821, 2) - 128) shr 1) +
        ((Self.InterpolateNoise(x, y, 1) - 128) shr 2);
 
-  Result := 35 + Trunc(n * 0.3);
+  Result := 35 + (n * 3) div 10;
 
-
-  Result := Min(Max(Result, 10), 60);
+  if Result < 10 then
+    Result := 10
+  else if Result > 60 then
+    Result := 60;
 end;
 
 var
