@@ -14,18 +14,11 @@ var
   chunkW, chunkH: Integer;
   t: Double;
 begin
-  for 1 to 100 do
-    img := chunkLoader.GetChunksHeightMap(
-      [x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value],
-      zSpinner.Value
-    ).ToImage();
+  for 1 to 100 do img := chunkLoader.GetChunksHeightMap([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value],zSpinner.Value).ToImage();
 
   t := PerformanceTime();
   for 1 to 100 do
-    img := chunkLoader.GetChunksHeightMap(
-      [x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value],
-      zSpinner.Value
-    ).ToImage();
+    img := chunkLoader.GetChunksHeightMap([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value],zSpinner.Value).ToImage();
 
   WriteLn('Took: ', PerformanceTime()-t, 'ms to run.');
   img.Show();

@@ -10,8 +10,7 @@ var
   img: TImage;
   t: Double;
 begin
-  for 1 to 100 do
-    img := chunkLoader.GetChunksCollisionImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+  for 1 to 100 do img := chunkLoader.GetChunksCollisionImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
 
   t := PerformanceTime();
   for 1 to 100 do
