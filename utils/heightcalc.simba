@@ -1,7 +1,6 @@
 type
   THeightCalc = record
     Sin, Cos: array [0..2047] of Integer;
-    IsSetup: Boolean;
   end;
 
 procedure THeightCalc.Setup();
@@ -9,9 +8,6 @@ var
   i: Integer;
   rads: Double;
 begin
-  if Self.IsSetup then
-    Exit;
-
   rads := PI/1024;
 
   for i := 0 to 2047 do
@@ -19,8 +15,6 @@ begin
     Self.Sin[i] := Trunc(65536 * Sin(i * rads));
     Self.Cos[i] := Trunc(65536 * Cos(i * rads));
   end;
-
-  Self.IsSetup := True;
 end;
 
 function THeightCalc.Noise(x, y: Integer): Integer;
@@ -55,7 +49,6 @@ function THeightCalc.Interpolate(a, b, x, y: Integer): Integer;
 var
   f: Integer;
 begin
-  Self.Setup();
   f := (65536 - Self.Cos[1024 * x div y]) shr 1;
   Result := ((f * b) shr 16) + ((a * (65536 - f)) shr 16);
 end;

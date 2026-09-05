@@ -22,5 +22,6 @@ end;
 
 begin
   ColorUtils.Setup();
+  HeightCalc.Setup();
 end;
 {$R+}
