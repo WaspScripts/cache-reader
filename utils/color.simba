@@ -1,6 +1,5 @@
 {$include_once ./helpers.simba}
 
-//TODO: delete most of this I think... most is not used
 type
   TColorUtils = record
     const WALL_COLOR: TColor = $FFEEEEEE;
@@ -25,161 +24,26 @@ type
 
 function TColorUtils.PackHSL(hue, saturation, luminance: Integer): Integer; static;
 begin
-  if luminance > 179 then saturation := saturation div 2;
-  if luminance > 192 then saturation := saturation div 2;
-  if luminance > 217 then saturation := saturation div 2;
-  if luminance > 243 then saturation := saturation div 2;
+  if luminance > 179 then saturation := saturation shr 1;
+  if luminance > 192 then saturation := saturation shr 1;
+  if luminance > 217 then saturation := saturation shr 1;
+  if luminance > 243 then saturation := saturation shr 1;
 
-  Result := ((saturation div 32) shl 7) + ((hue div 4) shl 10) + (luminance div 2);
+  Result := ((saturation shr 5) shl 7) + ((hue shr 2) shl 10) + (luminance shr 1);
 end;
 
-function TColorUtils.PackHSLFull(hue, saturation, luminance: Integer): Integer; static;
-begin
-  Result := ((hue and $FF) shl 16) or ((saturation and $FF) shl 8) or (luminance and $FF);
-end;
-
-function TColorUtils.UnpackHue(hsl: Integer): Integer; static;
-begin
-  Result := (hsl shr 10) and 63;
-end;
-
-function TColorUtils.UnpackSaturation(hsl: Integer): Integer; static;
-begin
-  Result := (hsl shr 7) and 7;
-end;
-
-function TColorUtils.UnpackLuminance(hsl: Integer): Integer; static;
-begin
-  Result := hsl and 127;
-end;
-
-function TColorUtils.UnpackHueFull(hsl: Integer): Integer; static;
-begin
-  Result := (hsl shr 16) and $FF;
-end;
-
-function TColorUtils.UnpackSaturationFull(hsl: Integer): Integer; static;
-begin
-  Result := (hsl shr 8) and $FF;
-end;
-
-function TColorUtils.UnpackLuminanceFull(hsl: Integer): Integer; static;
-begin
-  Result := hsl and $FF;
-end;
-
-function TColorUtils.AdjustForBrightness(bgr: Integer; brightness: Double): Integer; static;
-var
-  r, g, b: Double;
-begin
-  b := (bgr shr 16) / 256;
-  g := ((bgr shr 8) and 255) / 256;
-  r := (bgr and 255) / 256;
-
-  b := Power(b, brightness);
-  g := Power(g, brightness);
-  r := Power(r, brightness);
-
-  Result := Trunc(r * 256) + (Trunc(g * 256) shl 8) + (Trunc(b * 256) shl 16);
-end;
-
-function TColorUtils.HSL2BGR(hsl: Integer; brightness: Double): Integer; static;
-var
-  hue, saturation, luminance, chroma, x, lightness, r, g, b: Double;
-begin
-  hue := TColorUtils.UnpackHue(hsl) / 64 + TColorUtils.HUE_OFFSET;
-  saturation := TColorUtils.UnpackSaturation(hsl) / 8 + TColorUtils.SATURATION_OFFSET;
-  luminance := TColorUtils.UnpackLuminance(hsl) / 128;
-
-  chroma := (1 - Abs((2 * luminance) - 1)) * saturation;
-  x := chroma * (1 - Abs(Modulo(hue * 6, 2) - 1));
-  lightness := luminance - (chroma / 2);
-
-  r := lightness; g := lightness; b := lightness;
-
-  case Trunc(hue * 6) of
-    0: begin r := r + chroma; g := g + x; end;
-    1: begin g := g + chroma; r := r + x; end;
-    2: begin g := g + chroma; b := b + x; end;
-    3: begin b := b + chroma; g := g + x; end;
-    4: begin b := b + chroma; r := r + x; end;
-  else
-    begin r := r + chroma; b := b + x; end;
-  end;
-
-  Result := (Trunc(b * 256) shl 16) or (Trunc(g * 256) shl 8) or Trunc(r * 256);
-  Result := TColorUtils.AdjustForBrightness(Result, brightness);
-
-  if Result = 0 then
-    Result := 1;
-end;
-
-function TColorUtils.HSL2BGRFull(hsl: Integer): Integer; static;
-var
-  hue, saturation, luminance, chroma, x, lightness, r, g, b: Double;
-begin
-  hue := TColorUtils.UnpackHueFull(hsl) / 256;
-  saturation := TColorUtils.UnpackSaturationFull(hsl) / 256;
-  luminance := TColorUtils.UnpackLuminanceFull(hsl) / 256;
-
-  chroma := (1 - Abs((2 * luminance) - 1)) * saturation;
-  x := chroma * (1 - Abs(Modulo(hue * 6, 2) - 1));
-  lightness := luminance - (chroma / 2);
-
-  r := lightness; g := lightness; b := lightness;
-
-  case Trunc(hue * 6) of
-    0: begin r := r + chroma; g := g + x; end;
-    1: begin g := g + chroma; r := r + x; end;
-    2: begin g := g + chroma; b := b + x; end;
-    3: begin b := b + chroma; g := g + x; end;
-    4: begin b := b + chroma; r := r + x; end;
-  else
-    begin r := r + chroma; b := b + x; end;
-  end;
-
-  Result := ((Trunc(b * 256) and 255) shl 16) or ((Trunc(g * 256) and 255) shl 8) or (Trunc(r * 256) and 255);
-
-  if Result = 0 then
-    Result := 1;
-end;
-
-function TColorUtils.HSL2BGRFull(hsl: Integer; brightness: Double): Integer; static; overload;
-var
-  hue, saturation, luminance, chroma, x, lightness, r, g, b: Double;
-begin
-  hue := TColorUtils.UnpackHueFull(hsl) / 256;
-  saturation := TColorUtils.UnpackSaturationFull(hsl) / 256;
-  luminance := TColorUtils.UnpackLuminanceFull(hsl) / 256;
-
-  chroma := (1 - Abs((2 * luminance) - 1)) * saturation;
-  x := chroma * (1 - Abs(Modulo(hue * 6, 2) - 1));
-  lightness := luminance - (chroma / 2);
-
-  r := lightness; g := lightness; b := lightness;
-
-  case Trunc(hue * 6) of
-    0:   begin r := r + chroma; g := g + x; end;
-    1:   begin g := g + chroma; r := r + x; end;
-    2:   begin g := g + chroma; b := b + x; end;
-    3:   begin b := b + chroma; g := g + x; end;
-    4:   begin b := b + chroma; r := r + x; end;
-    else begin r := r + chroma; b := b + x; end;
-  end;
-
-  Result := ((Trunc(b * 256) and 255) shl 16) or ((Trunc(g * 256) and 255) shl 8) or (Trunc(r * 256) and 255);
-  Result := TColorUtils.AdjustForBrightness(Result, brightness);
-
-  if Result = 0 then
-    Result := 1;
-end;
 
 function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TColorArray; static;
 var
-  i: Integer;
+  i, rIdx, gIdx, bIdx: Integer;
   hue, sat, lum, r, g, b, p, q, t1, t2: Double;
+  gamma: array [0..255] of Integer;
 begin
   SetLength(Result, 65536);
+
+  // Precompute gamma table
+  for i := 0 to 255 do
+    gamma[i] := Trunc(Power(i / 255, brightness) * 256);
 
   for i := mn to mx - 1 do
   begin
@@ -232,134 +96,15 @@ begin
         b := p;
     end;
 
-    r := Power(r, brightness);
-    g := Power(g, brightness);
-    b := Power(b, brightness);
+    rIdx := Round(r * 255);
+    gIdx := Round(g * 255);
+    bIdx := Round(b * 255);
 
-    //BGR:
-    Result[i] := Trunc(r * 256) + (Trunc(b * 256) shl 16) + (Trunc(g * 256) shl 8);
-    //RGB:
-    //Result[i] := Trunc(b * 256) + (Trunc(r * 256) shl 16) + (Trunc(g * 256) shl 8);
-  end;
-end;
+    if rIdx > 255 then rIdx := 255;
+    if gIdx > 255 then gIdx := 255;
+    if bIdx > 255 then bIdx := 255;
 
-function TColorUtils.CreatePalette(brightness: Double): TIntegerArray; static;
-begin
-  Result := TColorUtils.CreateHSVPalette(brightness, 0, 65536);
-end;
-
-function TColorUtils.CreatePalette(brightness: Double; mn, mx: Integer): TIntegerArray; static; overload;
-var
-  i, j, idx: Integer;
-  hue, sat, lum, r, g, b, p, q, t1, t2: Double;
-begin
-  SetLength(Result, 65536);
-  idx := mn * 128;
-
-  for i := mn to mx - 1 do
-  begin
-    hue := (i shr 3) / 64 + 0.0078125;
-    sat := (i and 7) / 8 + 0.0625;
-
-    for j := 0 to 127 do
-    begin
-      lum := j / 128;
-      r := lum; g := lum; b := lum;
-
-      if sat <> 0 then
-      begin
-        if lum < 0.5 then
-          q := lum * (1 + sat)
-        else
-          q := lum + sat - lum * sat;
-
-        p := 2 * lum - q;
-        t1 := hue + 0.3333333333333333;
-        if t1 > 1 then t1 := t1 - 1;
-
-        t2 := hue - 0.3333333333333333;
-        if t2 < 0 then t2 := t2 + 1;
-
-        if 6 * t1 < 1 then
-          r := p + (q - p) * 6 * t1
-        else if 2 * t1 < 1 then
-          r := q
-        else if 3 * t1 < 2 then
-          r := p + (q - p) * (0.6666666666666666 - t1) * 6
-        else
-          r := p;
-
-        if 6 * hue < 1 then
-          g := p + (q - p) * 6 * hue
-        else if 2 * hue < 1 then
-          g := q
-        else if 3 * hue < 2 then
-          g := p + (q - p) * (0.6666666666666666 - hue) * 6
-        else
-          g := p;
-
-        if 6 * t2 < 1 then
-          b := p + (q - p) * 6 * t2
-        else if 2 * t2 < 1 then
-          b := q
-        else if 3 * t2 < 2 then
-          b := p + (q - p) * (0.6666666666666666 - t2) * 6
-        else
-          b := p;
-      end;
-
-      Result[idx] := Trunc(r * 256) + (Trunc(g * 256) shl 8) + (Trunc(b * 256) shl 16);
-      Result[idx] := TColorUtils.AdjustForBrightness(Result[idx], brightness);
-      if Result[idx] = 0 then
-        Result[idx] := 1;
-      Inc(idx);
-    end;
-  end;
-end;
-
-function TColorUtils.CreateHSLPalette(brightness: Double; mn, mx: Integer): TIntegerArray; static;
-var
-  i, j, idx, hi, hi6: Integer;
-  hue, sat, lum, r, g, b, p, q, t, f: Double;
-begin
-  SetLength(Result, 65536);
-  idx := 0;
-
-  for i := mn to mx - 1 do
-  begin
-    hue := ((i shr 3) / 64 + 0.0078125) * 360;
-    sat := (i and 7) / 8 + 0.0625;
-
-    for j := 0 to 127 do
-    begin
-      lum := j / 128;
-      r := 0; g := 0; b := 0;
-
-      hi6 := Trunc(hue / 60);
-      hi := hi6 mod 6;
-      f := (hue / 60) - hi6;
-
-      p := lum * (1 - sat);
-      q := lum * (1 - f * sat);
-      t := (1 - sat * (1 - f)) * lum;
-
-      case hi of
-        0: begin r := lum; b := p; g := t; end;
-        1: begin b := p; r := q; g := lum; end;
-        2: begin r := p; g := lum; b := t; end;
-        3: begin g := q; r := p; b := lum; end;
-        4: begin b := lum; r := t; g := p; end;
-      else
-        begin g := p; b := q; r := lum; end;
-      end;
-
-      r := Power(r, brightness);
-      g := Power(g, brightness);
-      b := Power(b, brightness);
-
-      Result[idx] := (Trunc(g * 256) shl 8) + (Trunc(b * 256) shl 16) + Trunc(r * 256) - 16777216;
-      Inc(idx);
-    end;
+    Result[i] := gamma[rIdx] + (gamma[bIdx] shl 16) + (gamma[gIdx] shl 8);
   end;
 end;
 
@@ -373,23 +118,31 @@ begin
 end;
 
 
-function TColorUtils.UnderlayColor(hsl, targetLum: Integer): Integer;
+function TColorUtils.UnderlayColor(hsl: Integer): Integer;
+const
+  TARGET_LUM: Integer = 96;
+var
+  lum: Integer;
 begin
   if hsl = -1 then
     Exit(12345678);
-  targetLum := EnsureRange((hsl and 127) * targetLum div 128, 2, 126);
-  Result := Self.Palette[(hsl and 65408) + targetLum];
+  lum := EnsureRange((hsl and 127) * TARGET_LUM div 128, 2, 126);
+  Result := Self.Palette[(hsl and 65408) + lum];
 end;
 
-function TColorUtils.OverlayColor(hsl, targetLum: Integer): Integer;
+function TColorUtils.OverlayColor(hsl: Integer): Integer;
+const
+  TARGET_LUM: Integer = 96;
+var
+  lum: Integer;
 begin
   case hsl of
     -2: Exit(12345678);
-    -1: Exit(Self.Palette[EnsureRange(targetLum, 2, 126)]);
+    -1: Exit(Self.Palette[TARGET_LUM]);
   end;
 
-  targetLum := EnsureRange((hsl and 127) * targetLum div 128, 2, 126);
-  Result := Self.Palette[(hsl and 65408) + targetLum];
+  lum := EnsureRange((hsl and 127) * TARGET_LUM div 128, 2, 126);
+  Result := Self.Palette[(hsl and 65408) + lum];
 end;
 
 function TColorUtils.Height2Color(height: Integer): Integer; static;
@@ -405,13 +158,11 @@ end;
 function TColorUtils.Collision2Color(flag: Integer): Integer; static;
 begin
   case flag of
-    0: Result := $FFFFFF; // walkable - white
-    1: Result := $000000; // blocked - black
-  else
-    Result := $333333;    // collision object - dark grey
+    0:   Result := $FFFFFF; // walkable
+    1:   Result := $000000; // blocked
+    else Result := $333333; // collision object
   end;
 end;
 
 var
   ColorUtils: TColorUtils;
-

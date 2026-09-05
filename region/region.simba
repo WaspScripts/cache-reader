@@ -20,6 +20,16 @@ type
     Locations: array of TWorldLocation;
   end;
 
+procedure TRegion._InitArrays();
+begin
+  SetLength(Self.TileHeights, 4, 64, 64);
+  SetLength(Self.TileSettings, 4, 64, 64);
+  SetLength(Self.OverlayIds, 4, 64, 64);
+  SetLength(Self.OverlayPaths, 4, 64, 64);
+  SetLength(Self.OverlayRotations, 4, 64, 64);
+  SetLength(Self.UnderlayIds, 4, 64, 64);
+end;
+
 function TRegion.Create(id: Integer): TRegion; static;
 begin
   Result.RegionID := id;
@@ -30,12 +40,7 @@ begin
   Result.Y := id and $FF;
   Result.BaseY := Result.Y shl 6;
 
-  SetLength(Result.TileHeights, 4, 64, 64);
-  SetLength(Result.TileSettings, 4, 64, 64);
-  SetLength(Result.OverlayIds, 4, 64, 64);
-  SetLength(Result.OverlayPaths, 4, 64, 64);
-  SetLength(Result.OverlayRotations, 4, 64, 64);
-  SetLength(Result.UnderlayIds, 4, 64, 64);
+  Result._InitArrays();
 end;
 
 function TRegion.Create(x, y: Integer): TRegion; static; overload;
@@ -48,17 +53,12 @@ begin
   Result.Y := y;
   Result.BaseY := y shl 6;
 
-  SetLength(Result.TileHeights, 4, 64, 64);
-  SetLength(Result.TileSettings, 4, 64, 64);
-  SetLength(Result.OverlayIds, 4, 64, 64);
-  SetLength(Result.OverlayPaths, 4, 64, 64);
-  SetLength(Result.OverlayRotations, 4, 64, 64);
-  SetLength(Result.UnderlayIds, 4, 64, 64);
+  Result._InitArrays();
 end;
 
 procedure TRegion.LoadTerrain(constref map: TMapDefinition);
 var
-  z, x, y, height, xOffset, yOffset: Integer;
+  z, x, y, height, xOffset, yOffset, tmp: Integer;
   tile: TMapTile;
 begin
   xOffset := Self.BaseX + $E3B7B;
@@ -66,12 +66,14 @@ begin
 
   for z := 0 to 3 do
     for x := 0 to 63 do
+    begin
+      tmp := xOffset + x;
       for y := 0 to 63 do
       begin
         tile := map.Tiles[z,x,y];
 
         if tile.Height = -1 then
-          height := HeightCalc.Calculate(xOffset + x, yOffset + y)
+          height := HeightCalc.Calculate(tmp, yOffset + y)
         else
         begin
           height := tile.Height;
@@ -90,6 +92,7 @@ begin
         Self.TileSettings[z,x,y] := tile.Settings;
         Self.UnderlayIds[z,x,y] := tile.UnderlayId;
       end;
+    end;
 end;
 
 procedure TRegion.LoadLocations(constref locs: TLocationsDefinition);

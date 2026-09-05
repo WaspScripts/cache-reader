@@ -73,7 +73,9 @@ begin
   begin
     modelId := StrToInt(idStr, 0);
 
-    modelSector := CacheReader.Indices[ECacheIndex.MODELS].ReadArchiveSector(modelId, modelIdx.ID, modelIdx.IndexData);
+    modelSector := CacheReader.Indices[ECacheIndex.MODELS].ReadArchiveSector(
+      modelId, CacheReader.Indices[ECacheIndex.MODELS].ID, CacheReader.Indices[ECacheIndex.MODELS].IndexData
+    );
     if Length(modelSector.Data) = 0 then
     begin
       WriteLn('Could not read model sector for model ID ', modelId);

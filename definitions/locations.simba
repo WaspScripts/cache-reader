@@ -13,9 +13,8 @@ type
 
 function TLocationsDefinition.Create(regionX, regionY: Integer; const data: TByteArray): TLocationsDefinition; static;
 var
-  offset, id, idOffset, position, positionOffset,
-  attributes, locType, orientation, localX, localY, height: Integer;
-  n: Integer;
+  offset, id, idOffset, position, posOffset, attributes: Integer;
+  loc: TLocation;
 begin
   Result.RegionX := regionX;
   Result.RegionY := regionY;
@@ -26,31 +25,24 @@ begin
   while idOffset <> 0 do
   begin
     id += idOffset;
+    loc.ID := id;
 
     position := 0;
-    positionOffset := ReadUnsignedShortSmart(data, offset);
-    while positionOffset <> 0 do
+    posOffset := ReadUnsignedShortSmart(data, offset);
+    while posOffset <> 0 do
     begin
-      position := position + positionOffset - 1;
-
-      localY := position and $3F;
-      localX := (position shr 6) and $3F;
-      height := (position shr 12) and $3;
-
+      position += posOffset - 1;
       attributes := Read8Bits(data, offset);
-      locType := attributes shr 2;
-      orientation := attributes and $3;
 
-      n := Length(Result.Locations);
-      SetLength(Result.Locations, n + 1);
-      Result.Locations[n].ID := id;
-      Result.Locations[n].LocType := locType;
-      Result.Locations[n].Orientation := orientation;
-      Result.Locations[n].LocalX := localX;
-      Result.Locations[n].LocalY := localY;
-      Result.Locations[n].Height := height;
+      loc.LocalY := position and $3F;
+      loc.LocalX := (position shr 6) and $3F;
+      loc.Height := (position shr 12) and $3;
+      loc.LocType := attributes shr 2;
+      loc.Orientation := attributes and $3;
 
-      positionOffset := ReadUnsignedShortSmart(data, offset);
+      Result.Locations += loc;
+
+      posOffset := ReadUnsignedShortSmart(data, offset);
     end;
 
     idOffset := ReadUnsignedIntSmartShortCompat(data, offset);

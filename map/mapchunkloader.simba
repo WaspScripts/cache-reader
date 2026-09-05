@@ -398,8 +398,7 @@ begin
         underlayBGR := ColorUtils.UnderlayColor(
           ColorUtils.PackHSL(
             runHue * 256 div runMul, runSat div runNum, EnsureRange(runLight div runNum, 0, 255)
-          ),
-          96
+          )
         ) or $FF000000;
       end;
 
@@ -419,16 +418,16 @@ begin
           begin
             if SecondaryRGBColor <> -1 then
               overlayBGR :=
-                ColorUtils.OverlayColor(ColorUtils.PackHSL(OtherHue, OtherSaturation, OtherLightness), 96) or $FF000000
+                ColorUtils.OverlayColor(ColorUtils.PackHSL(OtherHue, OtherSaturation, OtherLightness)) or $FF000000
             else if Texture >= 0 then
             begin
               idx := Self.MapData.Textures.IndexOf(Texture);
               if idx <> -1 then
-                overlayBGR := ColorUtils.OverlayColor(Self.MapData.Textures[idx].AverageRGB, 96) or $FF000000;
+                overlayBGR := ColorUtils.OverlayColor(Self.MapData.Textures[idx].AverageRGB) or $FF000000;
             end
             else if RGBColor <> $FF00FF then
               overlayBGR :=
-                ColorUtils.OverlayColor(ColorUtils.PackHSL(Hue, Saturation, Lightness), 96) or $FF000000;
+                ColorUtils.OverlayColor(ColorUtils.PackHSL(Hue, Saturation, Lightness)) or $FF000000;
           end;
         end;
       end;
