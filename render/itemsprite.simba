@@ -241,8 +241,16 @@ begin
   pitchOffsetZ := zoom2d * CircularAngle.COSINE[xanSin] shr 16;
 
   Self.LitModel.CalcBoundsCylinder();
-  Self.LitModel.ProjectAndDraw(Self.Graphics, 0, Self.ItemDef.Yan2D, Self.ItemDef.Zan2D, Self.ItemDef.Xan2D,
-    xOffset, Self.LitModel.ModelHeight div 2 + pitchOffsetY + yOffset, pitchOffsetZ + yOffset);
+  Self.LitModel.ProjectAndDraw(
+    Self.Graphics,
+    0,
+    Self.ItemDef.Yan2D,
+    Self.ItemDef.Zan2D,
+    Self.ItemDef.Xan2D,
+    xOffset,
+    Self.LitModel.ModelHeight div 2 + pitchOffsetY + yOffset,
+    pitchOffsetZ + yOffset
+  );
 
   if Self.LitModel.VerticesCount = 0 then
     Exit;
