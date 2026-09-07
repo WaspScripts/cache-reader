@@ -22,7 +22,7 @@ end;
 {$include_once ./render/graphics3d.simba}
 {$include_once ./render/spritepixels.simba}
 {$include_once ./render/litmodel.simba}
-{$include_once ./render/itemspritefactory.simba}
+{$include_once ./render/itemsprite.simba}
 {$include_once ./map/mapchunkloader.simba}
 
 begin

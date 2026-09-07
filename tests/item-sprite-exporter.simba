@@ -1,10 +1,11 @@
-{$Define DISABLE_CACHEREADER_RANGE_CHECKS}
+{$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
   archive: TArchive;
   itemData: TByteArray;
   itemDef: TItemDefinition;
+  sprite: TItemSprite;
   img: TImage;
   idStr: String;
   itemId: Integer;
@@ -48,9 +49,11 @@ begin
     WriteLn('-- Item #', itemId, ': ', itemDef.Name, ' --');
 
     // Render the sprite
-    img := CreateItemImage(CacheReader, itemDef, 1, False);
-    if img <> nil then
+
+    sprite := TItemSprite.Create(CacheReader, itemDef);
+    if sprite.Valid then
     begin
+      img := sprite.ToImage();
       img.Show();
       WriteLn('Sprite rendered OK');
     end

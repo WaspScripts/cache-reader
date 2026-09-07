@@ -231,11 +231,17 @@ end;
 
 const
   MAX_FACES = 6500;
+
+type
+  TLitModelViewport = record
+    FaceClipped: array [0..MAX_FACES - 1] of Boolean;
+    ViewportYs, ViewportXs, ViewportZs: array [0..MAX_FACES - 1] of Integer;
+    SortedFaceIdx, SortedFaceDepth: array [0..MAX_FACES - 1] of Integer;
+    SortedCount: Integer;
+  end;
+
 var
-  FaceClipped: array [0..MAX_FACES - 1] of Boolean;
-  ViewportYs, ViewportXs, ViewportZs: array [0..MAX_FACES - 1] of Integer;
-  SortedFaceIdx, SortedFaceDepth: array [0..MAX_FACES - 1] of Integer;
-  SortedCount: Integer;
+  Viewport: TLitModelViewport;
 
 procedure TLitModel.RasterFace(var graphics: TGraphics3D; faceIdx: Integer);
 var
@@ -245,7 +251,7 @@ begin
   idx1 := Self.FaceIndices1[faceIdx];
   idx2 := Self.FaceIndices2[faceIdx];
   idx3 := Self.FaceIndices3[faceIdx];
-  graphics.RasterClipEnable := FaceClipped[faceIdx];
+  graphics.RasterClipEnable := Viewport.FaceClipped[faceIdx];
 
   if Length(Self.FaceTransparencies) = 0 then
     graphics.RasterAlpha := 0
@@ -256,16 +262,16 @@ begin
   if hasTextures and (Self.FaceTextures[faceIdx] <> -1) then
   begin
     pal := ColorUtils.PaletteBGR[Self.FaceColors1[faceIdx]];
-    graphics.RasterFlat(ViewportXs[idx1], ViewportXs[idx2], ViewportXs[idx3], ViewportYs[idx1], ViewportYs[idx2], ViewportYs[idx3], pal);
+    graphics.RasterFlat(Viewport.ViewportXs[idx1], Viewport.ViewportXs[idx2], Viewport.ViewportXs[idx3], Viewport.ViewportYs[idx1], Viewport.ViewportYs[idx2], Viewport.ViewportYs[idx3], pal);
   end
   else if (not hasTextures) or ((Self.FaceTextures[faceIdx] = -1) and (Self.FaceColors3[faceIdx] = -1)) then
   begin
     pal := ColorUtils.PaletteBGR[Self.FaceColors1[faceIdx]];
-    graphics.RasterFlat(ViewportXs[idx1], ViewportXs[idx2], ViewportXs[idx3], ViewportYs[idx1], ViewportYs[idx2], ViewportYs[idx3], pal);
+    graphics.RasterFlat(Viewport.ViewportXs[idx1], Viewport.ViewportXs[idx2], Viewport.ViewportXs[idx3], Viewport.ViewportYs[idx1], Viewport.ViewportYs[idx2], Viewport.ViewportYs[idx3], pal);
   end
   else
   begin
-    graphics.GouraudTriangle(ViewportXs[idx1], ViewportXs[idx2], ViewportXs[idx3], ViewportYs[idx1], ViewportYs[idx2], ViewportYs[idx3], Self.FaceColors1[faceIdx], Self.FaceColors2[faceIdx], Self.FaceColors3[faceIdx]);
+    graphics.GouraudTriangle(Viewport.ViewportXs[idx1], Viewport.ViewportXs[idx2], Viewport.ViewportXs[idx3], Viewport.ViewportYs[idx1], Viewport.ViewportYs[idx2], Viewport.ViewportYs[idx3], Self.FaceColors1[faceIdx], Self.FaceColors2[faceIdx], Self.FaceColors3[faceIdx]);
   end;
 end;
 
@@ -273,7 +279,7 @@ procedure TLitModel.Draw(var graphics: TGraphics3D);
 var
   i, idx1, idx2, idx3, j, tmpI, tmpD, viewport1, viewport2, viewport3: Integer;
 begin
-  SortedCount := 0;
+  Viewport.SortedCount := 0;
 
   for i := 0 to Self.IndicesCount - 1 do
   begin
@@ -282,35 +288,35 @@ begin
     idx2 := Self.FaceIndices2[i];
     idx3 := Self.FaceIndices3[i];
     // Auto-clipping per face — accept any face with at least one in-range vertex
-    if ((ViewportXs[idx1] >= 0) or (ViewportXs[idx2] >= 0) or (ViewportXs[idx3] >= 0)) and
-       ((ViewportXs[idx1] <= graphics.ClipWidth) or (ViewportXs[idx2] <= graphics.ClipWidth) or (ViewportXs[idx3] <= graphics.ClipWidth)) and
-       ((ViewportYs[idx1] >= 0) or (ViewportYs[idx2] >= 0) or (ViewportYs[idx3] >= 0)) and
-       ((ViewportYs[idx1] <= graphics.ClipHeight) or (ViewportYs[idx2] <= graphics.ClipHeight) or (ViewportYs[idx3] <= graphics.ClipHeight)) then
-      FaceClipped[i] := False
+    if ((Viewport.ViewportXs[idx1] >= 0) or (Viewport.ViewportXs[idx2] >= 0) or (Viewport.ViewportXs[idx3] >= 0)) and
+       ((Viewport.ViewportXs[idx1] <= graphics.ClipWidth) or (Viewport.ViewportXs[idx2] <= graphics.ClipWidth) or (Viewport.ViewportXs[idx3] <= graphics.ClipWidth)) and
+       ((Viewport.ViewportYs[idx1] >= 0) or (Viewport.ViewportYs[idx2] >= 0) or (Viewport.ViewportYs[idx3] >= 0)) and
+       ((Viewport.ViewportYs[idx1] <= graphics.ClipHeight) or (Viewport.ViewportYs[idx2] <= graphics.ClipHeight) or (Viewport.ViewportYs[idx3] <= graphics.ClipHeight)) then
+      Viewport.FaceClipped[i] := False
     else
-      FaceClipped[i] := True;
-    SortedFaceIdx[SortedCount] := i;
-    SortedFaceDepth[SortedCount] := (ViewportZs[idx1] + ViewportZs[idx2] + ViewportZs[idx3]) div 3;
-    Inc(SortedCount);
+      Viewport.FaceClipped[i] := True;
+    Viewport.SortedFaceIdx[Viewport.SortedCount] := i;
+    Viewport.SortedFaceDepth[Viewport.SortedCount] := (Viewport.ViewportZs[idx1] + Viewport.ViewportZs[idx2] + Viewport.ViewportZs[idx3]) div 3;
+    Inc(Viewport.SortedCount);
   end;
 
-  for i := 1 to SortedCount - 1 do
+  for i := 1 to Viewport.SortedCount - 1 do
   begin
-    tmpI := SortedFaceIdx[i];
-    tmpD := SortedFaceDepth[i];
+    tmpI := Viewport.SortedFaceIdx[i];
+    tmpD := Viewport.SortedFaceDepth[i];
     j := i - 1;
-    while (j >= 0) and (SortedFaceDepth[j] < tmpD) do
+    while (j >= 0) and (Viewport.SortedFaceDepth[j] < tmpD) do
     begin
-      SortedFaceIdx[j + 1] := SortedFaceIdx[j];
-      SortedFaceDepth[j + 1] := SortedFaceDepth[j];
+      Viewport.SortedFaceIdx[j + 1] := Viewport.SortedFaceIdx[j];
+      Viewport.SortedFaceDepth[j + 1] := Viewport.SortedFaceDepth[j];
       Dec(j);
     end;
-    SortedFaceIdx[j + 1] := tmpI;
-    SortedFaceDepth[j + 1] := tmpD;
+    Viewport.SortedFaceIdx[j + 1] := tmpI;
+    Viewport.SortedFaceDepth[j + 1] := tmpD;
   end;
 
-  for i := 0 to SortedCount - 1 do
-    Self.RasterFace(graphics, SortedFaceIdx[i]);
+  for i := 0 to Viewport.SortedCount - 1 do
+    Self.RasterFace(graphics, Viewport.SortedFaceIdx[i]);
 end;
 
 procedure TLitModel.ProjectAndDraw(var graphics: TGraphics3D; yzRot, xzRot, xyRot, orientation, xOffset, yOffset, zOffset: Integer);
@@ -378,9 +384,9 @@ begin
     vz += zOffset;
     tmp := (vy * cosX - vz * sinX) shr 16;
     vz := (vy * sinX + vz * cosX) shr 16;
-    ViewportZs[i] := vz - zRelatedVar;
-    ViewportYs[i] := vx * graphics.Zoom div vz + centerX;
-    ViewportXs[i] := tmp * graphics.Zoom div vz + centerY;
+    Viewport.ViewportZs[i] := vz - zRelatedVar;
+    Viewport.ViewportYs[i] := vx * graphics.Zoom div vz + centerX;
+    Viewport.ViewportXs[i] := tmp * graphics.Zoom div vz + centerY;
   end;
 
   Self.Draw(graphics);

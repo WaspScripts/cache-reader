@@ -78,62 +78,60 @@ end;
 
 procedure TSpritePixels.DrawAtOn(var graphics: TGraphics3D; x, y: Integer);
 var
-  pixelIdx, deltaIndex, pos, width, height, var7, var8, deltaY, deltaX: Integer;
-  pal: Integer;
+  pixelIdx, deltaIndex,
+  w, h,
+  sourceRowSkip,
+  deltaY, deltaX, pal: Integer;
 begin
   x += Self.OffsetX;
   y += Self.OffsetY;
+
   pixelIdx := x + y * graphics.PixelWidth;
-  deltaIndex := 0;
-  width := Self.Width;
-  height := Self.Height;
-  var7 := graphics.PixelWidth - width;
-  var8 := 0;
+  w := Self.Width;
+  h := Self.Height;
 
   if y < graphics.DrawTop then
   begin
     deltaY := graphics.DrawTop - y;
-    height -= deltaY;
+    h -= deltaY;
     y := graphics.DrawTop;
-    deltaIndex += deltaY * width;
+    deltaIndex += deltaY * w;
     pixelIdx += deltaY * graphics.PixelWidth;
   end;
 
-  if height + y > graphics.DrawBottom then
-    height -= (height + y - graphics.DrawBottom);
+  if h + y > graphics.DrawBottom then
+    h -= (h + y - graphics.DrawBottom);
 
   if x < graphics.DrawLeft then
   begin
     deltaX := graphics.DrawLeft - x;
-    width -= deltaX;
+    w -= deltaX;
     x := graphics.DrawLeft;
     deltaIndex += deltaX;
     pixelIdx += deltaX;
-    var8 += deltaX;
-    var7 += deltaX;
+    sourceRowSkip += deltaX;
   end;
 
-  if width + x > graphics.DrawRight then
+  if w + x > graphics.DrawRight then
   begin
-    deltaX := width + x - graphics.DrawRight;
-    width -= deltaX;
-    var8 += deltaX;
-    var7 += deltaX;
+    deltaX := w + x - graphics.DrawRight;
+    w -= deltaX;
+    sourceRowSkip += deltaX;
   end;
 
-  if (width > 0) and (height > 0) then
+  if (w <= 0) or (h <= 0) then
+    Exit;
+
+  for 0 to h - 1 do
   begin
-    for pos := 0 to height - 1 do
+    for deltaX := 0 to w - 1 do
     begin
-      for deltaX := 0 to width - 1 do
-      begin
-        pal := Self.Pixels[deltaIndex + deltaX];
-        if pal <> 0 then
-          graphics.Pixels[pixelIdx + deltaX] := pal;
-      end;
-      pixelIdx += graphics.PixelWidth;
-      deltaIndex += var8;
+      pal := Self.Pixels[deltaIndex + deltaX];
+      if pal <> 0 then
+        graphics.Pixels[pixelIdx + deltaX] := pal;
     end;
+    pixelIdx += graphics.PixelWidth;
+    deltaIndex += sourceRowSkip;
   end;
 end;
 

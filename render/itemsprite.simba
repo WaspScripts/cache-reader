@@ -1,0 +1,303 @@
+{$include_once ../utils/color.simba}
+{$include_once ./circularangle.simba}
+{$include_once ./graphics3d.simba}
+{$include_once ./spritepixels.simba}
+{$include_once ./litmodel.simba}
+{$include_once ../reader/index.simba}
+{$include_once ../definitions/items.simba}
+{$include_once ../definitions/models.simba}
+
+(*
+# ItemSprite
+Renders item inventory icons from 3D models.
+*)
+type
+  TItemSprite = record
+    ItemDef: TItemDefinition;
+    ModelDef: TModelDefinition;
+    LitModel: TLitModel;
+    Graphics: TGraphics3D;
+    Pixels: TSpritePixels;
+    Valid: Boolean;
+  end;
+
+function Bound2To126(val: Integer): Integer; static;
+begin
+  if val < 2 then Exit(2);
+  if val > 126 then Exit(126);
+  Result := val;
+end;
+
+function ApplyLightIntensity(color, intensity: Integer): Integer; static;
+var
+  newLum: Integer;
+begin
+  newLum := ((color and $7F) * intensity) shr 7;
+  newLum := Bound2To126(newLum);
+  Result := (color and $FF80) + newLum;
+end;
+
+(*
+  Lighting helper — compute normalized dot product of lightDir with normal,
+  scaled by attenuation and offset by ambient. Returns value in range [2..126].
+  Safe against zero-magnitude normals.
+*)
+function ComputeLightIntensity(normalX, normalY, normalZ, mag, atten, ambient: Integer): Integer; static;
+var
+  dp: Integer;
+begin
+  if mag = 0 then Exit(64); // default mid-gray
+  dp := (-50) * normalX + (-10) * normalY + (-50) * normalZ;
+  Result := dp div (atten * mag) + ambient;
+  if Result < 2 then Result := 2;
+  if Result > 126 then Result := 126;
+end;
+
+(*
+  TItemSprite.Create — loads the item's inventory model and prepares it for lighting.
+  Sets Valid to False if the model archive/data can't be loaded.
+*)
+function TItemSprite.Create(cacheReader: TCacheReader; const itemDef: TItemDefinition): TItemSprite; static;
+var
+  modelSector: TArchiveSector;
+  modelData: TByteArray;
+begin
+  Result.ItemDef := itemDef;
+  Result.Valid := False;
+
+  modelSector := cacheReader.Indices[ECacheIndex.MODELS].ReadArchiveSector(
+    itemDef.InventoryModel, cacheReader.Indices[ECacheIndex.MODELS].ID, cacheReader.Indices[ECacheIndex.MODELS].IndexData
+  );
+  if Length(modelSector.Data) = 0 then
+    Exit;
+
+  modelData := modelSector.Decompress();
+  if Length(modelData) = 0 then
+    Exit;
+
+  Result.ModelDef := TModelDefinition.Create(itemDef.InventoryModel, modelData);
+
+  // Apply resize (only if all dims > 0 — OSRS uses 0 for "no resize")
+  if (itemDef.ResizeX > 0) and (itemDef.ResizeY > 0) and (itemDef.ResizeZ > 0) then
+    Result.ModelDef.Resize(itemDef.ResizeX, itemDef.ResizeY, itemDef.ResizeZ);
+
+  Result.LitModel := TLitModel.Create(Result.ModelDef);
+  Result.Valid := True;
+end;
+
+(*
+  TItemSprite.Light — computes vertex/face normals and lights each face,
+  writing the result into LitModel.FaceColors1/2/3.
+*)
+procedure TItemSprite.Light();
+const
+  LIGHT_MAGNITURE: Integer = 71; //Trunc(Sqrt(5100))
+var
+  attenuation,
+  i, faceIdx, faceType, r1, r2, r3,
+  dxAB, dyAB, dzAB, dxAC, dyAC, dzAC,
+  nx, ny, nz, len,
+  faceTexId, faceAlphaVal: Integer;
+  vMag,
+  vNx, vNy, vNz,
+  fNx, fNy, fNz: array [0..6499] of Integer;
+  hasFaceNormals: Boolean;
+begin
+  // Precompute attenuation (-50, -10, -50 direction)
+  attenuation := Max(LIGHT_MAGNITURE * (Self.ItemDef.Contrast + 768) shr 8, 1);
+
+  for i := 0 to Self.ModelDef.FaceCount - 1 do
+  begin
+    dxAB := Self.ModelDef.VertexX[Self.ModelDef.FaceIndices2[i]] - Self.ModelDef.VertexX[Self.ModelDef.FaceIndices1[i]];
+    dyAB := Self.ModelDef.VertexY[Self.ModelDef.FaceIndices2[i]] - Self.ModelDef.VertexY[Self.ModelDef.FaceIndices1[i]];
+    dzAB := Self.ModelDef.VertexZ[Self.ModelDef.FaceIndices2[i]] - Self.ModelDef.VertexZ[Self.ModelDef.FaceIndices1[i]];
+    dxAC := Self.ModelDef.VertexX[Self.ModelDef.FaceIndices3[i]] - Self.ModelDef.VertexX[Self.ModelDef.FaceIndices1[i]];
+    dyAC := Self.ModelDef.VertexY[Self.ModelDef.FaceIndices3[i]] - Self.ModelDef.VertexY[Self.ModelDef.FaceIndices1[i]];
+    dzAC := Self.ModelDef.VertexZ[Self.ModelDef.FaceIndices3[i]] - Self.ModelDef.VertexZ[Self.ModelDef.FaceIndices1[i]];
+    nx := dyAB * dzAC - dzAB * dyAC;
+    ny := dzAB * dxAC - dxAB * dzAC;
+    nz := dxAB * dyAC - dxAC * dyAB;
+    while (nx > 8192) or (ny > 8192) or (nz > 8192) or (nx < -8192) or (ny < -8192) or (nz < -8192) do
+    begin
+      nx := nx shr 1; ny := ny shr 1; nz := nz shr 1;
+    end;
+
+    len := Max(Round(Sqrt(nz * nz + nx * nx + ny * ny)), 1);
+
+    nx := nx * 256 div len;
+    ny := ny * 256 div len;
+    nz := nz * 256 div len;
+
+    if Length(Self.ModelDef.FaceRenderTypes) = 0 then
+    begin
+      vNx[Self.ModelDef.FaceIndices1[i]] += nx;
+      vNy[Self.ModelDef.FaceIndices1[i]] += ny;
+      vNz[Self.ModelDef.FaceIndices1[i]] += nz;
+      Inc(vMag[Self.ModelDef.FaceIndices1[i]]);
+
+      vNx[Self.ModelDef.FaceIndices2[i]] += nx;
+      vNy[Self.ModelDef.FaceIndices2[i]] += ny;
+      vNz[Self.ModelDef.FaceIndices2[i]] += nz;
+      Inc(vMag[Self.ModelDef.FaceIndices2[i]]);
+
+      vNx[Self.ModelDef.FaceIndices3[i]] += nx;
+      vNy[Self.ModelDef.FaceIndices3[i]] += ny;
+      vNz[Self.ModelDef.FaceIndices3[i]] += nz;
+      Inc(vMag[Self.ModelDef.FaceIndices3[i]]);
+    end
+    else
+    begin
+      hasFaceNormals := True;
+      fNx[i] := nx;
+      fNy[i] := ny;
+      fNz[i] := nz;
+    end;
+  end;
+
+  // Light each face
+  for faceIdx := 0 to Self.ModelDef.FaceCount - 1 do
+  begin
+    faceType := 0;
+    faceAlphaVal := 0;
+    faceTexId := -1;
+
+    if Length(Self.ModelDef.FaceRenderTypes) > 0 then
+      faceType := Self.ModelDef.FaceRenderTypes[faceIdx] and $FF;
+    if Length(Self.ModelDef.FaceTransparencies) > 0 then
+      faceAlphaVal := Self.ModelDef.FaceTransparencies[faceIdx];
+    if Length(Self.ModelDef.FaceTextures) > 0 then
+      faceTexId := Self.ModelDef.FaceTextures[faceIdx];
+
+    if faceAlphaVal = -2 then
+      faceType := 3;
+    if faceAlphaVal = -1 then
+      faceType := 2;
+
+    case faceType of
+      0: // Gouraud flat-shaded (no texture, 3 vertex colors)
+        begin
+          r1 := ApplyLightIntensity(Self.ModelDef.FaceColors[faceIdx] and $FFFF,
+            ComputeLightIntensity(vNx[Self.ModelDef.FaceIndices1[faceIdx]], vNy[Self.ModelDef.FaceIndices1[faceIdx]], vNz[Self.ModelDef.FaceIndices1[faceIdx]], vMag[Self.ModelDef.FaceIndices1[faceIdx]], attenuation, Self.ItemDef.Ambient + 64));
+          r2 := ApplyLightIntensity(Self.ModelDef.FaceColors[faceIdx] and $FFFF,
+            ComputeLightIntensity(vNx[Self.ModelDef.FaceIndices2[faceIdx]], vNy[Self.ModelDef.FaceIndices2[faceIdx]], vNz[Self.ModelDef.FaceIndices2[faceIdx]], vMag[Self.ModelDef.FaceIndices2[faceIdx]], attenuation, Self.ItemDef.Ambient + 64));
+          r3 := ApplyLightIntensity(Self.ModelDef.FaceColors[faceIdx] and $FFFF,
+            ComputeLightIntensity(vNx[Self.ModelDef.FaceIndices3[faceIdx]], vNy[Self.ModelDef.FaceIndices3[faceIdx]], vNz[Self.ModelDef.FaceIndices3[faceIdx]], vMag[Self.ModelDef.FaceIndices3[faceIdx]], attenuation, Self.ItemDef.Ambient + 64));
+        end;
+      1: // Single-color face with face normal
+        begin
+          if hasFaceNormals then
+          begin
+            r1 := ApplyLightIntensity(Self.ModelDef.FaceColors[faceIdx] and $FFFF,
+              ComputeLightIntensity(fNx[faceIdx], fNy[faceIdx], fNz[faceIdx], 1, attenuation shr 1 + attenuation, Self.ItemDef.Ambient + 64));
+            r2 := -1; r3 := -1;
+          end
+          else
+          begin
+            r1 := Self.ModelDef.FaceColors[faceIdx] and $FFFF;
+            r2 := -1; r3 := -1;
+          end;
+        end;
+      3: // Always bright face
+        begin r1 := 128; r2 := -1; r3 := -1; end;
+      else // No lighting change
+        begin
+          r1 := Self.ModelDef.FaceColors[faceIdx] and $FFFF;
+          r2 := -1;
+          r3 := -2;
+        end;
+    end;
+
+    Self.LitModel.FaceColors1[faceIdx] := r1;
+    Self.LitModel.FaceColors2[faceIdx] := r2;
+    Self.LitModel.FaceColors3[faceIdx] := r3;
+  end;
+end;
+
+(*
+  TItemSprite.Project — sets up the 36x32 rasterizer, projects the model
+  using the item's 2D camera parameters, then re-centers the projected
+  vertices within the canvas.
+*)
+procedure TItemSprite.Project();
+var
+  zoom2d, xOffset, yOffset: Integer;
+  xanSin, pitchOffsetY, pitchOffsetZ: Integer;
+  i, minY, maxY, minX, maxX, cxOff, cyOff: Integer;
+begin
+  zoom2d := Self.ItemDef.Zoom2D;
+  xanSin := Self.ItemDef.Xan2D;
+  xOffset := Self.ItemDef.XOffset2D;
+  yOffset := Self.ItemDef.YOffset2D;
+
+  Self.Pixels := TSpritePixels.Create(36, 32);
+  Self.Graphics.SetRasterBuffer(Self.Pixels.Pixels, 36, 32);
+  Self.Graphics.Reset();
+  Self.Graphics.Zoom := 512;
+  Self.Graphics.SetRasterClipping();
+  Self.Graphics.SetOffset(16, 16);
+  Self.Graphics.RasterGouraudLowRes := False;
+
+  pitchOffsetY := zoom2d * CircularAngle.SINE[xanSin] shr 16;
+  pitchOffsetZ := zoom2d * CircularAngle.COSINE[xanSin] shr 16;
+
+  Self.LitModel.CalcBoundsCylinder();
+  Self.LitModel.ProjectAndDraw(Self.Graphics, 0, Self.ItemDef.Yan2D, Self.ItemDef.Zan2D, Self.ItemDef.Xan2D,
+    xOffset, Self.LitModel.ModelHeight div 2 + pitchOffsetY + yOffset, pitchOffsetZ + yOffset);
+
+  if Self.LitModel.VerticesCount = 0 then
+    Exit;
+
+  minY := 999999; maxY := -999999; minX := 999999; maxX := -999999;
+  for i := 0 to Self.LitModel.VerticesCount - 1 do
+  begin
+    if Viewport.ViewportXs[i] < minX then
+      minX := Viewport.ViewportXs[i];
+    if Viewport.ViewportXs[i] > maxX then
+      maxX := Viewport.ViewportXs[i];
+
+    if Viewport.ViewportYs[i] < minY then
+      minY := Viewport.ViewportYs[i];
+    if Viewport.ViewportYs[i] > maxY then
+      maxY := Viewport.ViewportYs[i];
+  end;
+
+  cxOff := 16 - Round((minX + maxX) / 2);
+  cyOff := 16 - Round((minY + maxY) / 2);
+  for i := 0 to Self.LitModel.VerticesCount - 1 do
+  begin
+    Viewport.ViewportXs[i] += cxOff;
+    Viewport.ViewportYs[i] += cyOff;
+  end;
+end;
+
+(*
+  TItemSprite.Draw — rasterizes the centered model and applies the
+  border/shadow decoration.
+*)
+procedure TItemSprite.Draw();
+const
+  BORDER_COLOR = $AAAAAA;
+  SHADOW_COLOR_RGB = 3153952;
+var
+  shadowColor: Integer;
+begin
+  Self.LitModel.Draw(Self.Graphics);
+
+  Self.Pixels.DrawBorder(BORDER_COLOR);
+
+  shadowColor := (SHADOW_COLOR_RGB and $FF00) or ((SHADOW_COLOR_RGB and $FF) shl 16) or ((SHADOW_COLOR_RGB shr 16) and $FF);
+  if shadowColor <> 0 then
+    Self.Pixels.DrawShadow(shadowColor);
+end;
+
+(*
+  TItemSprite.ToImage — lights, projects and rasterizes the model, then
+  returns the resulting 36x32 icon.
+*)
+function TItemSprite.ToImage(): TImage;
+begin
+  Self.Light();
+  Self.Project();
+  Self.Draw();
+  Result := Self.Pixels.ToImage();
+end;
