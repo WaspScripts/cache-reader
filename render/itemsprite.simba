@@ -276,18 +276,13 @@ end;
 *)
 procedure TItemSprite.Draw();
 const
-  BORDER_COLOR = $AAAAAA;
-  SHADOW_COLOR_RGB = 3153952;
-var
-  shadowColor: Integer;
+  BORDER_COLOR = 1;
+  SHADOW_COLOR = 3153952;
 begin
   Self.LitModel.Draw(Self.Graphics);
 
   Self.Pixels.DrawBorder(BORDER_COLOR);
-
-  shadowColor := (SHADOW_COLOR_RGB and $FF00) or ((SHADOW_COLOR_RGB and $FF) shl 16) or ((SHADOW_COLOR_RGB shr 16) and $FF);
-  if shadowColor <> 0 then
-    Self.Pixels.DrawShadow(shadowColor);
+  Self.Pixels.DrawShadow(SHADOW_COLOR);
 end;
 
 (*
