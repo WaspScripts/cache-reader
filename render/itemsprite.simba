@@ -77,8 +77,8 @@ begin
 
   Result.ModelDef := TModelDefinition.Create(itemDef.InventoryModel, modelData);
 
-  // Apply resize (only if all dims > 0 — OSRS uses 0 for "no resize")
-  if (itemDef.ResizeX > 0) and (itemDef.ResizeY > 0) and (itemDef.ResizeZ > 0) then
+  // Apply resize (128 is "no resize" — OSRS's default scale factor)
+  if (itemDef.ResizeX <> 128) or (itemDef.ResizeY <> 128) or (itemDef.ResizeZ <> 128) then
     Result.ModelDef.Resize(itemDef.ResizeX, itemDef.ResizeY, itemDef.ResizeZ);
 
   Result.LitModel := TLitModel.Create(Result.ModelDef);
@@ -214,15 +214,13 @@ begin
 end;
 
 (*
-  TItemSprite.Project — sets up the 36x32 rasterizer, projects the model
-  using the item's 2D camera parameters, then re-centers the projected
-  vertices within the canvas.
+  TItemSprite.Project — sets up the 36x32 rasterizer and projects + draws
+  the model using the item's calibrated 2D camera parameters.
 *)
 procedure TItemSprite.Project();
 var
   zoom2d, xOffset, yOffset: Integer;
   xanSin, pitchOffsetY, pitchOffsetZ: Integer;
-  i, minY, maxY, minX, maxX, cxOff, cyOff: Integer;
 begin
   zoom2d := Self.ItemDef.Zoom2D;
   xanSin := Self.ItemDef.Xan2D;
@@ -251,44 +249,17 @@ begin
     Self.LitModel.ModelHeight div 2 + pitchOffsetY + yOffset,
     pitchOffsetZ + yOffset
   );
-
-  if Self.LitModel.VerticesCount = 0 then
-    Exit;
-
-  minY := 999999; maxY := -999999; minX := 999999; maxX := -999999;
-  for i := 0 to Self.LitModel.VerticesCount - 1 do
-  begin
-    if Viewport.ViewportXs[i] < minX then
-      minX := Viewport.ViewportXs[i];
-    if Viewport.ViewportXs[i] > maxX then
-      maxX := Viewport.ViewportXs[i];
-
-    if Viewport.ViewportYs[i] < minY then
-      minY := Viewport.ViewportYs[i];
-    if Viewport.ViewportYs[i] > maxY then
-      maxY := Viewport.ViewportYs[i];
-  end;
-
-  cxOff := 16 - Round((minX + maxX) / 2);
-  cyOff := 16 - Round((minY + maxY) / 2);
-  for i := 0 to Self.LitModel.VerticesCount - 1 do
-  begin
-    Viewport.ViewportXs[i] += cxOff;
-    Viewport.ViewportYs[i] += cyOff;
-  end;
 end;
 
 (*
-  TItemSprite.Draw — rasterizes the centered model and applies the
-  border/shadow decoration.
+  TItemSprite.Draw — applies the border/shadow decoration on top of the
+  model rasterized by Project.
 *)
 procedure TItemSprite.Draw();
 const
   BORDER_COLOR = 1;
   SHADOW_COLOR = 3153952;
 begin
-  Self.LitModel.Draw(Self.Graphics);
-
   Self.Pixels.DrawBorder(BORDER_COLOR);
   Self.Pixels.DrawShadow(SHADOW_COLOR);
 end;

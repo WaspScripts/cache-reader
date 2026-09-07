@@ -287,11 +287,19 @@ begin
     idx1 := Self.FaceIndices1[i];
     idx2 := Self.FaceIndices2[i];
     idx3 := Self.FaceIndices3[i];
-    // Auto-clipping per face — accept any face with at least one in-range vertex
-    if ((Viewport.ViewportXs[idx1] >= 0) or (Viewport.ViewportXs[idx2] >= 0) or (Viewport.ViewportXs[idx3] >= 0)) and
-       ((Viewport.ViewportXs[idx1] <= graphics.ClipWidth) or (Viewport.ViewportXs[idx2] <= graphics.ClipWidth) or (Viewport.ViewportXs[idx3] <= graphics.ClipWidth)) and
-       ((Viewport.ViewportYs[idx1] >= 0) or (Viewport.ViewportYs[idx2] >= 0) or (Viewport.ViewportYs[idx3] >= 0)) and
-       ((Viewport.ViewportYs[idx1] <= graphics.ClipHeight) or (Viewport.ViewportYs[idx2] <= graphics.ClipHeight) or (Viewport.ViewportYs[idx3] <= graphics.ClipHeight)) then
+
+    viewport1 := Viewport.ViewportYs[idx1];
+    viewport2 := Viewport.ViewportYs[idx2];
+    viewport3 := Viewport.ViewportYs[idx3];
+
+    // Backface cull — signed area of the projected triangle; only front-facing
+    // (correctly wound) faces are queued for drawing at all.
+    if (viewport1 - viewport2) * (Viewport.ViewportXs[idx3] - Viewport.ViewportXs[idx2]) -
+       (viewport3 - viewport2) * (Viewport.ViewportXs[idx1] - Viewport.ViewportXs[idx2]) <= 0 then
+      Continue;
+
+    if (viewport1 >= 0) and (viewport2 >= 0) and (viewport3 >= 0) and
+       (viewport1 <= graphics.ClipWidth) and (viewport2 <= graphics.ClipWidth) and (viewport3 <= graphics.ClipWidth) then
       Viewport.FaceClipped[i] := False
     else
       Viewport.FaceClipped[i] := True;

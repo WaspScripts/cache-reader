@@ -18,11 +18,6 @@ begin
   // Get the ITEM config archive
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
 
-  WriteLn('=== Item Sprite Exporter ===');
-  WriteLn('Enter an item ID to render its inventory icon.');
-  WriteLn('Press ESC or cancel to exit.');
-  WriteLn('');
-
   while ShowQueryDialog('Render Item', 'Type an item ID:', idStr) do
   begin
     itemId := StrToInt(idStr, -1);
@@ -50,12 +45,14 @@ begin
 
     // Render the sprite
 
+    WriteLn itemDef;
     sprite := TItemSprite.Create(CacheReader, itemDef);
     if sprite.Valid then
     begin
       img := sprite.ToImage();
       img.Show();
       WriteLn('Sprite rendered OK');
+      img.FillWithAlpha($FF);
       img.Save('whip.png', True);
     end
     else
