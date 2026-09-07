@@ -16,7 +16,7 @@ type
     Zoom2D, Xan2D, Yan2D, Zan2D,
     XOffset2D, YOffset2D: Integer;
 
-    InventoryActions, GroundActions: array [0..4] of String;
+    InventoryActions: array [0..4] of String;
     SubOps: array [0..4] of array [0..19] of String;
     GroundOps: TEntityOpsDefinition;
 
@@ -57,8 +57,29 @@ begin
   Result.NotedTemplate := -1;
   Result.PlaceholderID := -1;
   Result.PlaceholderTemplate := -1;
+  Result.BoughtId := -1;
+  Result.BoughtTemplateId := -1;
+  Result.GroundOps.SetOp(2, 'Take');
+  Result.InventoryActions[4] := 'Drop';
   Result.Zoom2D := 2000;
   Result.Weight := 0;
+  Result.ResizeX := 128;
+  Result.ResizeY := 128;
+  Result.ResizeZ := 128;
+  Result.WearPos1 := -1;
+  Result.WearPos2 := -1;
+  Result.WearPos3 := -1;
+  Result.ShiftClickDropIndex := -2;
+  Result.MaleModel0 := -1;
+  Result.MaleModel1 := -1;
+  Result.MaleModel2 := -1;
+  Result.MaleHeadModel := -1;
+  Result.MaleHeadModel2 := -1;
+  Result.FemaleModel0 := -1;
+  Result.FemaleModel1 := -1;
+  Result.FemaleModel2 := -1;
+  Result.FemaleHeadModel := -1;
+  Result.FemaleHeadModel2 := -1;
 
   while True do
   begin
@@ -78,8 +99,8 @@ begin
       9: data.ReadCString(offset); // unknown1, discarded
       11: Result.Stackable := 1;
       12: Result.Cost := Read32Bits(data, offset);
-      13: Result.WearPos1 := Read8Bits(data, offset);
-      14: Result.WearPos2 := Read8Bits(data, offset);
+      13: Result.WearPos1 := Read8SignedBits(data, offset);
+      14: Result.WearPos2 := Read8SignedBits(data, offset);
       15: Result.Tradeable := False;
       16: Result.Members := True;
       23: begin
@@ -92,8 +113,8 @@ begin
             Result.FemaleOffset := Read8Bits(data, offset);
           end;
       26: Result.FemaleModel1 := Read16Bits(data, offset);
-      27: Result.WearPos3 := Read8Bits(data, offset);
-      30..34: Result.GroundActions[opcode - 30] := data.ReadCString(offset);
+      27: Result.WearPos3 := Read8SignedBits(data, offset);
+      30..34: Result.GroundOps.DecodeOp(data, offset, opcode - 30);
       35..39: Result.InventoryActions[opcode - 35] := data.ReadCString(offset);
       40:
       begin
@@ -117,7 +138,7 @@ begin
           Result.TextureReplace[i] := Read16Bits(data, offset);
         end;
       end;
-      42: Result.ShiftClickDropIndex := Read8Bits(data, offset);
+      42: Result.ShiftClickDropIndex := Read8SignedBits(data, offset);
       43:
       begin
         opID := Read8Bits(data, offset);
@@ -173,8 +194,8 @@ begin
       110: Result.ResizeX := Read16Bits(data, offset);
       111: Result.ResizeY := Read16Bits(data, offset);
       112: Result.ResizeZ := Read16Bits(data, offset);
-      113: Result.Ambient := Read8Bits(data, offset);
-      114: Result.Contrast := Read8Bits(data, offset);
+      113: Result.Ambient := Read8SignedBits(data, offset);
+      114: Result.Contrast := Read8SignedBits(data, offset);
       115: Result.TeamID := Read8Bits(data, offset);
       139: Result.BoughtId := Read16Bits(data, offset);
       140: Result.BoughtTemplateId := Read16Bits(data, offset);

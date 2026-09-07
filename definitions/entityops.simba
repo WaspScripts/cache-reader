@@ -24,18 +24,31 @@ type
   end;
 
 
-procedure TEntityOpsDefinition.DecodeOp(const data: TByteArray; var offset: Integer; index: Integer);
+procedure TEntityOpsDefinition.SetOp(index: Integer; text: String);
 var
-  text: String;
   i: Integer;
 begin
-  text := data.ReadCString(offset);
-  if LowerCase(text) = 'hidden' then
-    Exit;
+  for i := 0 to High(Self.Ops) do
+    if Self.Ops[i].Index = index then
+    begin
+      Self.Ops[i].Text := text;
+      Exit;
+    end;
+
   i := Length(Self.Ops);
   SetLength(Self.Ops, i+1);
   Self.Ops[i].Index := index;
   Self.Ops[i].Text := text;
+end;
+
+procedure TEntityOpsDefinition.DecodeOp(const data: TByteArray; var offset: Integer; index: Integer);
+var
+  text: String;
+begin
+  text := data.ReadCString(offset);
+  if LowerCase(text) = 'hidden' then
+    Exit;
+  Self.SetOp(index, text);
 end;
 
 procedure TEntityOpsDefinition.DecodeSubOp(const data: TByteArray; var offset: Integer);
