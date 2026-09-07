@@ -36,6 +36,7 @@ type
       IntValue: Integer;
       StrValue: String;
     end;
+    ColorFind, ColorReplace, TextureFind, TextureReplace: TIntegerArray;
   end;
 
 function TItemDefinition.Create(id: Integer; const data: TByteArray): TItemDefinition; static;
@@ -94,7 +95,28 @@ begin
       27: Result.WearPos3 := Read8Bits(data, offset);
       30..34: Result.GroundActions[opcode - 30] := data.ReadCString(offset);
       35..39: Result.InventoryActions[opcode - 35] := data.ReadCString(offset);
-      40, 41: Inc(offset, 4 * Read8Bits(data, offset));
+      40:
+      begin
+        paramCount := Read8Bits(data, offset);
+        SetLength(Result.ColorFind, paramCount);
+        SetLength(Result.ColorReplace, paramCount);
+        for i := 0 to paramCount - 1 do
+        begin
+          Result.ColorFind[i] := Read16Bits(data, offset);
+          Result.ColorReplace[i] := Read16Bits(data, offset);
+        end;
+      end;
+      41:
+      begin
+        paramCount := Read8Bits(data, offset);
+        SetLength(Result.TextureFind, paramCount);
+        SetLength(Result.TextureReplace, paramCount);
+        for i := 0 to paramCount - 1 do
+        begin
+          Result.TextureFind[i] := Read16Bits(data, offset);
+          Result.TextureReplace[i] := Read16Bits(data, offset);
+        end;
+      end;
       42: Result.ShiftClickDropIndex := Read8Bits(data, offset);
       43:
       begin

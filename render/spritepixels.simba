@@ -1,0 +1,144 @@
+{$include_once ../utils/helpers.simba}
+{$include_once ./graphics3d.simba}
+
+(*
+# SpritePixels
+A 2D pixel buffer used as the output of the software 3D rasterizer.
+Holds RGBA pixels in ABGR format (matching Simba's PColorBGRA / TImage),
+with width and height matching the target buffer size (36 × 32 for items).
+
+Methods:
+  DrawBorder(color) — draws an outline around non-transparent pixels.
+  DrawShadow(color) — draws a drop shadow behind non-transparent pixels.
+  ToImage()           — converts the buffer to a Simba TImage with full alpha.
+*)
+type
+  TSpritePixels = record
+    Pixels: TIntegerArray;
+    Width, Height, OffsetX, OffsetY: Integer;
+  end;
+
+function TSpritePixels.Create(width, height: Integer): TSpritePixels; static;
+begin
+  Result.Width := width;
+  Result.Height := height;
+  SetLength(Result.Pixels, width * height);
+end;
+
+procedure TSpritePixels.DrawBorder(color: Integer);
+var
+  x, y, i: Integer;
+  newPixels: TIntegerArray;
+begin
+  SetLength(newPixels, Self.Width * Self.Height);
+
+  for y := 0 to Self.Height - 1 do
+    for x := 0 to Self.Width - 1 do
+    begin
+      if Self.Pixels[i] = 0 then
+      begin
+        // Check N, S, E, W neighbors for non-zero
+        if (x > 0) and (Self.Pixels[i - 1] <> 0) then
+          newPixels[i] := color
+        else if (y > 0) and (Self.Pixels[i - Self.Width] <> 0) then
+          newPixels[i] := color
+        else if (x < Self.Width - 1) and (Self.Pixels[i + 1] <> 0) then
+          newPixels[i] := color
+        else if (y < Self.Height - 1) and (Self.Pixels[i + Self.Width] <> 0) then
+          newPixels[i] := color;
+      end
+      else
+        newPixels[i] := Self.Pixels[i];
+
+      Inc(i);
+    end;
+
+  Self.Pixels := newPixels;
+end;
+
+procedure TSpritePixels.DrawShadow(color: Integer);
+var
+  x, y, rowOffset: Integer;
+begin
+  y := Self.Height - 1;
+  while y > 0 do
+  begin
+    rowOffset := y * Self.Width;
+    x := Self.Width - 1;
+    while x > 0 do
+    begin
+      // If this pixel is transparent but the NW pixel isn't, draw shadow
+      if (Self.Pixels[x + rowOffset] = 0) and (Self.Pixels[x + rowOffset - 1 - Self.Width] <> 0) then
+        Self.Pixels[x + rowOffset] := color;
+      Dec(x);
+    end;
+    Dec(y);
+  end;
+end;
+
+procedure TSpritePixels.DrawAtOn(var graphics: TGraphics3D; x, y: Integer);
+var
+  pixelIdx, deltaIndex, pos, width, height, var7, var8, deltaY, deltaX: Integer;
+  pal: Integer;
+begin
+  x += Self.OffsetX;
+  y += Self.OffsetY;
+  pixelIdx := x + y * graphics.PixelWidth;
+  deltaIndex := 0;
+  width := Self.Width;
+  height := Self.Height;
+  var7 := graphics.PixelWidth - width;
+  var8 := 0;
+
+  if y < graphics.DrawTop then
+  begin
+    deltaY := graphics.DrawTop - y;
+    height -= deltaY;
+    y := graphics.DrawTop;
+    deltaIndex += deltaY * width;
+    pixelIdx += deltaY * graphics.PixelWidth;
+  end;
+
+  if height + y > graphics.DrawBottom then
+    height -= (height + y - graphics.DrawBottom);
+
+  if x < graphics.DrawLeft then
+  begin
+    deltaX := graphics.DrawLeft - x;
+    width -= deltaX;
+    x := graphics.DrawLeft;
+    deltaIndex += deltaX;
+    pixelIdx += deltaX;
+    var8 += deltaX;
+    var7 += deltaX;
+  end;
+
+  if width + x > graphics.DrawRight then
+  begin
+    deltaX := width + x - graphics.DrawRight;
+    width -= deltaX;
+    var8 += deltaX;
+    var7 += deltaX;
+  end;
+
+  if (width > 0) and (height > 0) then
+  begin
+    for pos := 0 to height - 1 do
+    begin
+      for deltaX := 0 to width - 1 do
+      begin
+        pal := Self.Pixels[deltaIndex + deltaX];
+        if pal <> 0 then
+          graphics.Pixels[pixelIdx + deltaX] := pal;
+      end;
+      pixelIdx += graphics.PixelWidth;
+      deltaIndex += var8;
+    end;
+  end;
+end;
+
+function TSpritePixels.ToImage(): TImage;
+begin
+  Result := new TImage(Self.Width, Self.Height);
+  Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);
+end;

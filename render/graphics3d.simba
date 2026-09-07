@@ -1,0 +1,626 @@
+{$include_once ../utils/color.simba}
+{$include_once ./circularangle.simba}
+
+(*
+# Graphics3D
+Software 3D rasterizer ported from RuneLite's Graphics3D / Rasterizer2D.
+Renders Gouraud-shaded and flat-coloured triangles into an integer pixel buffer.
+
+The pixel format is ABGR (Alpha<<24 | Blue<<16 | Green<<8 | Red), matching
+Simba's TImage / PColorBGRA convention. Colour palette values come from
+ColorUtils.Palette which is initialised by cache.simba.
+*)
+type
+  TGraphics3D = record
+    // Rasterizer2D fields
+    Pixels: TIntegerArray;
+    PixelWidth, PixelHeight,
+    DrawTop, DrawBottom, DrawLeft, DrawRight: Integer;
+
+    // Graphics3D fields
+    Zoom, CenterX, CenterY,
+    ClipWidth, ClipHeight,
+    ClipNegMidX, ClipMidX2, ClipNegMidY, ClipMidY2: Integer;
+    ClipY: TIntegerArray;
+    RasterClipEnable,
+    RasterGouraudLowRes: Boolean;
+    RasterAlpha: Integer;
+  end;
+
+
+procedure TGraphics3D.SetDrawRegion(bounds: TBox);
+begin
+  bounds := bounds.Clip([0,0,Self.PixelWidth, Self.PixelHeight]);
+
+  Self.DrawLeft := bounds.X1;
+  Self.DrawTop := bounds.Y1;
+  Self.DrawRight := bounds.X2;
+  Self.DrawBottom := bounds.Y2;
+end;
+
+procedure TGraphics3D.SetRasterBuffer(constref buf: TIntegerArray; w, h: Integer);
+begin
+  Self.Pixels := buf;
+  Self.PixelWidth := w;
+  Self.PixelHeight := h;
+
+  Self.DrawLeft := 0;
+  Self.DrawTop := 0;
+  Self.DrawRight := Min(w, Self.PixelWidth);
+  Self.DrawBottom := Min(h, Self.PixelHeight);
+end;
+
+procedure TGraphics3D.Reset();
+var
+  i: Integer;
+begin
+  for i := 0 to High(Self.Pixels) do
+    Self.Pixels[i] := 0;
+end;
+
+procedure TGraphics3D.UpdateClipDims();
+begin
+  Self.CenterX := Self.ClipWidth div 2;
+  Self.CenterY := Self.ClipHeight div 2;
+  Self.ClipNegMidX := -Self.CenterX;
+  Self.ClipMidX2 := Self.ClipWidth - Self.CenterX;
+  Self.ClipNegMidY := -Self.CenterY;
+  Self.ClipMidY2 := Self.ClipHeight - Self.CenterY;
+end;
+
+procedure TGraphics3D.SetRasterClipping();
+var
+  v, area, i: Integer;
+begin
+  Self.ClipWidth := Self.DrawRight - Self.DrawLeft;
+  Self.ClipHeight := Self.DrawBottom - Self.DrawTop;
+  Self.UpdateClipDims();
+
+  if Length(Self.ClipY) < Self.ClipHeight then
+  begin
+    v := Self.ClipHeight - 1;
+    v := v or (v shr 1);
+    v := v or (v shr 2);
+    v := v or (v shr 4);
+    v := v or (v shr 8);
+    v := v or (v shr 16);
+    SetLength(Self.ClipY, v + 1);
+  end;
+
+  area := Self.DrawLeft + Self.PixelWidth * Self.DrawTop;
+  for i := 0 to Self.ClipHeight - 1 do
+  begin
+    Self.ClipY[i] := area;
+    area += Self.PixelWidth;
+  end;
+end;
+
+procedure TGraphics3D.SetOffset(x, y: Integer);
+var
+  base, row, col: Integer;
+begin
+  base := Self.ClipY[0];
+  row := base div Self.PixelWidth;
+  col := base - row * Self.PixelWidth;
+
+  Self.CenterX := x - col;
+  Self.CenterY := y - row;
+  Self.ClipNegMidX := -Self.CenterX;
+  Self.ClipMidX2 := Self.ClipWidth - Self.CenterX;
+  Self.ClipNegMidY := -Self.CenterY;
+  Self.ClipMidY2 := Self.ClipHeight - Self.CenterY;
+end;
+
+(*
+  Gouraud scanline filler — writes one horizontal span of interpolated colour.
+
+  Follows RuneLite's gouraudRaster: interpolates a colour value across [leftX, rightX]
+  using a fixed-point step, looks up each pixel in the colour palette, and optionally
+  applies alpha blending. When RasterGouraudLowRes is true, every 4 pixels share one
+  colour for speed (as the original client does on low-res mode).
+*)
+procedure TGraphics3D.GouraudRaster(baseIdx, leftX, rightX, startColor, colorStep: Integer);
+var
+  span, i, pixelIdx, color, pal, blended, existing, alpha, invAlpha: Integer;
+begin
+  if Self.RasterClipEnable then
+  begin
+    if rightX > Self.ClipWidth then
+      rightX := Self.ClipWidth;
+    if leftX < 0 then
+      leftX := 0;
+  end;
+
+  if leftX >= rightX then
+    Exit;
+
+  pixelIdx := baseIdx + leftX;
+  color := startColor + leftX * colorStep;
+
+  if not Self.RasterGouraudLowRes then
+  begin
+    span := rightX - leftX;
+    if Self.RasterAlpha = 0 then
+    begin
+      for i := 0 to span - 1 do
+      begin
+        Self.Pixels[pixelIdx] := ColorUtils.PaletteBGR[color shr 8];
+        color += colorStep;
+        Inc(pixelIdx);
+      end;
+    end
+    else
+    begin
+      alpha := Self.RasterAlpha;
+      invAlpha := 256 - alpha;
+      for i := 0 to span - 1 do
+      begin
+        pal := ColorUtils.PaletteBGR[color shr 8];
+        color += colorStep;
+        blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) +
+                   ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
+        existing := Self.Pixels[pixelIdx];
+        Self.Pixels[pixelIdx] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) +
+                                 blended +
+                                 ((alpha * (existing and $FF00) shr 8) and $FF00);
+        Inc(pixelIdx);
+      end;
+    end;
+    Exit;
+  end;
+
+  // Low-res mode: 4x pixel blocks
+  span := (rightX - leftX) div 4;
+  colorStep := colorStep shl 2;
+  if Self.RasterAlpha = 0 then
+  begin
+    for i := 0 to span - 1 do
+    begin
+      pal := ColorUtils.PaletteBGR[color shr 8];
+      Self.Pixels[pixelIdx] := pal;
+      Self.Pixels[pixelIdx + 1] := pal;
+      Self.Pixels[pixelIdx + 2] := pal;
+      Self.Pixels[pixelIdx + 3] := pal;
+      color += colorStep;
+      Inc(pixelIdx, 4);
+    end;
+
+    span := (rightX - leftX) and 3;
+    if span > 0 then
+    begin
+      pal := ColorUtils.PaletteBGR[color shr 8];
+      for i := 0 to span - 1 do
+        Self.Pixels[pixelIdx + i] := pal;
+    end;
+    Exit;
+  end;
+
+  alpha := Self.RasterAlpha;
+  invAlpha := 256 - alpha;
+  for i := 0 to span - 1 do
+  begin
+    pal := ColorUtils.PaletteBGR[color shr 8];
+    color += colorStep;
+    blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) +
+               ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
+    existing := Self.Pixels[pixelIdx];
+    Self.Pixels[pixelIdx] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) + blended + ((alpha * (existing and $FF00) shr 8) and $FF00);
+    existing := Self.Pixels[pixelIdx + 1];
+    Self.Pixels[pixelIdx + 1] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) + blended + ((alpha * (existing and $FF00) shr 8) and $FF00);
+    existing := Self.Pixels[pixelIdx + 2];
+    Self.Pixels[pixelIdx + 2] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) + blended + ((alpha * (existing and $FF00) shr 8) and $FF00);
+    existing := Self.Pixels[pixelIdx + 3];
+    Self.Pixels[pixelIdx + 3] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) + blended + ((alpha * (existing and $FF00) shr 8) and $FF00);
+    Inc(pixelIdx, 4);
+  end;
+
+  span := (rightX - leftX) and 3;
+
+  if span > 0 then
+  begin
+    pal := ColorUtils.PaletteBGR[color shr 8];
+    blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) + ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
+    for i := 0 to span - 1 do
+    begin
+      existing := Self.Pixels[pixelIdx + i];
+      Self.Pixels[pixelIdx + i] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) + blended + ((alpha * (existing and $FF00) shr 8) and $FF00);
+    end;
+  end;
+end;
+
+(*
+  Gouraud-shaded triangle.
+
+  Parameters are three vertices, each with an X, Y, and colour-index value.
+  The colour is interpolated across the surface using fixed-point arithmetic
+  (14-bit fractional part for X, 8-bit for colour, matching RuneLite).
+*)
+procedure TGraphics3D.GouraudTriangle(x0, x1, x2, y0, y1, y2, c0, c1, c2: Integer);
+var
+  ax, ay, ac, bx, by, bc, cx, cy, cc, tmp: Integer;
+  slopeAB, slopeAC, slopeBC: Integer;
+  colorAB, colorAC, colorBC: Integer;
+  y, leftX, rightX, leftColor, rightColor, colorStep, baseIdx: Integer;
+  yStart, yEnd, yMid: Integer;
+  leftXFrac, rightXFrac, leftColorFrac, rightColorFrac: Integer;
+begin
+  // Sort vertices by Y (ax,ay=lowest, bx,by=middle, cx,cy=highest)
+  ax := x0; ay := y0; ac := c0;
+  bx := x1; by := y1; bc := c1;
+  cx := x2; cy := y2; cc := c2;
+
+  if ay > by then
+  begin
+    tmp := ax; ax := bx; bx := tmp;
+    tmp := ay; ay := by; by := tmp;
+    tmp := ac; ac := bc; bc := tmp;
+  end;
+  if by > cy then
+  begin
+    tmp := bx; bx := cx; cx := tmp;
+    tmp := by; by := cy; cy := tmp;
+    tmp := bc; bc := cc; cc := tmp;
+  end;
+  if ay > by then
+  begin
+    tmp := ax; ax := bx; bx := tmp;
+    tmp := ay; ay := by; by := tmp;
+    tmp := ac; ac := bc; bc := tmp;
+  end;
+
+  // Compute edge slopes (dx/dy << 14)
+  if ay <> by then
+    slopeAB := ((bx - ax) shl 14) div (by - ay)
+  else
+    slopeAB := 0;
+  if ay <> cy then
+    slopeAC := ((cx - ax) shl 14) div (cy - ay)
+  else
+    slopeAC := 0;
+  if by <> cy then
+    slopeBC := ((cx - bx) shl 14) div (cy - by)
+  else
+    slopeBC := 0;
+
+  // Compute colour slopes (dc/dy << 8)
+  if ay <> by then
+    colorAB := ((bc - ac) shl 8) div (by - ay)
+  else
+    colorAB := 0;
+  if ay <> cy then
+    colorAC := ((cc - ac) shl 8) div (cy - ay)
+  else
+    colorAC := 0;
+  if by <> cy then
+    colorBC := ((cc - bc) shl 8) div (cy - by)
+  else
+    colorBC := 0;
+
+  // Clip Y range
+  yMid := by;
+  if yMid < 0 then yMid := 0;
+  if yMid > Self.ClipHeight then yMid := Self.ClipHeight;
+
+  yStart := ay;
+  if yStart < 0 then yStart := 0;
+  if yStart > Self.ClipHeight then yStart := Self.ClipHeight;
+
+  yEnd := cy;
+  if yEnd < 0 then yEnd := 0;
+  if yEnd > Self.ClipHeight then yEnd := Self.ClipHeight;
+
+  // Upper half: from yStart to yMid (edges A->B and A->C)
+  if yStart < yMid then
+  begin
+    if ay < 0 then
+    begin
+      leftXFrac := (ax shl 14) - ay * slopeAB;
+      rightXFrac := (ax shl 14) - ay * slopeAC;
+      leftColorFrac := (ac shl 8) - ay * colorAB;
+      rightColorFrac := (ac shl 8) - ay * colorAC;
+    end
+    else
+    begin
+      leftXFrac := ax shl 14;
+      rightXFrac := ax shl 14;
+      leftColorFrac := ac shl 8;
+      rightColorFrac := ac shl 8;
+    end;
+
+    if slopeAB < slopeAC then
+    begin
+      for y := yStart to yMid - 1 do
+      begin
+        baseIdx := Self.ClipY[y];
+        leftX := leftXFrac shr 14;
+        rightX := rightXFrac shr 14;
+        leftColor := leftColorFrac;
+        rightColor := rightColorFrac;
+        if leftX < rightX then
+        begin
+          colorStep := (rightColor - leftColor) div (rightX - leftX);
+          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor, colorStep);
+        end
+        else if leftX > rightX then
+        begin
+          colorStep := (leftColor - rightColor) div (leftX - rightX);
+          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor, colorStep);
+        end;
+        leftXFrac += slopeAB;
+        rightXFrac += slopeAC;
+        leftColorFrac += colorAB;
+        rightColorFrac += colorAC;
+      end;
+    end
+    else
+    begin
+      for y := yStart to yMid - 1 do
+      begin
+        baseIdx := Self.ClipY[y];
+        leftX := rightXFrac shr 14;
+        rightX := leftXFrac shr 14;
+        leftColor := rightColorFrac;
+        rightColor := leftColorFrac;
+        if leftX < rightX then
+        begin
+          colorStep := (rightColor - leftColor) div (rightX - leftX);
+          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor, colorStep);
+        end
+        else if leftX > rightX then
+        begin
+          colorStep := (leftColor - rightColor) div (leftX - rightX);
+          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor, colorStep);
+        end;
+        leftXFrac += slopeAB;
+        rightXFrac += slopeAC;
+        leftColorFrac += colorAB;
+        rightColorFrac += colorAC;
+      end;
+    end;
+  end;
+
+  // Lower half: from yMid to yEnd (edges B->C and A->C)
+  if yMid < yEnd then
+  begin
+    if by < 0 then
+    begin
+      leftXFrac := (bx shl 14) - by * slopeBC;
+      rightXFrac := (ax shl 14) - ay * slopeAC;
+      leftColorFrac := (bc shl 8) - by * colorBC;
+      rightColorFrac := (ac shl 8) - ay * colorAC;
+    end
+    else
+    begin
+      leftXFrac := bx shl 14;
+      rightXFrac := (ax shl 14) + (by - ay) * slopeAC;
+      leftColorFrac := bc shl 8;
+      rightColorFrac := (ac shl 8) + (by - ay) * colorAC;
+    end;
+
+    if slopeBC < slopeAC then
+    begin
+      for y := yMid to yEnd - 1 do
+      begin
+        baseIdx := Self.ClipY[y];
+        leftX := leftXFrac shr 14;
+        rightX := rightXFrac shr 14;
+        leftColor := leftColorFrac;
+        rightColor := rightColorFrac;
+        if leftX < rightX then
+        begin
+          colorStep := (rightColor - leftColor) div (rightX - leftX);
+          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor, colorStep);
+        end
+        else if leftX > rightX then
+        begin
+          colorStep := (leftColor - rightColor) div (leftX - rightX);
+          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor, colorStep);
+        end;
+        leftXFrac += slopeBC;
+        rightXFrac += slopeAC;
+        leftColorFrac += colorBC;
+        rightColorFrac += colorAC;
+      end;
+    end
+    else
+    begin
+      for y := yMid to yEnd - 1 do
+      begin
+        baseIdx := Self.ClipY[y];
+        leftX := rightXFrac shr 14;
+        rightX := leftXFrac shr 14;
+        leftColor := rightColorFrac;
+        rightColor := leftColorFrac;
+        if leftX < rightX then
+        begin
+          colorStep := (rightColor - leftColor) div (rightX - leftX);
+          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor, colorStep);
+        end
+        else if leftX > rightX then
+        begin
+          colorStep := (leftColor - rightColor) div (leftX - rightX);
+          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor, colorStep);
+        end;
+        leftXFrac += slopeBC;
+        rightXFrac += slopeAC;
+        leftColorFrac += colorBC;
+        rightColorFrac += colorAC;
+      end;
+    end;
+  end;
+end;
+
+(*
+  Flat-colour scanline filler — writes one horizontal span of a single colour.
+  Follows RuneLite's method2842.
+*)
+procedure TGraphics3D.FlatRaster(baseIdx, leftX, rightX, color: Integer);
+var
+  span, i, pixelIdx, alpha, invAlpha, blended, existing: Integer;
+begin
+  if Self.RasterClipEnable then
+  begin
+    if rightX > Self.ClipWidth then rightX := Self.ClipWidth;
+    if leftX < 0 then leftX := 0;
+  end;
+
+  if leftX >= rightX then Exit;
+
+  pixelIdx := baseIdx + leftX;
+
+  if Self.RasterAlpha = 0 then
+  begin
+    span := rightX - leftX;
+    for i := 0 to span - 1 do
+    begin
+      Self.Pixels[pixelIdx] := color;
+      Inc(pixelIdx);
+    end;
+  end
+  else
+  begin
+    alpha := Self.RasterAlpha;
+    invAlpha := 256 - alpha;
+    blended := ((invAlpha * (color and $FF00) shr 8) and $FF00) +
+               ((invAlpha * (color and $FF00FF) shr 8) and $FF00FF);
+    span := rightX - leftX;
+    for i := 0 to span - 1 do
+    begin
+      existing := Self.Pixels[pixelIdx];
+      Self.Pixels[pixelIdx] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) +
+                                blended +
+                                ((alpha * (existing and $FF00) shr 8) and $FF00);
+      Inc(pixelIdx);
+    end;
+  end;
+end;
+
+(*
+  Flat-coloured triangle — three vertices with X/Y, filled with a single colour.
+  Uses the same scanline approach as GouraudTriangle but without colour interpolation.
+*)
+procedure TGraphics3D.RasterFlat(x0, x1, x2, y0, y1, y2, color: Integer);
+var
+  ax, ay, bx, by, cx, cy, tmp: Integer;
+  slopeAB, slopeAC, slopeBC: Integer;
+  y, leftX, rightX, baseIdx: Integer;
+  yStart, yEnd, yMid: Integer;
+  leftXFrac, rightXFrac: Integer;
+begin
+  ax := x0; ay := y0;
+  bx := x1; by := y1;
+  cx := x2; cy := y2;
+
+  if ay > by then
+  begin
+    tmp := ax; ax := bx; bx := tmp;
+    tmp := ay; ay := by; by := tmp;
+  end;
+  if by > cy then
+  begin
+    tmp := bx; bx := cx; cx := tmp;
+    tmp := by; by := cy; cy := tmp;
+  end;
+  if ay > by then
+  begin
+    tmp := ax; ax := bx; bx := tmp;
+    tmp := ay; ay := by; by := tmp;
+  end;
+
+  if ay <> by then
+    slopeAB := ((bx - ax) shl 14) div (by - ay)
+  else
+    slopeAB := 0;
+  if ay <> cy then
+    slopeAC := ((cx - ax) shl 14) div (cy - ay)
+  else
+    slopeAC := 0;
+  if by <> cy then
+    slopeBC := ((cx - bx) shl 14) div (cy - by)
+  else
+    slopeBC := 0;
+
+  yMid := by;
+  if yMid < 0 then yMid := 0;
+  if yMid > Self.ClipHeight then yMid := Self.ClipHeight;
+
+  yStart := ay;
+  if yStart < 0 then yStart := 0;
+  if yStart > Self.ClipHeight then yStart := Self.ClipHeight;
+
+  yEnd := cy;
+  if yEnd < 0 then yEnd := 0;
+  if yEnd > Self.ClipHeight then yEnd := Self.ClipHeight;
+
+  // Upper half
+  if yStart < yMid then
+  begin
+    if ay < 0 then
+    begin
+      leftXFrac := (ax shl 14) - ay * slopeAB;
+      rightXFrac := (ax shl 14) - ay * slopeAC;
+    end
+    else
+    begin
+      leftXFrac := ax shl 14;
+      rightXFrac := ax shl 14;
+    end;
+
+    if slopeAB < slopeAC then
+    begin
+      for y := yStart to yMid - 1 do
+      begin
+        baseIdx := Self.ClipY[y];
+        Self.FlatRaster(baseIdx, leftXFrac shr 14, rightXFrac shr 14, color);
+        leftXFrac += slopeAB;
+        rightXFrac += slopeAC;
+      end;
+    end
+    else
+    begin
+      for y := yStart to yMid - 1 do
+      begin
+        baseIdx := Self.ClipY[y];
+        Self.FlatRaster(baseIdx, rightXFrac shr 14, leftXFrac shr 14, color);
+        leftXFrac += slopeAB;
+        rightXFrac += slopeAC;
+      end;
+    end;
+  end;
+
+  // Lower half
+  if yMid < yEnd then
+  begin
+    if by < 0 then
+    begin
+      leftXFrac := (bx shl 14) - by * slopeBC;
+      rightXFrac := (ax shl 14) - ay * slopeAC;
+    end
+    else
+    begin
+      leftXFrac := bx shl 14;
+      rightXFrac := (ax shl 14) + (by - ay) * slopeAC;
+    end;
+
+    if slopeBC < slopeAC then
+    begin
+      for y := yMid to yEnd - 1 do
+      begin
+        baseIdx := Self.ClipY[y];
+        Self.FlatRaster(baseIdx, leftXFrac shr 14, rightXFrac shr 14, color);
+        leftXFrac += slopeBC;
+        rightXFrac += slopeAC;
+      end;
+    end
+    else
+    begin
+      for y := yMid to yEnd - 1 do
+      begin
+        baseIdx := Self.ClipY[y];
+        Self.FlatRaster(baseIdx, rightXFrac shr 14, leftXFrac shr 14, color);
+        leftXFrac += slopeBC;
+        rightXFrac += slopeAC;
+      end;
+    end;
+  end;
+end;

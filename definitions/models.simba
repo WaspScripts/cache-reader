@@ -1,6 +1,17 @@
 {$include_once ../utils/helpers.simba}
 
 type
+  TVertexNormal = record
+    X, Y, Z, Magnitude: Integer;
+  end;
+
+  TFaceNormal = record
+    X, Y, Z: Integer;
+  end;
+
+  TVertexNormalArray = array of TVertexNormal;
+  TFaceNormalArray = array of TFaceNormal;
+
   TModelDefinition = record
     ID, VertexCount, FaceCount, NumTextureFaces, Priority: Integer;
 
@@ -942,4 +953,38 @@ begin
     3: Result := TModelDefinition.DecodeType3(id, data);
   end;
 end;
+
+
+procedure TModelDefinition.Recolor(findColor, replaceColor: Integer);
+var
+  i: Integer;
+begin
+  for i := 0 to Self.FaceCount - 1 do
+    if Self.FaceColors[i] = findColor then
+      Self.FaceColors[i] := replaceColor;
+end;
+
+procedure TModelDefinition.Retexture(findTex, replaceTex: Integer);
+var
+  i: Integer;
+begin
+  if Self.FaceTextures.IsEmpty then
+    Exit;
+  for i := 0 to Self.FaceCount - 1 do
+    if Self.FaceTextures[i] = findTex then
+      Self.FaceTextures[i] := replaceTex;
+end;
+
+procedure TModelDefinition.Resize(x, y, z: Integer);
+var
+  i: Integer;
+begin
+  for i := 0 to Self.VertexCount - 1 do
+  begin
+    Self.VertexX[i] := Self.VertexX[i] * x div 128;
+    Self.VertexY[i] := y * Self.VertexY[i] div 128;
+    Self.VertexZ[i] := z * Self.VertexZ[i] div 128;
+  end;
+end;
+
 

@@ -1,0 +1,64 @@
+{$Define DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+var
+  archive: TArchive;
+  itemData: TByteArray;
+  itemDef: TItemDefinition;
+  img: TImage;
+  idStr: String;
+  itemId: Integer;
+begin
+  CacheReader := TCacheReader.Create();
+
+  // Load CONFIGS index (items, enums, etc)
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+
+  // Get the ITEM config archive
+  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+
+  WriteLn('=== Item Sprite Exporter ===');
+  WriteLn('Enter an item ID to render its inventory icon.');
+  WriteLn('Press ESC or cancel to exit.');
+  WriteLn('');
+
+  while ShowQueryDialog('Render Item', 'Type an item ID:', idStr) do
+  begin
+    itemId := StrToInt(idStr, -1);
+    if itemId < 0 then Continue;
+
+    // Skip items without a model
+    if not archive.Files.Exists(itemId) then
+    begin
+      WriteLn('Item #', itemId, ': skipped (no data)');
+      Continue;
+    end;
+
+    // Load item definition
+    itemData := archive.Files.Value[itemId].Data;
+    itemDef := TItemDefinition.Create(itemId, itemData);
+
+    // Skip unnameable / null items with no noted variant
+    if (itemDef.Name = 'null') and (itemDef.NotedTemplate = -1) then
+    begin
+      WriteLn('Item #', itemId, ': skipped (no data)');
+      Continue;
+    end;
+
+    WriteLn('-- Item #', itemId, ': ', itemDef.Name, ' --');
+
+    // Render the sprite
+    img := CreateItemImage(CacheReader, itemDef, 1, False);
+    if img <> nil then
+    begin
+      img.Show();
+      WriteLn('Sprite rendered OK');
+    end
+    else
+    begin
+      WriteLn('Failed to render (no model?). InventoryModel = ', itemDef.InventoryModel);
+    end;
+
+    WriteLn('');
+  end;
+end.

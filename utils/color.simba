@@ -19,6 +19,7 @@ type
     const SATURATION_OFFSET: Double = 0.5 / 8.0;
 
     Palette: TIntegerArray;
+    PaletteBGR: TIntegerArray;
     IsSetup: Boolean;
   end;
 
@@ -109,11 +110,21 @@ begin
 end;
 
 procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
+var
+  i, color: Integer;
 begin
   if Self.IsSetup then
     Exit;
 
   Self.Palette := TColorUtils.CreateHSVPalette(brightness, 0, 65536);
+
+  SetLength(Self.PaletteBGR, Length(Self.Palette));
+  for i := 0 to High(Self.Palette) do
+  begin
+    color := Self.Palette[i];
+    Self.PaletteBGR[i] := (color and $FF00) or ((color and $FF) shl 16) or ((color shr 16) and $FF);
+  end;
+
   Self.IsSetup := True;
 end;
 
