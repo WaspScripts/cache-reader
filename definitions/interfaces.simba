@@ -1,3 +1,7 @@
+(*
+# Interface Definition
+Components of the game's interfaces - one widget each.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -9,6 +13,13 @@ type
     Name: String;
   end;
 
+(*
+## ReadSignedShort
+```pascal
+function ReadSignedShort(const data: TByteArray; var offset: Integer): Integer;
+```
+{ref}`Read16Bits` reinterpreted as signed, for the interface fields that can be negative.
+*)
 function ReadSignedShort(const data: TByteArray; var offset: Integer): Integer;
 begin
   Result := Read16Bits(data, offset);
@@ -16,6 +27,17 @@ begin
     Result := Result - 65536;
 end;
 
+(*
+## InterfaceDefinition.Create
+```pascal
+function TInterfaceDefinition.Create(id: Integer; const data: TByteArray): TInterfaceDefinition; static;
+```
+Decodes an interface component - one widget of the game's UI.
+
+Unlike most definitions this is not opcode driven: the fields come in a fixed order, and which
+of them are present depends on `IfType`. Only the size, type and sprite are kept, but the rest
+are still read so that the ones after them land in the right place.
+*)
 function TInterfaceDefinition.Create(id: Integer; const data: TByteArray): TInterfaceDefinition; static;
 var
   offset, widthMode, heightMode: Integer;

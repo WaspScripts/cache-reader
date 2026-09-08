@@ -1,3 +1,10 @@
+(*
+# Locations Definition
+Where a region's objects stand: their id, their tile, and the shape and rotation they are
+placed at.
+
+This is only the placement. What is being placed is a {ref}`TObjectDefinition`.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -11,9 +18,20 @@ type
     Locations: array of TLocation;
   end;
 
+(*
+## LocationsDefinition.Create
+```pascal
+function TLocationsDefinition.Create(regionX, regionY: Integer; const data: TByteArray): TLocationsDefinition; static;
+```
+Decodes a region's object placements.
+
+Locations are stored as a run of deltas, so their number is only known once the whole buffer has
+been read; the array is grown in doublings while decoding and trimmed to size at the end, rather
+than resized once per location.
+*)
 function TLocationsDefinition.Create(regionX, regionY: Integer; const data: TByteArray): TLocationsDefinition; static;
 var
-  offset, id, idOffset, position, posOffset, attributes: Integer;
+  offset, id, idOffset, position, posOffset, attributes, count: Integer;
   loc: TLocation;
 begin
   Result.RegionX := regionX;
@@ -40,12 +58,18 @@ begin
       loc.LocType := attributes shr 2;
       loc.Orientation := attributes and $3;
 
-      Result.Locations += loc;
+      if count = Length(Result.Locations) then
+        SetLength(Result.Locations, Max(64, count * 2));
+
+      Result.Locations[count] := loc;
+      Inc(count);
 
       posOffset := ReadUnsignedShortSmart(data, offset);
     end;
 
     idOffset := ReadUnsignedIntSmartShortCompat(data, offset);
   end;
+
+  SetLength(Result.Locations, count);
 end;
 

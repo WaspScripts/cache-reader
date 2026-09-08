@@ -1,3 +1,7 @@
+(*
+# Font Definition
+The game's fonts: one advance width per character code, and a sprite per glyph.
+*)
 {$include_once ./sprites.simba}
 
 const
@@ -14,6 +18,17 @@ type
     Glyphs: TSpriteDefinitionArray;
   end;
 
+(*
+## FontDefinition.Create
+```pascal
+function TFontDefinition.Create(hashName: Integer; const fontData, spriteData: TByteArray): TFontDefinition; static;
+```
+Builds a font out of the two archives that make one up: the metrics, and the sprite sheet whose
+frames are the glyphs.
+
+`fontData` is exactly 257 bytes - one advance width per character code, then the ascent - and
+anything else raises.
+*)
 function TFontDefinition.Create(hashName: Integer; const fontData, spriteData: TByteArray): TFontDefinition; static;
 var
   i: Integer;
@@ -31,6 +46,13 @@ begin
   Result.Glyphs := TSpriteDefinition.Create(hashName, spriteData);
 end;
 
+(*
+## FontDefinition.GetGlyphImage
+```pascal
+function TFontDefinition.GetGlyphImage(charCode: Integer): TImage;
+```
+The glyph drawn for `charCode` as an image. A code the font has no glyph for raises.
+*)
 function TFontDefinition.GetGlyphImage(charCode: Integer): TImage;
 begin
   if (charCode < 0) or (charCode > High(Self.Glyphs)) then

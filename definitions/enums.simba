@@ -1,3 +1,7 @@
+(*
+# Enum Definition
+The cache's own lookup tables, mapping one id to another value - a spellbook to its spells, say.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -16,6 +20,17 @@ type
     LongVals: array of Int64;
   end;
 
+(*
+## EnumDefinition.Create
+```pascal
+function TEnumDefinition.Create(id: Integer; const data: TByteArray): TEnumDefinition; static;
+```
+Decodes an enum, which the cache uses as a lookup table from one id to another value.
+
+`KeyTypeChar` and `ValTypeChar` are the letters the cache uses to name types, and the value type
+decides which of `IntVals`, `StringVals` and `LongVals` is filled - `Keys` lines up with
+whichever it is. A one byte body means the enum is empty and comes back blank.
+*)
 function TEnumDefinition.Create(id: Integer; const data: TByteArray): TEnumDefinition; static;
 var
   offset, opcode, size, i: Integer;

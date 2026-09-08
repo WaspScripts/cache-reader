@@ -1,3 +1,9 @@
+(*
+# Object Definition
+World objects: everything that stands in the world rather than being carried. Their names and
+menu operations, the ground they cover, the models they are drawn from, and how the map should
+represent them.
+*)
 {$include_once ../reader/reader.simba}
 {$include_once ./entityops.simba}
 
@@ -39,6 +45,21 @@ type
 
   TObjectDefinitionArray = array of TObjectDefinition;
 
+(*
+## ObjectDefinition.Create
+```pascal
+function TObjectDefinition.Create(objID, revision: Integer; const data: TByteArray): TObjectDefinition; static;
+```
+Decodes a world object: its name and menu operations, its footprint, its models, and how the map
+should draw it.
+
+`revision` is the archive's revision, which decides whether the ambient sound opcodes carry the
+extra retain byte that was added in build 1673.
+
+Fields left unset by the stream fall back to defaults, and two of those defaults are worked out
+afterwards rather than up front: an object counts as a wall or door if it has a wall shaped
+model or any menu operations, and it supports items if it can be interacted with at all.
+*)
 function TObjectDefinition.Create(objID, revision: Integer; const data: TByteArray): TObjectDefinition; static;
 var
   offset, opcode, i, len: Integer;
@@ -321,6 +342,16 @@ begin
   end;
 end;
 
+(*
+## TObjectDefinitionArray.IndexOf
+```pascal
+function TObjectDefinitionArray.IndexOf(id: Integer): Integer;
+```
+The position of `id` in the array, or `-1` if there is no such object.
+
+Object definitions are stored one per id with no gaps, so an id is its own index; this exists to
+keep that assumption in one place.
+*)
 function TObjectDefinitionArray.IndexOf(id: Integer): Integer;
 begin
   if InRange(id, 0, High(Self)) then

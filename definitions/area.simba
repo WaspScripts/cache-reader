@@ -1,3 +1,7 @@
+(*
+# Area Definition
+Map areas: the named places the world map labels and the icons the minimap draws for them.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -11,6 +15,18 @@ type
 
   TAreaDefinitionArray = array of TAreaDefinition;
 
+(*
+## AreaDefinition.Create
+```pascal
+function TAreaDefinition.Create(id: Integer; const data: TByteArray): TAreaDefinition; static;
+```
+Decodes a map area - the named places the world map labels, and the icons the minimap draws for
+them.
+
+`SpriteId` is what {ref}`TMapDataLoader.LoadAreaIcons` turns into the icon itself. The opcodes
+this does not keep are still read past, because the stream has to stay aligned for the ones
+that follow.
+*)
 function TAreaDefinition.Create(id: Integer; const data: TByteArray): TAreaDefinition; static;
 var
   offset, opcode, i, count, count2: Integer;
@@ -78,6 +94,16 @@ begin
 end;
 
 
+(*
+## TAreaDefinitionArray.IndexOf
+```pascal
+function TAreaDefinitionArray.IndexOf(id: Integer): Integer;
+```
+The position of `id` in the array, or `-1` if there is no such area.
+
+Area definitions are stored one per id with no gaps, so an id is its own index; this exists to
+keep that assumption in one place.
+*)
 function TAreaDefinitionArray.IndexOf(id: Integer): Integer;
 begin
   if InRange(id, 0, High(Self)) then

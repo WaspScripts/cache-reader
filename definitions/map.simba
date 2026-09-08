@@ -1,3 +1,8 @@
+(*
+# Map Definition
+A region's terrain: four planes of 64 by 64 tiles, each with a height, a ground overlay and
+underlay, and its settings flags.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -17,6 +22,22 @@ type
     const MAX_Z: Integer = 4;
   end;
 
+(*
+## MapDefinition.Create
+```pascal
+function TMapDefinition.Create(regionX, regionY: Integer; const data: TByteArray): TMapDefinition; static;
+```
+Decodes a region's terrain: four planes of 64 by 64 tiles, each with its height, its ground
+overlay and underlay, and its settings flags.
+
+Tiles are written in plane, then x, then y order with no separators - each one is a run of
+attribute values that ends at `0`, or at `1` followed by the tile's height. Attributes from `2`
+to `49` carry the overlay along with the shape and rotation it is drawn at, `50` to `81` are the
+settings flags, and anything above that is the underlay.
+
+A height of `-1` means the tile had none stored and takes the procedural one instead - see
+{ref}`TRegion.LoadTerrain`.
+*)
 function TMapDefinition.Create(regionX, regionY: Integer; const data: TByteArray): TMapDefinition; static;
 var
   offset, z, x, y, attribute: Integer;

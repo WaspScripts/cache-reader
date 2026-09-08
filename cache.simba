@@ -1,6 +1,24 @@
 (*
 # CacheReader
-Suite of tools to read the cache files of a popular MMORPG
+Suite of tools to read the cache files of a popular MMORPG.
+
+Include this file to get all of it. Reading anything starts with {ref}`TCacheReader.Create`,
+which fills the global `CacheReader`; from there {ref}`TCacheIndex.Cache` unpacks an index and
+the definition types decode what comes out of it. {ref}`TMapChunkLoader` renders maps and
+{ref}`TItemSprite` renders inventory icons.
+
+Range checks are off by default, since the decoders are hot loops over trusted data. Define
+`ENABLE_CACHEREADER_RANGE_CHECKS` before including this to turn them back on while developing.
+
+Example:
+```pascal
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+begin
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+end.
+```
 *)
 {$IFNDEF ENABLE_CACHEREADER_RANGE_CHECKS}
 {$R-}

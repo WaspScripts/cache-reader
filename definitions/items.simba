@@ -1,3 +1,8 @@
+(*
+# Item Definition
+Items: their names, menu operations, values, equipment models, and the camera angles their
+inventory icons are rendered from.
+*)
 {$include_once ../utils/helpers.simba}
 {$include_once ./entityops.simba}
 
@@ -39,6 +44,24 @@ type
     ColorFind, ColorReplace, TextureFind, TextureReplace: TIntegerArray;
   end;
 
+(*
+## ItemDefinition.Create
+```pascal
+function TItemDefinition.Create(id: Integer; const data: TByteArray): TItemDefinition; static;
+```
+Decodes an item: its name, its menu operations, the model and camera angles its inventory icon
+is rendered from, and the ids linking it to its noted and placeholder variants.
+
+Every field is defaulted before decoding, because the cache only writes the ones that differ
+from the default. An unrecognised opcode means the stream is no longer aligned, so decoding
+stops there and says so rather than reading nonsense.
+
+Example:
+```pascal
+archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+def := TItemDefinition.Create(4151, archive.Files.Value[4151].Data);
+```
+*)
 function TItemDefinition.Create(id: Integer; const data: TByteArray): TItemDefinition; static;
 var
   offset, opcode, i, paramCount, opID, subopID: Integer;

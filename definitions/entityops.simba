@@ -1,3 +1,11 @@
+(*
+# Entity Ops Definition
+The right-click menu of an item or object.
+
+Beyond the five plain operations an entity can have submenus, and operations that only appear
+while a varp or varbit sits inside a given range - which is how a door offers `Open` or `Close`
+but never both.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -24,6 +32,16 @@ type
   end;
 
 
+(*
+## EntityOpsDefinition.SetOp
+```pascal
+procedure TEntityOpsDefinition.SetOp(index: Integer; text: String);
+```
+Sets the text of the operation at `index`, replacing it if that slot already has one.
+
+`index` is the operation's place in the right-click menu, not its place in `Ops`, which only
+holds the slots that are actually filled.
+*)
 procedure TEntityOpsDefinition.SetOp(index: Integer; text: String);
 var
   i: Integer;
@@ -41,16 +59,34 @@ begin
   Self.Ops[i].Text := text;
 end;
 
+(*
+## EntityOpsDefinition.DecodeOp
+```pascal
+procedure TEntityOpsDefinition.DecodeOp(const data: TByteArray; var offset: Integer; index: Integer);
+```
+Reads one menu operation into slot `index`.
+
+The text `hidden` is how the cache says a slot inherited from a template should be blanked out
+rather than shown, so it is read and dropped.
+*)
 procedure TEntityOpsDefinition.DecodeOp(const data: TByteArray; var offset: Integer; index: Integer);
 var
   text: String;
 begin
   text := data.ReadCString(offset);
-  if LowerCase(text) = 'hidden' then
+  if SameText(text, 'hidden') then
     Exit;
   Self.SetOp(index, text);
 end;
 
+(*
+## EntityOpsDefinition.DecodeSubOp
+```pascal
+procedure TEntityOpsDefinition.DecodeSubOp(const data: TByteArray; var offset: Integer);
+```
+Reads one entry of a submenu: which operation it hangs off, its place within that submenu, and
+its text.
+*)
 procedure TEntityOpsDefinition.DecodeSubOp(const data: TByteArray; var offset: Integer);
 var
   i: Integer;
@@ -62,6 +98,14 @@ begin
   Self.SubOps[i].Text := data.ReadCString(offset);
 end;
 
+(*
+## EntityOpsDefinition.DecodeConditionalOp
+```pascal
+procedure TEntityOpsDefinition.DecodeConditionalOp(const data: TByteArray; var offset: Integer);
+```
+Reads an operation that only appears while a varp or varbit sits inside a given range - a door
+that offers `Close` only once it is open, for instance.
+*)
 procedure TEntityOpsDefinition.DecodeConditionalOp(const data: TByteArray; var offset: Integer);
 var
   i: Integer;
@@ -76,6 +120,14 @@ begin
   Self.ConditionalOps[i].Text := data.ReadCString(offset);
 end;
 
+(*
+## EntityOpsDefinition.DecodeConditionalSubOp
+```pascal
+procedure TEntityOpsDefinition.DecodeConditionalSubOp(const data: TByteArray; var offset: Integer);
+```
+{ref}`TEntityOpsDefinition.DecodeConditionalOp` for a submenu entry, so it carries the submenu
+position as well as the varp range that gates it.
+*)
 procedure TEntityOpsDefinition.DecodeConditionalSubOp(const data: TByteArray; var offset: Integer);
 var
   i: Integer;
