@@ -1,51 +1,6 @@
 {$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
 {$I WaspLib/utils/cache-reader/cache.simba}
 
-procedure WriteModelInfo(const model: TModelDefinition);
-var
-  i, textured, hidden, alwaysBright, alpha: Integer;
-begin
-  textured := 0;
-  hidden := 0;
-  alwaysBright := 0;
-
-  for i := 0 to model.FaceCount - 1 do
-  begin
-    if (model.FaceTextures <> []) and (model.FaceTextures[i] <> -1) then
-      Inc(textured);
-
-    if model.FaceTransparencies <> [] then
-    begin
-      // TByteArray is unsigned; RuneLite reads these as signed bytes, where
-      // -1 (255) means "hidden face" and -2 (254) means "always full bright".
-      alpha := model.FaceTransparencies[i];
-      if alpha = 255 then
-        Inc(hidden)
-      else if alpha = 254 then
-        Inc(alwaysBright);
-    end;
-  end;
-
-  WriteLn('  model #', model.ID, ': ', model.VertexCount, ' vertices, ', model.FaceCount, ' faces');
-  WriteLn('  textured faces:    ', textured, ' / ', model.FaceCount);
-  if textured > 0 then
-    WriteLn('    ^^ these render as flat grey - texture sampling is not implemented');
-
-  if model.FaceRenderTypes <> [] then
-  begin
-    WriteLn('  face render types: present');
-    WriteLn('    ^^ RuneLite computes no vertex normals at all for such models, so');
-    WriteLn('       flat-shaded faces fall back to the unlit ambient level');
-  end
-  else
-    WriteLn('  face render types: none - vertex normals are used (normal Gouraud path)');
-
-  WriteLn('  render priorities: ', model.FaceRenderPriorities <> [],
-          '   transparencies: ', model.FaceTransparencies <> []);
-  if (hidden > 0) or (alwaysBright > 0) then
-    WriteLn('  hidden faces: ', hidden, '   always-bright faces: ', alwaysBright);
-end;
-
 var
   archive: TArchive;
   itemData: TByteArray;
@@ -55,12 +10,11 @@ var
   idStr: String;
   itemId: Integer;
 begin
+  SpriteDebugEnabled := True;
+
   CacheReader := TCacheReader.Create();
 
-  // Load CONFIGS index (items, enums, etc)
   CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
-
-  // Get the ITEM config archive
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
 
   while ShowQueryDialog('Render Item', 'Type an item ID:', idStr) do
@@ -89,13 +43,9 @@ begin
     WriteLn('-- Item #', itemId, ': ', itemDef.Name, ' --');
 
     // Render the sprite
-
-    WriteLn itemDef;
-    sprite := TItemSprite.Create(CacheReader, itemDef);
+    sprite := TItemSprite.Create(CacheReader, itemDef, ColorUtils.BRIGHTNESS_MAX);
     if sprite.Valid then
     begin
-      WriteModelInfo(sprite.ModelDef);
-
       img := sprite.ToImage();
       img.Show();
       WriteLn('Sprite rendered OK');

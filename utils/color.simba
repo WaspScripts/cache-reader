@@ -21,6 +21,9 @@ type
     Palette: TIntegerArray;
     PaletteBGR: TIntegerArray;
     IsSetup: Boolean;
+
+    CachedBrightnesses: TDoubleArray;
+    CachedSpritePalettes: T2DIntegerArray;
   end;
 
 function TColorUtils.PackHSL(hue, saturation, luminance: Integer): Integer; static;
@@ -92,29 +95,49 @@ begin
         b := p;
     end;
 
-    rIdx := Trunc(Power(r, brightness) * 256);
-    gIdx := Trunc(Power(g, brightness) * 256);
-    bIdx := Trunc(Power(b, brightness) * 256);
+    rIdx := Trunc(Power(Trunc(r * 256) / 256.0, brightness) * 256);
+    gIdx := Trunc(Power(Trunc(g * 256) / 256.0, brightness) * 256);
+    bIdx := Trunc(Power(Trunc(b * 256) / 256.0, brightness) * 256);
+
+    if (rIdx or gIdx or bIdx) = 0 then
+      bIdx := 1;
 
     Result[i] := rIdx + (bIdx shl 16) + (gIdx shl 8);
   end;
 end;
 
-procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
+function TColorUtils.SpritePalette(brightness: Double = TColorUtils.BRIGHTNESS_LOW): TIntegerArray;
 var
-  i, color: Integer;
+  i, count, color: Integer;
+  palette: TIntegerArray;
+begin
+  for i := 0 to High(Self.CachedBrightnesses) do
+    if Self.CachedBrightnesses[i] = brightness then
+      Exit(Self.CachedSpritePalettes[i]);
+
+  palette := TColorUtils.CreateHSVPalette(brightness, 0, 65536);
+  for i := 0 to High(palette) do
+  begin
+    color := palette[i];
+    palette[i] := (color and $FF00) or ((color and $FF) shl 16) or ((color shr 16) and $FF);
+  end;
+
+  count := Length(Self.CachedBrightnesses);
+  SetLength(Self.CachedBrightnesses, count + 1);
+  SetLength(Self.CachedSpritePalettes, count + 1);
+  Self.CachedBrightnesses[count] := brightness;
+  Self.CachedSpritePalettes[count] := palette;
+
+  Result := palette;
+end;
+
+procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
 begin
   if Self.IsSetup then
     Exit;
 
   Self.Palette := TColorUtils.CreateHSVPalette(brightness, 0, 65536);
-
-  SetLength(Self.PaletteBGR, Length(Self.Palette));
-  for i := 0 to High(Self.Palette) do
-  begin
-    color := Self.Palette[i];
-    Self.PaletteBGR[i] := (color and $FF00) or ((color and $FF) shl 16) or ((color shr 16) and $FF);
-  end;
+  Self.PaletteBGR := Self.SpritePalette(TColorUtils.BRIGHTNESS_LOW);
 
   Self.IsSetup := True;
 end;

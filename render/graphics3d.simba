@@ -1,19 +1,20 @@
-{$include_once ../utils/color.simba}
-{$include_once ./circularangle.simba}
-
 (*
 # Graphics3D
 Software 3D rasterizer ported from RuneLite's Graphics3D / Rasterizer2D.
 Renders Gouraud-shaded and flat-coloured triangles into an integer pixel buffer.
 
 The pixel format is ABGR (Alpha<<24 | Blue<<16 | Green<<8 | Red), matching
-Simba's TImage / PColorBGRA convention. Colour palette values come from
-ColorUtils.Palette which is initialised by cache.simba.
+Simba's TImage / PColorBGRA convention. Colour palette values come from the
+Palette field, which the caller points at a ColorUtils.SpritePalette result.
 *)
+{$include_once ../utils/color.simba}
+{$include_once ./circularangle.simba}
+
 type
   TGraphics3D = record
     // Rasterizer2D fields
     Pixels: TIntegerArray;
+    Palette: TIntegerArray;
     PixelWidth, PixelHeight,
     DrawTop, DrawBottom, DrawLeft, DrawRight: Integer;
 
@@ -26,7 +27,6 @@ type
     RasterGouraudLowRes: Boolean;
     RasterAlpha: Integer;
   end;
-
 
 procedure TGraphics3D.SetDrawRegion(bounds: TBox);
 begin
@@ -149,7 +149,7 @@ begin
     begin
       for i := 0 to span - 1 do
       begin
-        Self.Pixels[pixelIdx] := ColorUtils.PaletteBGR[color shr 8];
+        Self.Pixels[pixelIdx] := Self.Palette[color shr 8];
         color += colorStep;
         Inc(pixelIdx);
       end;
@@ -160,7 +160,7 @@ begin
       invAlpha := 256 - alpha;
       for i := 0 to span - 1 do
       begin
-        pal := ColorUtils.PaletteBGR[color shr 8];
+        pal := Self.Palette[color shr 8];
         color += colorStep;
         blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) +
                    ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
@@ -181,7 +181,7 @@ begin
   begin
     for i := 0 to span - 1 do
     begin
-      pal := ColorUtils.PaletteBGR[color shr 8];
+      pal := Self.Palette[color shr 8];
       Self.Pixels[pixelIdx] := pal;
       Self.Pixels[pixelIdx + 1] := pal;
       Self.Pixels[pixelIdx + 2] := pal;
@@ -193,7 +193,7 @@ begin
     span := (rightX - leftX) and 3;
     if span > 0 then
     begin
-      pal := ColorUtils.PaletteBGR[color shr 8];
+      pal := Self.Palette[color shr 8];
       for i := 0 to span - 1 do
         Self.Pixels[pixelIdx + i] := pal;
     end;
@@ -202,9 +202,10 @@ begin
 
   alpha := Self.RasterAlpha;
   invAlpha := 256 - alpha;
+
   for i := 0 to span - 1 do
   begin
-    pal := ColorUtils.PaletteBGR[color shr 8];
+    pal := Self.Palette[color shr 8];
     color += colorStep;
     blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) +
                ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
@@ -221,239 +222,511 @@ begin
 
   span := (rightX - leftX) and 3;
 
-  if span > 0 then
+  if span <= 0 then
+    Exit;
+
+  pal := Self.Palette[color shr 8];
+  blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) + ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
+  for i := 0 to span - 1 do
   begin
-    pal := ColorUtils.PaletteBGR[color shr 8];
-    blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) + ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
-    for i := 0 to span - 1 do
-    begin
-      existing := Self.Pixels[pixelIdx + i];
-      Self.Pixels[pixelIdx + i] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) + blended + ((alpha * (existing and $FF00) shr 8) and $FF00);
-    end;
+    existing := Self.Pixels[pixelIdx + i];
+    Self.Pixels[pixelIdx + i] := (((existing and $FF00FF) * alpha shr 8) and $FF00FF) + blended + ((alpha * (existing and $FF00) shr 8) and $FF00);
   end;
 end;
 
-(*
-  Gouraud-shaded triangle.
-
-  Parameters are three vertices, each with an X, Y, and colour-index value.
-  The colour is interpolated across the surface using fixed-point arithmetic
-  (14-bit fractional part for X, 8-bit for colour, matching RuneLite).
-*)
-procedure TGraphics3D.GouraudTriangle(x0, x1, x2, y0, y1, y2, c0, c1, c2: Integer);
+procedure TGraphics3D.GouraudTriangle(y0, y1, y2, x0, x1, x2, c0, c1, c2: Integer);
 var
-  ax, ay, ac, bx, by, bc, cx, cy, cc, tmp: Integer;
-  slopeAB, slopeAC, slopeBC: Integer;
-  colorAB, colorAC, colorBC: Integer;
-  y, leftX, rightX, leftColor, rightColor, colorStep, baseIdx: Integer;
-  yStart, yEnd, yMid: Integer;
-  leftXFrac, rightXFrac, leftColorFrac, rightColorFrac: Integer;
+  dx1, dy1, dx2, dy2, dc1, dc2,
+  slope0, slope1, slope2,
+  area, dColorDX, dColorDY, pixelRow: Integer;
 begin
-  // Sort vertices by Y (ax,ay=lowest, bx,by=middle, cx,cy=highest)
-  ax := x0; ay := y0; ac := c0;
-  bx := x1; by := y1; bc := c1;
-  cx := x2; cy := y2; cc := c2;
+  dx1 := x1 - x0;
+  dy1 := y1 - y0;
+  dx2 := x2 - x0;
+  dy2 := y2 - y0;
 
-  if ay > by then
+  dc1 := c1 - c0;
+  dc2 := c2 - c0;
+
+  slope0 := 0;
+  if y2 <> y1 then slope0 := ((x2 - x1) shl 14) div (y2 - y1);
+  slope1 := 0;
+  if y0 <> y1 then slope1 := (dx1 shl 14) div dy1;
+  slope2 := 0;
+  if y0 <> y2 then slope2 := (dx2 shl 14) div dy2;
+
+  area := dx1 * dy2 - dx2 * dy1;
+  if area = 0 then Exit;
+
+  dColorDX := ((dc1 * dy2 - dc2 * dy1) shl 8) div area;
+  dColorDY := ((dc2 * dx1 - dc1 * dx2) shl 8) div area;
+
+  if (y0 <= y1) and (y0 <= y2) then
   begin
-    tmp := ax; ax := bx; bx := tmp;
-    tmp := ay; ay := by; by := tmp;
-    tmp := ac; ac := bc; bc := tmp;
-  end;
-  if by > cy then
-  begin
-    tmp := bx; bx := cx; cx := tmp;
-    tmp := by; by := cy; cy := tmp;
-    tmp := bc; bc := cc; cc := tmp;
-  end;
-  if ay > by then
-  begin
-    tmp := ax; ax := bx; bx := tmp;
-    tmp := ay; ay := by; by := tmp;
-    tmp := ac; ac := bc; bc := tmp;
-  end;
+    if y0 >= Self.ClipHeight then Exit;
+    if y1 > Self.ClipHeight then y1 := Self.ClipHeight;
+    if y2 > Self.ClipHeight then y2 := Self.ClipHeight;
 
-  // Compute edge slopes (dx/dy << 14)
-  if ay <> by then
-    slopeAB := ((bx - ax) shl 14) div (by - ay)
-  else
-    slopeAB := 0;
-  if ay <> cy then
-    slopeAC := ((cx - ax) shl 14) div (cy - ay)
-  else
-    slopeAC := 0;
-  if by <> cy then
-    slopeBC := ((cx - bx) shl 14) div (cy - by)
-  else
-    slopeBC := 0;
+    c0 := dColorDX + ((c0 shl 8) - x0 * dColorDX);
 
-  // Compute colour slopes (dc/dy << 8)
-  if ay <> by then
-    colorAB := ((bc - ac) shl 8) div (by - ay)
-  else
-    colorAB := 0;
-  if ay <> cy then
-    colorAC := ((cc - ac) shl 8) div (cy - ay)
-  else
-    colorAC := 0;
-  if by <> cy then
-    colorBC := ((cc - bc) shl 8) div (cy - by)
-  else
-    colorBC := 0;
-
-  // Clip Y range
-  yMid := by;
-  if yMid < 0 then yMid := 0;
-  if yMid > Self.ClipHeight then yMid := Self.ClipHeight;
-
-  yStart := ay;
-  if yStart < 0 then yStart := 0;
-  if yStart > Self.ClipHeight then yStart := Self.ClipHeight;
-
-  yEnd := cy;
-  if yEnd < 0 then yEnd := 0;
-  if yEnd > Self.ClipHeight then yEnd := Self.ClipHeight;
-
-  // Upper half: from yStart to yMid (edges A->B and A->C)
-  if yStart < yMid then
-  begin
-    if ay < 0 then
+    if y1 < y2 then
     begin
-      leftXFrac := (ax shl 14) - ay * slopeAB;
-      rightXFrac := (ax shl 14) - ay * slopeAC;
-      leftColorFrac := (ac shl 8) - ay * colorAB;
-      rightColorFrac := (ac shl 8) - ay * colorAC;
-    end
-    else
-    begin
-      leftXFrac := ax shl 14;
-      rightXFrac := ax shl 14;
-      leftColorFrac := ac shl 8;
-      rightColorFrac := ac shl 8;
-    end;
-
-    if slopeAB < slopeAC then
-    begin
-      for y := yStart to yMid - 1 do
+      x0 := x0 shl 14;
+      x2 := x0;
+      if y0 < 0 then
       begin
-        baseIdx := Self.ClipY[y];
-        leftX := leftXFrac shr 14;
-        rightX := rightXFrac shr 14;
-        leftColor := leftColorFrac;
-        rightColor := rightColorFrac;
-        if leftX < rightX then
-        begin
-          colorStep := (rightColor - leftColor) div (rightX - leftX);
-          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor - leftX * colorStep, colorStep);
-        end
-        else if leftX > rightX then
-        begin
-          colorStep := (leftColor - rightColor) div (leftX - rightX);
-          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor - rightX * colorStep, colorStep);
-        end;
-        leftXFrac += slopeAB;
-        rightXFrac += slopeAC;
-        leftColorFrac += colorAB;
-        rightColorFrac += colorAC;
+        x2 -= y0 * slope2;
+        x0 -= y0 * slope1;
+        c0 -= y0 * dColorDY;
+        y0 := 0;
       end;
-    end
-    else
-    begin
-      for y := yStart to yMid - 1 do
+
+      x1 := x1 shl 14;
+      if y1 < 0 then
       begin
-        baseIdx := Self.ClipY[y];
-        leftX := rightXFrac shr 14;
-        rightX := leftXFrac shr 14;
-        leftColor := rightColorFrac;
-        rightColor := leftColorFrac;
-        if leftX < rightX then
+        x1 -= slope0 * y1;
+        y1 := 0;
+      end;
+
+      if ((y0 = y1) or (slope2 >= slope1)) and ((y0 <> y1) or (slope2 <= slope0)) then
+      begin
+        y2 -= y1;
+        y1 -= y0;
+        pixelRow := Self.ClipY[y0];
+
+        while True do
         begin
-          colorStep := (rightColor - leftColor) div (rightX - leftX);
-          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor - leftX * colorStep, colorStep);
-        end
-        else if leftX > rightX then
-        begin
-          colorStep := (leftColor - rightColor) div (leftX - rightX);
-          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor - rightX * colorStep, colorStep);
+          Dec(y1);
+          if y1 < 0 then
+            while True do
+            begin
+              Dec(y2);
+              if y2 < 0 then Exit;
+              Self.GouraudRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), c0, dColorDX);
+              x2 += slope2;
+              x1 += slope0;
+              c0 += dColorDY;
+              pixelRow += Self.PixelWidth;
+            end;
+
+          Self.GouraudRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), c0, dColorDX);
+          x2 += slope2;
+          x0 += slope1;
+          c0 += dColorDY;
+          pixelRow += Self.PixelWidth;
         end;
-        leftXFrac += slopeAB;
-        rightXFrac += slopeAC;
-        leftColorFrac += colorAB;
-        rightColorFrac += colorAC;
+      end;
+
+      y2 -= y1;
+      y1 -= y0;
+      pixelRow := Self.ClipY[y0];
+
+      while True do
+      begin
+        Dec(y1);
+        if y1 < 0 then
+          while True do
+          begin
+            Dec(y2);
+            if y2 < 0 then Exit;
+            Self.GouraudRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), c0, dColorDX);
+            x2 += slope2;
+            x1 += slope0;
+            c0 += dColorDY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.GouraudRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), c0, dColorDX);
+        x2 += slope2;
+        x0 += slope1;
+        c0 += dColorDY;
+        pixelRow += Self.PixelWidth;
       end;
     end;
+
+    x0 := x0 shl 14;
+    x1 := x0;
+    if y0 < 0 then
+    begin
+      x1 -= y0 * slope2;
+      x0 -= y0 * slope1;
+      c0 -= y0 * dColorDY;
+      y0 := 0;
+    end;
+
+    x2 := x2 shl 14;
+    if y2 < 0 then
+    begin
+      x2 -= slope0 * y2;
+      y2 := 0;
+    end;
+
+    if ((y0 <> y2) and (slope2 < slope1)) or ((y0 = y2) and (slope0 > slope1)) then
+    begin
+      y1 -= y2;
+      y2 -= y0;
+      pixelRow := Self.ClipY[y0];
+
+      while True do
+      begin
+        Dec(y2);
+        if y2 < 0 then
+          while True do
+          begin
+            Dec(y1);
+            if y1 < 0 then Exit;
+            Self.GouraudRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), c0, dColorDX);
+            x2 += slope0;
+            x0 += slope1;
+            c0 += dColorDY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.GouraudRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), c0, dColorDX);
+        x1 += slope2;
+        x0 += slope1;
+        c0 += dColorDY;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    y1 -= y2;
+    y2 -= y0;
+    pixelRow := Self.ClipY[y0];
+
+    while True do
+    begin
+      Dec(y2);
+      if y2 < 0 then
+        while True do
+        begin
+          Dec(y1);
+          if y1 < 0 then Exit;
+          Self.GouraudRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), c0, dColorDX);
+          x2 += slope0;
+          x0 += slope1;
+          c0 += dColorDY;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.GouraudRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), c0, dColorDX);
+      x1 += slope2;
+      x0 += slope1;
+      c0 += dColorDY;
+      pixelRow += Self.PixelWidth;
+    end;
   end;
 
-  // Lower half: from yMid to yEnd (edges B->C and A->C)
-  if yMid < yEnd then
+  if y1 <= y2 then
   begin
-    if by < 0 then
+    if y1 >= Self.ClipHeight then Exit;
+    if y2 > Self.ClipHeight then y2 := Self.ClipHeight;
+    if y0 > Self.ClipHeight then y0 := Self.ClipHeight;
+
+    c1 := dColorDX + ((c1 shl 8) - dColorDX * x1);
+
+    if y2 < y0 then
     begin
-      leftXFrac := (bx shl 14) - by * slopeBC;
-      rightXFrac := (ax shl 14) - ay * slopeAC;
-      leftColorFrac := (bc shl 8) - by * colorBC;
-      rightColorFrac := (ac shl 8) - ay * colorAC;
-    end
-    else
-    begin
-      leftXFrac := bx shl 14;
-      rightXFrac := (ax shl 14) + (by - ay) * slopeAC;
-      leftColorFrac := bc shl 8;
-      rightColorFrac := (ac shl 8) + (by - ay) * colorAC;
+      x1 := x1 shl 14;
+      x0 := x1;
+      if y1 < 0 then
+      begin
+        x0 -= slope1 * y1;
+        x1 -= slope0 * y1;
+        c1 -= dColorDY * y1;
+        y1 := 0;
+      end;
+
+      x2 := x2 shl 14;
+      if y2 < 0 then
+      begin
+        x2 -= slope2 * y2;
+        y2 := 0;
+      end;
+
+      if ((y2 = y1) or (slope1 >= slope0)) and ((y2 <> y1) or (slope1 <= slope2)) then
+      begin
+        y0 -= y2;
+        y2 -= y1;
+        pixelRow := Self.ClipY[y1];
+
+        while True do
+        begin
+          Dec(y2);
+          if y2 < 0 then
+            while True do
+            begin
+              Dec(y0);
+              if y0 < 0 then Exit;
+              Self.GouraudRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), c1, dColorDX);
+              x0 += slope1;
+              x2 += slope2;
+              c1 += dColorDY;
+              pixelRow += Self.PixelWidth;
+            end;
+
+          Self.GouraudRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), c1, dColorDX);
+          x0 += slope1;
+          x1 += slope0;
+          c1 += dColorDY;
+          pixelRow += Self.PixelWidth;
+        end;
+      end;
+
+      y0 -= y2;
+      y2 -= y1;
+      pixelRow := Self.ClipY[y1];
+
+      while True do
+      begin
+        Dec(y2);
+        if y2 < 0 then
+          while True do
+          begin
+            Dec(y0);
+            if y0 < 0 then Exit;
+            Self.GouraudRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), c1, dColorDX);
+            x0 += slope1;
+            x2 += slope2;
+            c1 += dColorDY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.GouraudRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), c1, dColorDX);
+        x0 += slope1;
+        x1 += slope0;
+        c1 += dColorDY;
+        pixelRow += Self.PixelWidth;
+      end;
     end;
 
-    if slopeBC < slopeAC then
+    x1 := x1 shl 14;
+    x2 := x1;
+    if y1 < 0 then
     begin
-      for y := yMid to yEnd - 1 do
-      begin
-        baseIdx := Self.ClipY[y];
-        leftX := leftXFrac shr 14;
-        rightX := rightXFrac shr 14;
-        leftColor := leftColorFrac;
-        rightColor := rightColorFrac;
-        if leftX < rightX then
-        begin
-          colorStep := (rightColor - leftColor) div (rightX - leftX);
-          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor - leftX * colorStep, colorStep);
-        end
-        else if leftX > rightX then
-        begin
-          colorStep := (leftColor - rightColor) div (leftX - rightX);
-          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor - rightX * colorStep, colorStep);
-        end;
-        leftXFrac += slopeBC;
-        rightXFrac += slopeAC;
-        leftColorFrac += colorBC;
-        rightColorFrac += colorAC;
-      end;
-    end
-    else
+      x2 -= slope1 * y1;
+      x1 -= slope0 * y1;
+      c1 -= dColorDY * y1;
+      y1 := 0;
+    end;
+
+    x0 := x0 shl 14;
+    if y0 < 0 then
     begin
-      for y := yMid to yEnd - 1 do
+      x0 -= y0 * slope2;
+      y0 := 0;
+    end;
+
+    if slope1 < slope0 then
+    begin
+      y2 -= y0;
+      y0 -= y1;
+      pixelRow := Self.ClipY[y1];
+
+      while True do
       begin
-        baseIdx := Self.ClipY[y];
-        leftX := rightXFrac shr 14;
-        rightX := leftXFrac shr 14;
-        leftColor := rightColorFrac;
-        rightColor := leftColorFrac;
-        if leftX < rightX then
-        begin
-          colorStep := (rightColor - leftColor) div (rightX - leftX);
-          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor - leftX * colorStep, colorStep);
-        end
-        else if leftX > rightX then
-        begin
-          colorStep := (leftColor - rightColor) div (leftX - rightX);
-          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor - rightX * colorStep, colorStep);
-        end;
-        leftXFrac += slopeBC;
-        rightXFrac += slopeAC;
-        leftColorFrac += colorBC;
-        rightColorFrac += colorAC;
+        Dec(y0);
+        if y0 < 0 then
+          while True do
+          begin
+            Dec(y2);
+            if y2 < 0 then Exit;
+            Self.GouraudRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), c1, dColorDX);
+            x0 += slope2;
+            x1 += slope0;
+            c1 += dColorDY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.GouraudRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), c1, dColorDX);
+        x2 += slope1;
+        x1 += slope0;
+        c1 += dColorDY;
+        pixelRow += Self.PixelWidth;
       end;
     end;
+
+    y2 -= y0;
+    y0 -= y1;
+    pixelRow := Self.ClipY[y1];
+
+    while True do
+    begin
+      Dec(y0);
+      if y0 < 0 then
+        while True do
+        begin
+          Dec(y2);
+          if y2 < 0 then Exit;
+          Self.GouraudRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), c1, dColorDX);
+          x0 += slope2;
+          x1 += slope0;
+          c1 += dColorDY;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.GouraudRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), c1, dColorDX);
+      x2 += slope1;
+      x1 += slope0;
+      c1 += dColorDY;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  if y2 >= Self.ClipHeight then Exit;
+  if y0 > Self.ClipHeight then y0 := Self.ClipHeight;
+  if y1 > Self.ClipHeight then y1 := Self.ClipHeight;
+
+  c2 := dColorDX + ((c2 shl 8) - x2 * dColorDX);
+
+  if y0 < y1 then
+  begin
+    x2 := x2 shl 14;
+    x1 := x2;
+    if y2 < 0 then
+    begin
+      x1 -= slope0 * y2;
+      x2 -= slope2 * y2;
+      c2 -= dColorDY * y2;
+      y2 := 0;
+    end;
+
+    x0 := x0 shl 14;
+    if y0 < 0 then
+    begin
+      x0 -= y0 * slope1;
+      y0 := 0;
+    end;
+
+    if slope0 < slope2 then
+    begin
+      y1 -= y0;
+      y0 -= y2;
+      pixelRow := Self.ClipY[y2];
+
+      while True do
+      begin
+        Dec(y0);
+        if y0 < 0 then
+          while True do
+          begin
+            Dec(y1);
+            if y1 < 0 then Exit;
+            Self.GouraudRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), c2, dColorDX);
+            x1 += slope0;
+            x0 += slope1;
+            c2 += dColorDY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.GouraudRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), c2, dColorDX);
+        x1 += slope0;
+        x2 += slope2;
+        c2 += dColorDY;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    y1 -= y0;
+    y0 -= y2;
+    pixelRow := Self.ClipY[y2];
+
+    while True do
+    begin
+      Dec(y0);
+      if y0 < 0 then
+        while True do
+        begin
+          Dec(y1);
+          if y1 < 0 then Exit;
+          Self.GouraudRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), c2, dColorDX);
+          x1 += slope0;
+          x0 += slope1;
+          c2 += dColorDY;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.GouraudRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), c2, dColorDX);
+      x1 += slope0;
+      x2 += slope2;
+      c2 += dColorDY;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  x2 := x2 shl 14;
+  x0 := x2;
+  if y2 < 0 then
+  begin
+    x0 -= slope0 * y2;
+    x2 -= slope2 * y2;
+    c2 -= dColorDY * y2;
+    y2 := 0;
+  end;
+
+  x1 := x1 shl 14;
+  if y1 < 0 then
+  begin
+    x1 -= slope1 * y1;
+    y1 := 0;
+  end;
+
+  if slope0 < slope2 then
+  begin
+    y0 -= y1;
+    y1 -= y2;
+    pixelRow := Self.ClipY[y2];
+
+    while True do
+    begin
+      Dec(y1);
+      if y1 < 0 then
+        while True do
+        begin
+          Dec(y0);
+          if y0 < 0 then Exit;
+          Self.GouraudRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), c2, dColorDX);
+          x1 += slope1;
+          x2 += slope2;
+          c2 += dColorDY;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.GouraudRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), c2, dColorDX);
+      x0 += slope0;
+      x2 += slope2;
+      c2 += dColorDY;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  y0 -= y1;
+  y1 -= y2;
+  pixelRow := Self.ClipY[y2];
+
+  while True do
+  begin
+    Dec(y1);
+    if y1 < 0 then
+      while True do
+      begin
+        Dec(y0);
+        if y0 < 0 then Exit;
+        Self.GouraudRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), c2, dColorDX);
+        x1 += slope1;
+        x2 += slope2;
+        c2 += dColorDY;
+        pixelRow += Self.PixelWidth;
+      end;
+
+    Self.GouraudRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), c2, dColorDX);
+    x0 += slope0;
+    x2 += slope2;
+    c2 += dColorDY;
+    pixelRow += Self.PixelWidth;
   end;
 end;
+
 
 (*
   Flat-colour scanline filler — writes one horizontal span of a single colour.
@@ -576,7 +849,7 @@ begin
       for y := yStart to yMid - 1 do
       begin
         baseIdx := Self.ClipY[y];
-        Self.FlatRaster(baseIdx, leftXFrac shr 14, rightXFrac shr 14, color);
+        Self.FlatRaster(baseIdx, ArithmeticShr(leftXFrac, 14), ArithmeticShr(rightXFrac, 14), color);
         leftXFrac += slopeAB;
         rightXFrac += slopeAC;
       end;
@@ -586,7 +859,7 @@ begin
       for y := yStart to yMid - 1 do
       begin
         baseIdx := Self.ClipY[y];
-        Self.FlatRaster(baseIdx, rightXFrac shr 14, leftXFrac shr 14, color);
+        Self.FlatRaster(baseIdx, ArithmeticShr(rightXFrac, 14), ArithmeticShr(leftXFrac, 14), color);
         leftXFrac += slopeAB;
         rightXFrac += slopeAC;
       end;
@@ -612,7 +885,7 @@ begin
       for y := yMid to yEnd - 1 do
       begin
         baseIdx := Self.ClipY[y];
-        Self.FlatRaster(baseIdx, leftXFrac shr 14, rightXFrac shr 14, color);
+        Self.FlatRaster(baseIdx, ArithmeticShr(leftXFrac, 14), ArithmeticShr(rightXFrac, 14), color);
         leftXFrac += slopeBC;
         rightXFrac += slopeAC;
       end;
@@ -622,7 +895,7 @@ begin
       for y := yMid to yEnd - 1 do
       begin
         baseIdx := Self.ClipY[y];
-        Self.FlatRaster(baseIdx, rightXFrac shr 14, leftXFrac shr 14, color);
+        Self.FlatRaster(baseIdx, ArithmeticShr(rightXFrac, 14), ArithmeticShr(leftXFrac, 14), color);
         leftXFrac += slopeBC;
         rightXFrac += slopeAC;
       end;

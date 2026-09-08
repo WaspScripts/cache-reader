@@ -268,3 +268,10 @@ begin
   Result.Lightness  := EnsureRange(Trunc(Result.L * 256.0), 0, 255);
 end;
 
+function ArithmeticShr(value, bits: Integer): Integer;
+begin
+  if value < 0 then
+    Result := not ((not value) shr bits)
+  else
+    Result := value shr bits;
+end;

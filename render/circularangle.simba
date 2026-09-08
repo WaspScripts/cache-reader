@@ -18,8 +18,8 @@ begin
   for i := 0 to 2047 do
   begin
     n := i * 0.0030679615;
-    Self.SINE[i] := Round(Sin(n) * 65536);
-    Self.COSINE[i] := Round(Cos(n) * 65536);
+    Self.SINE[i] := Trunc(Sin(n) * 65536);
+    Self.COSINE[i] := Trunc(Cos(n) * 65536);
   end;
 end;
 

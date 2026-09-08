@@ -54,10 +54,6 @@ begin
   SetLength(Result.FaceColors2, src.FaceCount);
   SetLength(Result.FaceColors3, src.FaceCount);
 
-  // These are shared straight off the definition in RuneLite's
-  // ItemSpriteFactory.light(); they must carry the source data across, not just
-  // be allocated - the rasterizer branches on FaceTextures/FaceColors3 and
-  // reads FaceTransparencies as the per-face alpha.
   Result.FacePriorities := Copy(src.FaceRenderPriorities);
   Result.FaceTransparencies := Copy(src.FaceTransparencies);
   Result.TextureCoords := Copy(src.TextureCoords);
@@ -99,9 +95,9 @@ begin
 
   while (nX > 8192) or (nY > 8192) or (nZ > 8192) or (nX < -8192) or (nY < -8192) or (nZ < -8192) do
   begin
-    nX := nX shr 1;
-    nY := nY shr 1;
-    nZ := nZ shr 1;
+    nX := ArithmeticShr(nX, 1);
+    nY := ArithmeticShr(nY, 1);
+    nZ := ArithmeticShr(nZ, 1);
   end;
 
   len := Max(Trunc(Sqrt(nZ * nZ + nX * nX + nY * nY)), 1);
@@ -221,23 +217,16 @@ begin
       Self.BottomY := Self.VertexY[i];
   end;
 
-  Self.XYZMag := Round(Sqrt(Self.XYZMag) + 0.99);
-  Self.Radius := Round(Sqrt(Self.XYZMag * Self.XYZMag + Self.ModelHeight * Self.ModelHeight) + 0.99);
-  Self.Diameter := Self.Radius + Round(Sqrt(Self.XYZMag * Self.XYZMag + Self.BottomY * Self.BottomY) + 0.99);
+  Self.XYZMag := Trunc(Sqrt(Self.XYZMag) + 0.99);
+  Self.Radius := Trunc(Sqrt(Self.XYZMag * Self.XYZMag + Self.ModelHeight * Self.ModelHeight) + 0.99);
+  Self.Diameter := Self.Radius + Trunc(Sqrt(Self.XYZMag * Self.XYZMag + Self.BottomY * Self.BottomY) + 0.99);
 end;
-
-const
-  MAX_FACES = 6500;
 
 type
   TLitModelViewport = record
-    FaceClipped: array [0..MAX_FACES - 1] of Boolean;
-    // RuneLite names these modelViewportYs / modelViewportXs / modelViewportZs,
-    // but its "Ys" array actually holds the *horizontal* screen coordinate and
-    // its "Xs" array the *vertical* one. Named here after what they hold so the
-    // rasterizer call sites cannot get them the wrong way round.
-    ScreenX, ScreenY, Depth: array [0..MAX_FACES - 1] of Integer;
-    SortedFaceIdx, SortedFaceDepth: array [0..MAX_FACES - 1] of Integer;
+    FaceClipped: array [0..6499] of Boolean;
+    ScreenX, ScreenY, Depth,
+    SortedFaceIdx, SortedFaceDepth: array [0..6499] of Integer;
     SortedCount: Integer;
   end;
 
@@ -263,52 +252,37 @@ begin
   if hasTextures and (Self.FaceTextures[faceIdx] <> -1) then
   begin
     // Textured face. We do not sample textures yet, so approximate with a flat fill.
-    pal := ColorUtils.PaletteBGR[Self.FaceColors1[faceIdx]];
+    pal := graphics.Palette[Self.FaceColors1[faceIdx]];
     graphics.RasterFlat(Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3], Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3], pal);
   end
   else if Self.FaceColors3[faceIdx] = -1 then
   begin
-    pal := ColorUtils.PaletteBGR[Self.FaceColors1[faceIdx]];
+    pal := graphics.Palette[Self.FaceColors1[faceIdx]];
     graphics.RasterFlat(Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3], Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3], pal);
   end
   else
   begin
-    graphics.GouraudTriangle(Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3], Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3], Self.FaceColors1[faceIdx], Self.FaceColors2[faceIdx], Self.FaceColors3[faceIdx]);
+    graphics.GouraudTriangle(Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3], Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3], Self.FaceColors1[faceIdx], Self.FaceColors2[faceIdx], Self.FaceColors3[faceIdx]);
   end;
 end;
 
-(*
-  Priority-ordered face drawing - the `facePriorities <> nil` half of
-  RuneLite's Model.draw().
-
-  RuneLite bins faces into per-distance buckets and walks them far-to-near;
-  Viewport.SortedFaceIdx already holds exactly that order (stable, so faces at
-  equal depth keep their model order), so the bucket index it uses for the
-  priority averages is just the face's depth plus the model radius.
-
-  Priorities 0..9 are drawn in priority order, while 10 and 11 are interleaved
-  at the average depth of the 1/2, 3/4 and 6/8 groups.
-*)
 procedure TLitModel.DrawByPriority(var graphics: TGraphics3D);
 var
-  i, j, k, face, priority, dist, pos, listEnd, listIdx, curDist: Integer;
-  avg12, avg34, avg68: Integer;
+  i, j, face, priority, dist, pos, listEnd, idx, curDist,
+  avg0, avg1, avg2: Integer;
   numOfPriority, prioritySum: array [0..11] of Integer;
   orderedFaces, orderedDist: array [0..11] of TIntegerArray;
 begin
   for i := 0 to 11 do
-  begin
-    numOfPriority[i] := 0;
-    prioritySum[i] := 0;
     SetLength(orderedFaces[i], Viewport.SortedCount);
-  end;
+
   SetLength(orderedDist[10], Viewport.SortedCount);
   SetLength(orderedDist[11], Viewport.SortedCount);
 
-  for k := 0 to Viewport.SortedCount - 1 do
+  for i := 0 to Viewport.SortedCount - 1 do
   begin
-    face := Viewport.SortedFaceIdx[k];
-    dist := Viewport.SortedFaceDepth[k] + Self.Radius;
+    face := Viewport.SortedFaceIdx[i];
+    dist := Viewport.SortedFaceDepth[i] + Self.Radius;
     priority := Self.FacePriorities[face];
 
     pos := numOfPriority[priority];
@@ -321,50 +295,47 @@ begin
       orderedDist[priority][pos] := dist;
   end;
 
-  avg12 := 0;
   if (numOfPriority[1] > 0) or (numOfPriority[2] > 0) then
-    avg12 := (prioritySum[1] + prioritySum[2]) div (numOfPriority[1] + numOfPriority[2]);
+    avg0 := (prioritySum[1] + prioritySum[2]) div (numOfPriority[1] + numOfPriority[2]);
 
-  avg34 := 0;
   if (numOfPriority[3] > 0) or (numOfPriority[4] > 0) then
-    avg34 := (prioritySum[3] + prioritySum[4]) div (numOfPriority[3] + numOfPriority[4]);
+    avg1 := (prioritySum[3] + prioritySum[4]) div (numOfPriority[3] + numOfPriority[4]);
 
-  avg68 := 0;
   if (numOfPriority[6] > 0) or (numOfPriority[8] > 0) then
-    avg68 := (prioritySum[8] + prioritySum[6]) div (numOfPriority[8] + numOfPriority[6]);
+    avg2 := (prioritySum[8] + prioritySum[6]) div (numOfPriority[8] + numOfPriority[6]);
 
-  listIdx := 10;
+  idx := 10;
   pos := 0;
   listEnd := numOfPriority[10];
   if pos = listEnd then
   begin
-    listIdx := 11;
+    idx := 11;
     listEnd := numOfPriority[11];
   end;
 
   if pos < listEnd then
-    curDist := orderedDist[listIdx][pos]
+    curDist := orderedDist[idx][pos]
   else
     curDist := -1000;
 
   for j := 0 to 9 do
   begin
-    while ((j = 0) and (curDist > avg12)) or
-          ((j = 3) and (curDist > avg34)) or
-          ((j = 5) and (curDist > avg68)) do
+    while ((j = 0) and (curDist > avg0)) or
+          ((j = 3) and (curDist > avg1)) or
+          ((j = 5) and (curDist > avg2)) do
     begin
-      Self.RasterFace(graphics, orderedFaces[listIdx][pos]);
+      Self.RasterFace(graphics, orderedFaces[idx][pos]);
       Inc(pos);
 
-      if (pos = listEnd) and (listIdx <> 11) then
+      if (pos = listEnd) and (idx <> 11) then
       begin
-        listIdx := 11;
+        idx := 11;
         pos := 0;
         listEnd := numOfPriority[11];
       end;
 
       if pos < listEnd then
-        curDist := orderedDist[listIdx][pos]
+        curDist := orderedDist[idx][pos]
       else
         curDist := -1000;
     end;
@@ -375,18 +346,18 @@ begin
 
   while curDist <> -1000 do
   begin
-    Self.RasterFace(graphics, orderedFaces[listIdx][pos]);
+    Self.RasterFace(graphics, orderedFaces[idx][pos]);
     Inc(pos);
 
-    if (pos = listEnd) and (listIdx <> 11) then
+    if (pos = listEnd) and (idx <> 11) then
     begin
-      listIdx := 11;
+      idx := 11;
       pos := 0;
       listEnd := numOfPriority[11];
     end;
 
     if pos < listEnd then
-      curDist := orderedDist[listIdx][pos]
+      curDist := orderedDist[idx][pos]
     else
       curDist := -1000;
   end;
@@ -409,8 +380,6 @@ begin
     viewport2 := Viewport.ScreenX[idx2];
     viewport3 := Viewport.ScreenX[idx3];
 
-    // Backface cull — signed area of the projected triangle; only front-facing
-    // (correctly wound) faces are queued for drawing at all.
     if (viewport1 - viewport2) * (Viewport.ScreenY[idx3] - Viewport.ScreenY[idx2]) -
        (viewport3 - viewport2) * (Viewport.ScreenY[idx1] - Viewport.ScreenY[idx2]) <= 0 then
       Continue;
@@ -455,9 +424,6 @@ var
   centerX, centerY, sinR1, cosR1, sinY, cosY, sinZ, cosZ, sinX, cosX, zRelatedVar, tmp: Integer;
   i, vx, vy, vz: Integer;
 begin
-  // Only derive spherical bounds when no bounds have been computed yet.
-  // CalcBoundsCylinder (BoundsType = 1) already produced Radius/Diameter that
-  // account for ModelHeight, and RuneLite deliberately keeps those.
   if (Self.BoundsType <> 2) and (Self.BoundsType <> 1) then
   begin
     Self.BoundsType := 2;
@@ -470,7 +436,7 @@ begin
         Self.XYZMag := tmp;
     end;
 
-    Self.XYZMag := Round(Sqrt(Self.XYZMag) + 0.99);
+    Self.XYZMag := Trunc(Sqrt(Self.XYZMag) + 0.99);
     Self.Radius := Self.XYZMag;
     Self.Diameter := Self.XYZMag + Self.XYZMag;
   end;
