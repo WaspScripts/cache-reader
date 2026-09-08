@@ -47,5 +47,6 @@ begin
   ColorUtils.Setup();
   HeightCalc.Setup();
   CircularAngle.Setup();
+  TileShapes.Setup();
 end;
 {$R+}

@@ -31,6 +31,8 @@ type
     FacePriorities, FaceTransparencies,
     TextureCoords,
     FaceRenderTypes: TByteArray;
+
+    HasTransparencies, HasTextures: Boolean;
   end;
 
 (*
@@ -76,6 +78,9 @@ begin
   Result.TexIndices1 := Copy(src.TexIndices1);
   Result.TexIndices2 := Copy(src.TexIndices2);
   Result.TexIndices3 := Copy(src.TexIndices3);
+
+  Result.HasTransparencies := Length(Result.FaceTransparencies) > 0;
+  Result.HasTextures := Length(Result.FaceTextures) > 0;
 
   Result.ModelHeight := 1000;
 
@@ -196,20 +201,18 @@ sampled. Clipping is only turned on for faces that actually reach outside the vi
 procedure TLitModel.RasterFace(var graphics: TGraphics3D; faceIdx: Integer);
 var
   idx1, idx2, idx3, pal: Integer;
-  hasTextures: Boolean;
 begin
   idx1 := Self.FaceIndices1[faceIdx];
   idx2 := Self.FaceIndices2[faceIdx];
   idx3 := Self.FaceIndices3[faceIdx];
   graphics.RasterClipEnable := Viewport.FaceClipped[faceIdx];
 
-  if Length(Self.FaceTransparencies) = 0 then
+  if not Self.HasTransparencies then
     graphics.RasterAlpha := 0
   else
     graphics.RasterAlpha := Self.FaceTransparencies[faceIdx] and $FF;
 
-  hasTextures := Length(Self.FaceTextures) > 0;
-  if hasTextures and (Self.FaceTextures[faceIdx] <> -1) then
+  if Self.HasTextures and (Self.FaceTextures[faceIdx] <> -1) then
   begin
     // Textured face. We do not sample textures yet, so approximate with a flat fill.
     pal := graphics.Palette[Self.FaceColors1[faceIdx]];

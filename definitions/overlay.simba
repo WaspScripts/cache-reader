@@ -9,7 +9,8 @@ type
     ID, RGBColor, Texture, SecondaryRGBColor: Integer;
     HideUnderlay: Boolean;
     Hue, Saturation, Lightness,
-    OtherHue, OtherSaturation, OtherLightness: Integer;
+    OtherHue, OtherSaturation, OtherLightness,
+    MinimapColor: Integer;
   end;
 
   TOverlayDefinitionArray = array of TOverlayDefinition;

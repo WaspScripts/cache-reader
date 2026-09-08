@@ -6,6 +6,7 @@ definitions, and the sprites for map scenes and area icons.
 Load it once - see {ref}`TMapDataLoader.Load` - not per chunk.
 *)
 {$include_once ../reader/reader.simba}
+{$include_once ../utils/color.simba}
 {$include_once ../definitions/objects.simba}
 {$include_once ../definitions/underlay.simba}
 {$include_once ../definitions/overlay.simba}
@@ -21,6 +22,8 @@ type
     Areas: TAreaDefinitionArray;
     Textures: TTextureDefinitionArray;
     MapScenes, AreaIcons: TSpriteDefinitionArray;
+    AreaIconImages: TImageArray;
+    MapScenePixels: T2DIntegerArray;
   end;
 
 (*
@@ -247,6 +250,79 @@ end;
 
 
 (*
+## MapDataLoader.PrepareForRendering
+```pascal
+procedure TMapDataLoader.PrepareForRendering();
+```
+Works out everything the map renderer would otherwise derive over and over from data that never
+changes once loaded. Run at the end of {ref}`TMapDataLoader.Load`, after every definition it
+reads is in place.
+
+Three things are settled here:
+
+- The colour each ground overlay is drawn as on the minimap. It depends only on the overlay -
+  its secondary colour, its texture's average colour, or its own colour, in that order - so it
+  is worked out per overlay here instead of per tile of every plane of every region.
+- The map scene sprites, converted from the RGB the cache stores to the BGR the pixel buffers
+  use, with a fully transparent pixel flattened to `0`. Drawing one is then a copy.
+- One {ref}`TImage` per area icon, so that drawing the same icon in a dozen regions does not
+  build a dozen images of it.
+*)
+procedure TMapDataLoader.PrepareForRendering();
+var
+  i, j, color: Integer;
+  pixels: TIntegerArray;
+begin
+  ColorUtils.Setup();
+
+  for i := 0 to High(Self.Overlays) do
+    with Self.Overlays[i] do
+    begin
+      MinimapColor := 0;
+
+      if SecondaryRGBColor <> -1 then
+        MinimapColor := ColorUtils.OverlayColor(
+          ColorUtils.PackHSL(OtherHue, OtherSaturation, OtherLightness)
+        ) or $FF000000
+      else if Texture >= 0 then
+      begin
+        j := Self.Textures.IndexOf(Texture);
+        if j <> -1 then
+          MinimapColor := ColorUtils.OverlayColor(Self.Textures[j].AverageRGB) or $FF000000;
+      end
+      else if RGBColor <> $FF00FF then
+        MinimapColor := ColorUtils.OverlayColor(
+          ColorUtils.PackHSL(Hue, Saturation, Lightness)
+        ) or $FF000000;
+    end;
+
+  SetLength(Self.MapScenePixels, Length(Self.MapScenes));
+  for i := 0 to High(Self.MapScenes) do
+  begin
+    //the buffer is dropped rather than resized so that the one just handed to MapScenePixels is
+    //not the one being written into again
+    SetLength(pixels, 0);
+    SetLength(pixels, Length(Self.MapScenes[i].Pixels));
+
+    for j := 0 to High(pixels) do
+    begin
+      color := Self.MapScenes[i].Pixels[j] and $00FFFFFF;
+      if color = 0 then
+        Continue;
+      pixels[j] := $FF000000 or ((color and $0000FF) shl 16) or (color and $00FF00) or ((color shr 16) and $0000FF);
+    end;
+
+    Self.MapScenePixels[i] := pixels;
+  end;
+
+  SetLength(Self.AreaIconImages, Length(Self.AreaIcons));
+  for i := 0 to High(Self.AreaIcons) do
+    if (Self.AreaIcons[i].Width > 0) and (Self.AreaIcons[i].Height > 0) then
+      Self.AreaIconImages[i] := Self.AreaIcons[i].ToImage();
+end;
+
+
+(*
 ## MapDataLoader.Load
 ```pascal
 procedure TMapDataLoader.Load();
@@ -275,4 +351,5 @@ begin
   Self.LoadTextures();
   Self.LoadMapScenes();
   Self.LoadAreaIcons();
+  Self.PrepareForRendering();
 end;

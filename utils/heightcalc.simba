@@ -9,6 +9,7 @@ that depends only on the tile's world position - so it can be reproduced exactly
 type
   THeightCalc = record
     CosTable: array [0..1023] of Integer;
+    CoarseWeights: array [0..3] of Integer;
   end;
 
 (*
@@ -16,7 +17,12 @@ type
 ```pascal
 procedure THeightCalc.Setup();
 ```
-Fills the cosine table the noise interpolation reads. Called once at startup by `cache.simba`.
+Fills the cosine tables the noise interpolation reads. Called once at startup by `cache.simba`.
+
+`CosTable` is the table {ref}`THeightCalc.Interpolate` blends along. `CoarseWeights` holds the
+only four blend weights the coarsest noise layer can ever ask for - a tile sits at one of four
+positions within a 4 tile sample - so {ref}`THeightCalc.CalculateArea` indexes them rather than
+going back to the cosine table per row and column.
 *)
 procedure THeightCalc.Setup();
 var
@@ -27,6 +33,9 @@ begin
 
   for i := 0 to 1023 do
     Self.CosTable[i] := Trunc(65536 * Cos(i * rads));
+
+  for i := 0 to 3 do
+    Self.CoarseWeights[i] := (65536 - Self.CosTable[256 * i]) shr 1;
 end;
 
 (*
@@ -224,8 +233,8 @@ built as grids first. The two coarse layers are sampled every 4 and every 2 tile
 square shares a handful of their points rather than re-deriving them for each tile.
 
 The cosine blend {ref}`THeightCalc.Interpolate` would do is folded in as well: at frequency 4 a
-tile's position within a sample can only be one of four, so the four weights are taken from the
-cosine table once per column and row instead of once per tile.
+tile's position within a sample can only be one of four, so the weight is read out of
+`CoarseWeights` once per column and row instead of being derived once per tile.
 *)
 function THeightCalc.CalculateArea(x, y, size: Integer): TIntegerMatrix;
 var
@@ -264,9 +273,9 @@ begin
   for i := 0 to size - 1 do
   begin
     coarseIdxX[i]    := ((x + 45365 + i) div 4) - coarseX;
-    coarseWeightX[i] := (65536 - Self.CosTable[256 * ((x + 45365 + i) and 3)]) shr 1;
+    coarseWeightX[i] := Self.CoarseWeights[(x + 45365 + i) and 3];
     coarseIdxY[i]    := ((y + 91923 + i) div 4) - coarseY;
-    coarseWeightY[i] := (65536 - Self.CosTable[256 * ((y + 91923 + i) and 3)]) shr 1;
+    coarseWeightY[i] := Self.CoarseWeights[(y + 91923 + i) and 3];
     //at frequency 2 the client snaps to the nearer grid point instead of interpolating
     midIdxX[i] := ((x + 10294 + i) div 2) + ((x + 10294 + i) and 1) - midX;
     midIdxY[i] := ((y + 37821 + i) div 2) + ((y + 37821 + i) and 1) - midY;

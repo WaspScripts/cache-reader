@@ -31,7 +31,7 @@ type
 
     IsHollow, MergeNormals, Shadow, ObstructsGround, IsRotated,
     ModelClipped, BlocksProjectile, RandomizeAnimStart,
-    DeferAnimChange, Unknown1: Boolean;
+    DeferAnimChange, Unknown1, OpenableDoor: Boolean;
 
     Ops: TEntityOpsDefinition;
 
@@ -340,6 +340,7 @@ begin
     else
       Result.SupportsItems := 0;
   end;
+      end;
 end;
 
 (*

@@ -27,7 +27,8 @@ type
     MapData: TMapDataLoader;
 
     RegionPlaneCache: array of array of TIntegerMatrix;
-    RegionTileCodes: array of array of TIntegerArray;
+    RegionTileCodes, RegionIconCodes: array of array of TIntegerArray;
+    RegionIconsCached: array of TBooleanArray;
 
     LastIndex: Integer;
 
@@ -55,6 +56,47 @@ type
     ];
   end;
 
+  TTileShapes = record
+    Masks: array of TIntegerArray;
+  end;
+
+(*
+## TileShapes.Setup
+```pascal
+procedure TTileShapes.Setup();
+```
+Applies every rotation to every tile shape up front, so that drawing an overlaid tile reads one
+value per pixel instead of a rotation and then a shape.
+
+`Masks[shape * 4 + rotation]` is the 16 pixel mask of that combination: `1` where the overlay is
+drawn and `0` where the underlay shows through. There are only 13 shapes and 4 rotations, so the
+whole table is 52 masks. Called once at startup by `cache.simba`.
+*)
+procedure TTileShapes.Setup();
+var
+  shape, rotation, i: Integer;
+  mask: TIntegerArray;
+begin
+  SetLength(Self.Masks, Length(TMapChunkLoader.TILE_SHAPE_2D) * 4);
+
+  for shape := 0 to High(TMapChunkLoader.TILE_SHAPE_2D) do
+    for rotation := 0 to 3 do
+    begin
+      //the buffer is dropped rather than resized so that the mask just stored is not the one
+      //being written into again
+      SetLength(mask, 0);
+      SetLength(mask, 16);
+
+      for i := 0 to 15 do
+        mask[i] := TMapChunkLoader.TILE_SHAPE_2D[shape, TMapChunkLoader.TILE_ROTATION_2D[rotation, i]];
+
+      Self.Masks[shape * 4 + rotation] := mask;
+    end;
+end;
+
+var
+  TileShapes: TTileShapes;
+
 (*
 ## MapChunkLoader.EnsurePlaneCache
 ```pascal
@@ -75,10 +117,14 @@ begin
   i := Length(Self.RegionPlaneCache);
   SetLength(Self.RegionPlaneCache, regionIndex + 1);
   SetLength(Self.RegionTileCodes, regionIndex + 1);
+  SetLength(Self.RegionIconCodes, regionIndex + 1);
+  SetLength(Self.RegionIconsCached, regionIndex + 1);
   while i <= regionIndex do
   begin
     SetLength(Self.RegionPlaneCache[i], TMapChunkLoader.REGION_Z);
     SetLength(Self.RegionTileCodes[i], TMapChunkLoader.REGION_Z);
+    SetLength(Self.RegionIconCodes[i], TMapChunkLoader.REGION_Z);
+    SetLength(Self.RegionIconsCached[i], TMapChunkLoader.REGION_Z);
     Inc(i);
   end;
 end;
@@ -133,15 +179,15 @@ procedure TMapChunkLoader.BlitMapDecoration(var pixels: TIntegerMatrix; x, y: In
 Draws an object's map scene sprite - the staircase, altar or furnace symbol the minimap uses in
 place of the object itself.
 
-The sprite is centred on the object's footprint and clipped to the chunk. Sprites are stored
-RGB while the buffer is BGR, so the channels are swapped as they are copied, and a pixel that is
-black with no alpha is transparent rather than drawn.
+The sprite is centred on the object's footprint and clipped to the chunk. Its pixels come from
+{ref}`TMapDataLoader.PrepareForRendering`, which has already swapped them into the buffer's
+channel order and flattened a transparent pixel to `0`, so this is a copy that skips zeroes.
 *)
 procedure TMapChunkLoader.BlitMapDecoration(var pixels: TIntegerMatrix; x, y: Integer; constref obj: TObjectDefinition);
 var
   sprite: TSpriteDefinition;
-  drawX, drawY, offset: Integer;
-  color: TColor;
+  drawX, drawY, offset, color: Integer;
+  spritePixels, row: TIntegerArray;
   b: TBox;
 begin
   if obj.MapSceneID > High(Self.MapData.MapScenes) then
@@ -150,6 +196,8 @@ begin
   sprite := Self.MapData.MapScenes[obj.MapSceneID];
   if (sprite.Width <= 0) or (sprite.Height <= 0) then
     Exit;
+
+  spritePixels := Self.MapData.MapScenePixels[obj.MapSceneID];
 
   drawX := x + (obj.SizeX * TMapChunkLoader.SCALE - sprite.Width)  div 2 + sprite.OffsetX;
   drawY := y + (obj.SizeY * TMapChunkLoader.SCALE - sprite.Height) div 2 + sprite.OffsetY;
@@ -162,16 +210,14 @@ begin
   for y := b.Y1 to b.Y2 do
   begin
     offset := y * sprite.Width;
+    row := pixels[drawY + y];
 
     for x := b.X1 to b.X2 do
     begin
-      color := sprite.Pixels[x + offset];
-      if (color and $00FFFFFF) = 0 then
+      color := spritePixels[x + offset];
+      if color = 0 then
         Continue;
-
-      // RGB => BGR
-      color := ((color and $0000FF) shl 16) or (color and $00FF00) or ((color shr 16) and $0000FF);
-      pixels[drawY + y, drawX + x] := color or $FF000000;
+      row[drawX + x] := color;
     end;
   end;
 end;
@@ -318,55 +364,88 @@ within `img`.
 Icons go on last, and onto the whole image rather than a single chunk, so that one sitting on a
 chunk boundary is not cut in half - which is why {ref}`TMapChunkLoader.GetChunksImage` renders
 its chunks with icons turned off and then comes back for them.
+
+Only a handful of a region's several thousand locations carry an icon at all, so which ones they
+are is worked out once per region and plane and kept - packed one integer per icon, tile x and y
+in the low twelve bits and the area's index above them. Panning back over a region then costs
+the drawing alone rather than another walk of every location on it.
 *)
 procedure TMapChunkLoader.DrawMapIcons(img: TImage; constref region: TRegion; z, offsetX, offsetY: Integer);
 var
-  x, y, isBridge, tileZ, i,
+  x, y, isBridge, i, count, regionIdx, code,
   objIdx, areaIdx, drawX, drawY: Integer;
   bridgePlane: TIntegerMatrix;
   sprite: TSpriteDefinition;
   objs: TObjectDefinitionArray;
+  icons: TIntegerArray;
 begin
-  bridgePlane := region.TileSettings[1];
-  objs := Self.MapData.Objects;
+  regionIdx := Self.RegionLoader.RegionCoordinateIndex(region.X, region.Y);
+  if regionIdx = -1 then
+    Exit;
 
-  //Only a handful of the region's locations carry an icon, so the definitions are read field by
-  //field instead of being copied out - copying a whole TObjectDefinition per location dominates.
-  for i := 0 to High(region.Locations) do
+  Self.EnsurePlaneCache(regionIdx);
+
+  if not Self.RegionIconsCached[regionIdx, z] then
   begin
-    x := region.Locations[i].X - region.BaseX;
-    y := region.Locations[i].Y - region.BaseY;
+    bridgePlane := region.TileSettings[1];
+    objs := Self.MapData.Objects;
 
-    if (bridgePlane[x, y] and 2) <> 0 then
-      isBridge := 1
-    else
-      isBridge := 0;
+    SetLength(icons, Length(region.Locations));
+    count := 0;
 
-    tileZ := z + isBridge;
+    //the definitions are read field by field instead of being copied out - copying a whole
+    //TObjectDefinition per location dominates
+    for i := 0 to High(region.Locations) do
+    begin
+      x := region.Locations[i].X - region.BaseX;
+      y := region.Locations[i].Y - region.BaseY;
 
-    if region.Locations[i].Z <> tileZ then
-      Continue;
+      if (bridgePlane[x, y] and 2) <> 0 then
+        isBridge := 1
+      else
+        isBridge := 0;
 
-    objIdx := Self.MapData.Objects.IndexOf(region.Locations[i].ID);
-    if objIdx = -1 then
-      Continue;
+      if region.Locations[i].Z <> z + isBridge then
+        Continue;
 
-    if objs[objIdx].MapAreaId < 0 then
-      Continue;
+      objIdx := Self.MapData.Objects.IndexOf(region.Locations[i].ID);
+      if objIdx = -1 then
+        Continue;
 
-    areaIdx := Self.MapData.Areas.IndexOf(objs[objIdx].MapAreaId);
-    if areaIdx = -1 then
-      Continue;
+      if objs[objIdx].MapAreaId < 0 then
+        Continue;
+
+      areaIdx := Self.MapData.Areas.IndexOf(objs[objIdx].MapAreaId);
+      if areaIdx = -1 then
+        Continue;
+
+      if (Self.MapData.AreaIcons[areaIdx].Width <= 0) or (Self.MapData.AreaIcons[areaIdx].Height <= 0) then
+        Continue;
+
+      icons[count] := (areaIdx shl 12) or (y shl 6) or x;
+      Inc(count);
+    end;
+
+    SetLength(icons, count);
+    Self.RegionIconCodes[regionIdx, z] := icons;
+    Self.RegionIconsCached[regionIdx, z] := True;
+  end;
+
+  icons := Self.RegionIconCodes[regionIdx, z];
+
+  for i := 0 to High(icons) do
+  begin
+    code    := icons[i];
+    x       := code and $3F;
+    y       := (code shr 6) and $3F;
+    areaIdx := code shr 12;
 
     sprite := Self.MapData.AreaIcons[areaIdx];
-
-    if (sprite.Width <= 0) or (sprite.Height <= 0) then
-      Continue;
 
     drawX := offsetX + 2 + (x * TMapChunkLoader.SCALE) - (sprite.MaxWidth div 2);
     drawY := offsetY + 2 + ((TMapChunkLoader.REGION_SIZE - 1 - y) * TMapChunkLoader.SCALE) - (sprite.MaxHeight div 2);
 
-    img.DrawImage(sprite.ToImage(), [drawX + sprite.OffsetX, drawY + sprite.OffsetY]);
+    img.DrawImage(Self.MapData.AreaIconImages[areaIdx], [drawX + sprite.OffsetX, drawY + sprite.OffsetY]);
   end;
 end;
 
@@ -401,19 +480,19 @@ var
   runHue, runSat, runLight, runMul, runNum,
   underlayBGR, overlayBGR, shape, rotation, drawX, drawY: Integer;
 
+  rowRegions: array [0..2] of Integer;
   bounds, outterBounds: TBox;
   hues, sats, light, mul, num,
-  shapes, rotations, row,
+  localYs, rowBuckets,
+  shapes, row,
   underlayRow, overlayRow, pathRow, rotationRow: TIntegerArray;
   underlays: TUnderlayDefinitionArray;
   overlays: TOverlayDefinitionArray;
-  textures: TTextureDefinitionArray;
 begin
   SetLength(Result, TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
 
   underlays := Self.MapData.Underlays;
   overlays  := Self.MapData.Overlays;
-  textures  := Self.MapData.Textures;
 
   i := TMapChunkLoader.REGION_SIZE + TMapChunkLoader.BLEND * 2;
   SetLength(hues, i);
@@ -421,6 +500,8 @@ begin
   SetLength(light, i);
   SetLength(mul, i);
   SetLength(num, i);
+  SetLength(localYs, i);
+  SetLength(rowBuckets, i);
 
   //hasLeft
   if Self.RegionLoader.WorldCoordinateIndex(region.BaseX - 1, region.BaseY) <> -1 then
@@ -448,6 +529,22 @@ begin
 
   outterBounds := bounds.Expand(TMapChunkLoader.BLEND);
 
+  //a blend row is at most one region above or below the one being drawn, so which of the three
+  //it belongs to - and where in that region it lands - is settled per row here rather than per
+  //row per column per direction below
+  for y := bounds.Y1 to bounds.Y2 do
+  begin
+    idx := y + TMapChunkLoader.BLEND;
+    localYs[idx] := TMapChunkLoader.ConvertLocal(y);
+
+    if y < 0 then
+      rowBuckets[idx] := 0
+    else if y >= TMapChunkLoader.REGION_SIZE then
+      rowBuckets[idx] := 2
+    else
+      rowBuckets[idx] := 1;
+  end;
+
   for x := outterBounds.X1 to outterBounds.X2 do
   begin
     for dir in DIRS do
@@ -459,20 +556,25 @@ begin
       localX := TMapChunkLoader.ConvertLocal(neighbor);
       neighborRegionX := (region.BaseX + neighbor) shr 6;
 
+      rowRegions[0] := Self.RegionLoader.RegionCoordinateIndex(neighborRegionX, region.Y - 1);
+      rowRegions[1] := Self.RegionLoader.RegionCoordinateIndex(neighborRegionX, region.Y);
+      rowRegions[2] := Self.RegionLoader.RegionCoordinateIndex(neighborRegionX, region.Y + 1);
+
       for y := bounds.Y1 to bounds.Y2 do
       begin
-        i := Self.RegionLoader.RegionCoordinateIndex(neighborRegionX, (region.BaseY + y) shr 6);
+        idx := y + TMapChunkLoader.BLEND;
+
+        i := rowRegions[rowBuckets[idx]];
         if i = -1 then
           Continue;
 
-        underlayID := Self.RegionLoader.Regions[i].GetUnderlayID(z, localX, TMapChunkLoader.ConvertLocal(y));
+        underlayID := Self.RegionLoader.Regions[i].GetUnderlayID(z, localX, localYs[idx]);
         if underlayID <= 0 then
           Continue;
 
         i := underlayID - 1;
         if i <= High(underlays) then
         begin
-          idx := y + TMapChunkLoader.BLEND;
           with underlays[i] do
           begin
             hues[idx]  += dir * Hue;
@@ -548,23 +650,7 @@ begin
 
         i := overlays.IndexOf(overlayID-1);
         if i > -1 then
-        begin
-          with overlays[i] do
-          begin
-            if SecondaryRGBColor <> -1 then
-              overlayBGR :=
-                ColorUtils.OverlayColor(ColorUtils.PackHSL(OtherHue, OtherSaturation, OtherLightness)) or $FF000000
-            else if Texture >= 0 then
-            begin
-              idx := textures.IndexOf(Texture);
-              if idx <> -1 then
-                overlayBGR := ColorUtils.OverlayColor(textures[idx].AverageRGB) or $FF000000;
-            end
-            else if RGBColor <> $FF00FF then
-              overlayBGR :=
-                ColorUtils.OverlayColor(ColorUtils.PackHSL(Hue, Saturation, Lightness)) or $FF000000;
-          end;
-        end;
+          overlayBGR := overlays[i].MinimapColor;
       end;
 
       case shape of
@@ -581,9 +667,8 @@ begin
         end;
       end;
 
-      drawY := (TMapChunkLoader.REGION_SIZE - 1 - y) * TMapChunkLoader.SCALE;
-      shapes    := TMapChunkLoader.TILE_SHAPE_2D[shape];
-      rotations := TMapChunkLoader.TILE_ROTATION_2D[rotation];
+      drawY  := (TMapChunkLoader.REGION_SIZE - 1 - y) * TMapChunkLoader.SCALE;
+      shapes := TileShapes.Masks[shape * 4 + rotation];
 
       idx := 0;
       for i := 0 to TMapChunkLoader.SCALE - 1 do
@@ -591,7 +676,7 @@ begin
         row := Result[drawY + i];
         for j := 0 to TMapChunkLoader.SCALE - 1 do
         begin
-          if shapes[rotations[idx]] <> 0 then
+          if shapes[idx] <> 0 then
             row[drawX + j] := overlayBGR
           else if underlayBGR <> 0 then
             row[drawX + j] := underlayBGR;
@@ -792,21 +877,30 @@ function THeightMap.ToImage(): TImage;
 ```
 The height map as a greyscale image, black at ground level and white at the highest terrain the
 game uses.
+
+The pixels are laid out into one buffer and handed over in a single call, rather than written
+one at a time through `TImage.Pixel` - a property write per pixel is most of what building the
+image would otherwise cost.
 *)
 function THeightMap.ToImage(): TImage;
 var
   w, h, x, y: Integer;
+  argb, column: TIntegerArray;
 begin
   w := Self.Width;
   h := Self.Height;
 
   Result := new TImage(w, h);
+  SetLength(argb, w * h);
 
-  h -= 1;
-  w -= 1;
-  for x := 0 to h do
-    for y := 0 to w do
-      Result.Pixel[x, y] := TColorUtils.Height2Color(Self[x, y]);
+  for x := 0 to h - 1 do
+  begin
+    column := Self[x];
+    for y := 0 to w - 1 do
+      argb[y * w + x] := TColorUtils.Height2Color(column[y]);
+  end;
+
+  Result.FromData(w, h, PColorBGRA(@argb[0]), w);
 end;
 
 (*
@@ -947,21 +1041,30 @@ function TCollisionMap.ToImage(): TImage;
 ```
 The collision map as an image: white where a tile can be walked on, black where it is blocked,
 grey where an object stands on it.
+
+The pixels are laid out into one buffer and handed over in a single call, rather than written
+one at a time through `TImage.Pixel` - a property write per pixel is most of what building the
+image would otherwise cost.
 *)
 function TCollisionMap.ToImage(): TImage;
 var
   w, h, x, y: Integer;
+  argb, column: TIntegerArray;
 begin
   w := Self.Width;
   h := Self.Height;
 
   Result := new TImage(w, h);
+  SetLength(argb, w * h);
 
-  h -= 1;
-  w -= 1;
-  for x := 0 to h do
-    for y := 0 to w do
-      Result.Pixel[x, y] := TColorUtils.Collision2Color(Self[x, y]);
+  for x := 0 to h - 1 do
+  begin
+    column := Self[x];
+    for y := 0 to w - 1 do
+      argb[y * w + x] := TColorUtils.Collision2Color(column[y]) or $FF000000;
+  end;
+
+  Result.FromData(w, h, PColorBGRA(@argb[0]), w);
 end;
 
 (*
@@ -975,22 +1078,13 @@ on.
 
 An object qualifies if it is wall shaped and offers a `Close` operation. Curtains are excluded
 by name: they have the operations of a door but do not block anything.
+
+The answer is settled once when the object is decoded - see {ref}`TObjectDefinition.Create` -
+rather than searched for again on every placement of it.
 *)
 function TMapChunkLoader.HasDoorOps(constref obj: TObjectDefinition): Boolean;
-var
-  i: Integer;
 begin
-  if obj.WallOrDoor = 0 then
-    Exit(False);
-
-  if Pos('urtain', obj.Name) > 0 then
-    Exit(False);
-
-  for i := 0 to High(obj.Ops.Ops) do
-    if obj.Ops.Ops[i].Text = 'Close' then
-      Exit(True);
-
-  Result := False;
+  Result := obj.OpenableDoor;
 end;
 
 (*
