@@ -31,6 +31,7 @@ var
   newPixels: TIntegerArray;
 begin
   SetLength(newPixels, Self.Width * Self.Height);
+  i := 0;
 
   for y := 0 to Self.Height - 1 do
     for x := 0 to Self.Width - 1 do
@@ -131,12 +132,24 @@ begin
         graphics.Pixels[pixelIdx + deltaX] := pal;
     end;
     pixelIdx += graphics.PixelWidth;
-    deltaIndex += sourceRowSkip;
+    // Advance past the w pixels just read, then over the clipped-off columns.
+    deltaIndex += w + sourceRowSkip;
   end;
 end;
 
 function TSpritePixels.ToImage(): TImage;
+var
+  i: Integer;
+  argb: TIntegerArray;
 begin
+  // The rasterizer leaves the alpha byte at 0, so the buffer cannot be handed to
+  // TImage as-is. RuneLite's toBufferedImage() makes every non-zero pixel fully
+  // opaque and leaves the untouched ones transparent.
+  SetLength(argb, Length(Self.Pixels));
+  for i := 0 to High(Self.Pixels) do
+    if Self.Pixels[i] <> 0 then
+      argb[i] := Self.Pixels[i] or ($FF shl 24);
+
   Result := new TImage(Self.Width, Self.Height);
-  Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);
+  Result.FromData(Self.Width, Self.Height, PColorBGRA(@argb[0]), Self.Width);
 end;

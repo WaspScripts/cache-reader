@@ -116,7 +116,12 @@ end;
 
   Follows RuneLite's gouraudRaster: interpolates a colour value across [leftX, rightX]
   using a fixed-point step, looks up each pixel in the colour palette, and optionally
-  applies alpha blending. When RasterGouraudLowRes is true, every 4 pixels share one
+  applies alpha blending.
+
+  `startColor` is the colour extrapolated back to x = 0, not the colour at
+  `leftX` - this re-adds leftX * colorStep itself, exactly as RuneLite's
+  gouraudRaster does (var6 += var4 * var7), so that clipping leftX to 0 still
+  lands on the right colour. When RasterGouraudLowRes is true, every 4 pixels share one
   colour for speed (as the original client does on low-res mode).
 *)
 procedure TGraphics3D.GouraudRaster(baseIdx, leftX, rightX, startColor, colorStep: Integer);
@@ -339,12 +344,12 @@ begin
         if leftX < rightX then
         begin
           colorStep := (rightColor - leftColor) div (rightX - leftX);
-          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor, colorStep);
+          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor - leftX * colorStep, colorStep);
         end
         else if leftX > rightX then
         begin
           colorStep := (leftColor - rightColor) div (leftX - rightX);
-          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor, colorStep);
+          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor - rightX * colorStep, colorStep);
         end;
         leftXFrac += slopeAB;
         rightXFrac += slopeAC;
@@ -364,12 +369,12 @@ begin
         if leftX < rightX then
         begin
           colorStep := (rightColor - leftColor) div (rightX - leftX);
-          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor, colorStep);
+          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor - leftX * colorStep, colorStep);
         end
         else if leftX > rightX then
         begin
           colorStep := (leftColor - rightColor) div (leftX - rightX);
-          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor, colorStep);
+          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor - rightX * colorStep, colorStep);
         end;
         leftXFrac += slopeAB;
         rightXFrac += slopeAC;
@@ -409,12 +414,12 @@ begin
         if leftX < rightX then
         begin
           colorStep := (rightColor - leftColor) div (rightX - leftX);
-          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor, colorStep);
+          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor - leftX * colorStep, colorStep);
         end
         else if leftX > rightX then
         begin
           colorStep := (leftColor - rightColor) div (leftX - rightX);
-          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor, colorStep);
+          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor - rightX * colorStep, colorStep);
         end;
         leftXFrac += slopeBC;
         rightXFrac += slopeAC;
@@ -434,12 +439,12 @@ begin
         if leftX < rightX then
         begin
           colorStep := (rightColor - leftColor) div (rightX - leftX);
-          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor, colorStep);
+          Self.GouraudRaster(baseIdx, leftX, rightX, leftColor - leftX * colorStep, colorStep);
         end
         else if leftX > rightX then
         begin
           colorStep := (leftColor - rightColor) div (leftX - rightX);
-          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor, colorStep);
+          Self.GouraudRaster(baseIdx, rightX, leftX, rightColor - rightX * colorStep, colorStep);
         end;
         leftXFrac += slopeBC;
         rightXFrac += slopeAC;

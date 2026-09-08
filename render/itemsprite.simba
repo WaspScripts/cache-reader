@@ -61,6 +61,7 @@ function TItemSprite.Create(cacheReader: TCacheReader; const itemDef: TItemDefin
 var
   modelSector: TArchiveSector;
   modelData: TByteArray;
+  i: Integer;
 begin
   Result.ItemDef := itemDef;
   Result.Valid := False;
@@ -80,6 +81,13 @@ begin
   // Apply resize (128 is "no resize" — OSRS's default scale factor)
   if (itemDef.ResizeX <> 128) or (itemDef.ResizeY <> 128) or (itemDef.ResizeZ <> 128) then
     Result.ModelDef.Resize(itemDef.ResizeX, itemDef.ResizeY, itemDef.ResizeZ);
+
+  // Apply the item's colour/texture substitutions, as ItemSpriteFactory.getModel does.
+  for i := 0 to High(itemDef.ColorFind) do
+    Result.ModelDef.Recolor(itemDef.ColorFind[i], itemDef.ColorReplace[i]);
+
+  for i := 0 to High(itemDef.TextureFind) do
+    Result.ModelDef.Retexture(itemDef.TextureFind[i], itemDef.TextureReplace[i]);
 
   Result.LitModel := TLitModel.Create(Result.ModelDef);
   Result.Valid := True;
@@ -164,7 +172,15 @@ begin
     if Length(Self.ModelDef.FaceRenderTypes) > 0 then
       faceType := Self.ModelDef.FaceRenderTypes[faceIdx] and $FF;
     if Length(Self.ModelDef.FaceTransparencies) > 0 then
+    begin
+      // RuneLite reads this as a *signed* byte, so 0xFE/0xFF mean -2/-1.
+      // TByteArray is unsigned here, so sign-extend before the comparisons
+      // below, otherwise the "always bright" and "hidden face" render types
+      // never trigger and fully transparent faces get drawn.
       faceAlphaVal := Self.ModelDef.FaceTransparencies[faceIdx];
+      if faceAlphaVal > 127 then
+        faceAlphaVal -= 256;
+    end;
     if Length(Self.ModelDef.FaceTextures) > 0 then
       faceTexId := Self.ModelDef.FaceTextures[faceIdx];
 
