@@ -75,6 +75,38 @@ end;
 
 
 (*
+## RegionLoader.RegionFileData
+```pascal
+function TRegionLoader.RegionFileData(id, fileID: Integer; out data: TByteArray): Boolean; static;
+```
+The bytes of one file of region `id`'s map archive - file `0` is its terrain and file `1` its
+objects - or False if the map index holds no such archive or file.
+
+Both are looked up by index rather than through `Value`, so a region that is simply empty world -
+which most region ids are - costs one probe of each table and no copying at all.
+
+The map index has to be cached first.
+*)
+function TRegionLoader.RegionFileData(id, fileID: Integer; out data: TByteArray): Boolean; static;
+var
+  archives: TArchiveArray;
+  archiveIdx, fileIdx: Integer;
+begin
+  archiveIdx := CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.IndexOf(id);
+  if archiveIdx = -1 then
+    Exit;
+
+  archives := CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Values;
+
+  fileIdx := archives[archiveIdx].Files.IndexOf(fileID);
+  if fileIdx = -1 then
+    Exit;
+
+  data := archives[archiveIdx].Files.Values[fileIdx].Data;
+  Result := not data.IsEmpty;
+end;
+
+(*
 ## RegionLoader.LoadMapDef
 ```pascal
 function TRegionLoader.LoadMapDef(id: Integer; out map: TMapDefinition): Boolean;
@@ -86,23 +118,12 @@ The map index has to be cached first.
 *)
 function TRegionLoader.LoadMapDef(id: Integer; out map: TMapDefinition): Boolean;
 var
-  x, y: Integer;
-  archive: TArchive;
+  data: TByteArray;
 begin
-  x := id shr 8;
-  y := id and $FF;
-
-  if not CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Exists(id) then
+  if not TRegionLoader.RegionFileData(id, 0, data) then
     Exit;
 
-  archive := CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Value[id];
-  if not archive.Files.Exists(0) then
-    Exit;
-
-  if archive.Files.Value[0].Data.IsEmpty then
-    Exit;
-
-  map := TMapDefinition.Create(x, y, archive.Files.Value[0].Data);
+  map := TMapDefinition.Create(id shr 8, id and $FF, data);
   Result := True;
 end;
 
@@ -118,23 +139,12 @@ A region that has terrain need not have objects, which is why this is separate f
 *)
 function TRegionLoader.LoadLocDef(id: Integer; out locs: TLocationsDefinition): Boolean;
 var
-  x, y: Integer;
-  archive: TArchive;
+  data: TByteArray;
 begin
-  x := id shr 8;
-  y := id and $FF;
-
-  if not CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Exists(id) then
+  if not TRegionLoader.RegionFileData(id, 1, data) then
     Exit;
 
-  archive := CacheReader.Indices[ECacheIndex.MAPS].ReferenceTable.Archives.Value[id];
-  if not archive.Files.Exists(1) then
-    Exit;
-
-  if archive.Files.Value[1].Data.IsEmpty then
-    Exit;
-
-  locs := TLocationsDefinition.Create(x, y, archive.Files.Value[1].Data);
+  locs := TLocationsDefinition.Create(id shr 8, id and $FF, data);
   Result := True;
 end;
 

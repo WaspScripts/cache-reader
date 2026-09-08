@@ -16,7 +16,6 @@ if sprite.Valid then
 {$include_once ./graphics3d.simba}
 {$include_once ./spritepixels.simba}
 {$include_once ./litmodel.simba}
-{$include_once ./spritedebug.simba}
 {$include_once ../reader/index.simba}
 {$include_once ../definitions/items.simba}
 {$include_once ../definitions/models.simba}
@@ -131,13 +130,6 @@ begin
   for i := 0 to High(itemDef.TextureFind) do
     Result.ModelDef.Retexture(itemDef.TextureFind[i], itemDef.TextureReplace[i]);
 
-  DebugLine('def', 'id=' + ToStr(itemDef.ID) + ' model=' + ToStr(itemDef.InventoryModel) +
-    ' zoom2d=' + ToStr(itemDef.Zoom2D) + ' xan2d=' + ToStr(itemDef.Xan2D) +
-    ' yan2d=' + ToStr(itemDef.Yan2D) + ' zan2d=' + ToStr(itemDef.Zan2D) +
-    ' offX=' + ToStr(itemDef.XOffset2D) + ' offY=' + ToStr(itemDef.YOffset2D) +
-    ' ambient=' + ToStr(itemDef.Ambient) + ' contrast=' + ToStr(itemDef.Contrast) +
-    ' rx=' + ToStr(itemDef.ResizeX) + ' ry=' + ToStr(itemDef.ResizeY) + ' rz=' + ToStr(itemDef.ResizeZ));
-
   Result.LitModel := TLitModel.Create(Result.ModelDef);
   Result.Valid := True;
 end;
@@ -214,24 +206,6 @@ begin
     end;
   end;
 
-  // Light each face
-  DebugLine('light', 'ambient=' + ToStr(Self.ItemDef.Ambient + 64) +
-    ' contrast=' + ToStr(Self.ItemDef.Contrast * 5 + 768) +
-    ' lightLen=' + ToStr(LIGHT_MAGNITUDE) + ' attenuation=' + ToStr(attenuation));
-
-  if SpriteDebugEnabled then
-  begin
-    SetLength(dump, Self.ModelDef.VertexCount);
-    for i := 0 to Self.ModelDef.VertexCount - 1 do dump[i] := vNx[i];
-    DebugInts('normals', 'normalX', dump, Self.ModelDef.VertexCount);
-    for i := 0 to Self.ModelDef.VertexCount - 1 do dump[i] := vNy[i];
-    DebugInts('normals', 'normalY', dump, Self.ModelDef.VertexCount);
-    for i := 0 to Self.ModelDef.VertexCount - 1 do dump[i] := vNz[i];
-    DebugInts('normals', 'normalZ', dump, Self.ModelDef.VertexCount);
-    for i := 0 to Self.ModelDef.VertexCount - 1 do dump[i] := vMag[i];
-    DebugInts('normals', 'normalMag', dump, Self.ModelDef.VertexCount);
-  end;
-
   for faceIdx := 0 to Self.ModelDef.FaceCount - 1 do
   begin
     faceType := 0;
@@ -296,10 +270,6 @@ begin
     Self.LitModel.FaceColors2[faceIdx] := r2;
     Self.LitModel.FaceColors3[faceIdx] := r3;
   end;
-
-  DebugInts('facecolors', 'colorA', Self.LitModel.FaceColors1, Self.ModelDef.FaceCount);
-  DebugInts('facecolors', 'colorB', Self.LitModel.FaceColors2, Self.ModelDef.FaceCount);
-  DebugInts('facecolors', 'colorC', Self.LitModel.FaceColors3, Self.ModelDef.FaceCount);
 end;
 
 (*
@@ -329,28 +299,7 @@ begin
   pitchOffsetY := zoom2d * CircularAngle.SINE[xanSin] shr 16;
   pitchOffsetZ := zoom2d * CircularAngle.COSINE[xanSin] shr 16;
 
-  DebugPalette('palette', Self.Graphics.Palette);
-  DebugLine('model', 'vertexCount=' + ToStr(Self.LitModel.VerticesCount) +
-    ' faceCount=' + ToStr(Self.LitModel.IndicesCount));
-  DebugInts('model', 'vertexX', Self.LitModel.VertexX, Self.LitModel.VerticesCount);
-  DebugInts('model', 'vertexY', Self.LitModel.VertexY, Self.LitModel.VerticesCount);
-  DebugInts('model', 'vertexZ', Self.LitModel.VertexZ, Self.LitModel.VerticesCount);
-  DebugBytes('model', 'faceAlphas', Self.LitModel.FaceTransparencies, Self.LitModel.IndicesCount);
-  DebugBytes('model', 'facePriorities', Self.LitModel.FacePriorities, Self.LitModel.IndicesCount);
-  DebugInts('model', 'faceTextures', Self.LitModel.FaceTextures, Self.LitModel.IndicesCount);
-
   Self.LitModel.CalcBoundsCylinder();
-
-  DebugLine('bounds', 'height=' + ToStr(Self.LitModel.ModelHeight) +
-    ' bottomY=' + ToStr(Self.LitModel.BottomY) + ' xzRadius=' + ToStr(Self.LitModel.XYZMag) +
-    ' radius=' + ToStr(Self.LitModel.Radius) + ' diameter=' + ToStr(Self.LitModel.Diameter));
-  DebugLine('project', 'zoom=' + ToStr(Self.Graphics.Zoom) +
-    ' midX=' + ToStr(Self.Graphics.CenterX) + ' midY=' + ToStr(Self.Graphics.CenterY) +
-    ' zoom2d=' + ToStr(zoom2d) + ' yan2d=' + ToStr(Self.ItemDef.Yan2D) +
-    ' zan2d=' + ToStr(Self.ItemDef.Zan2D) + ' xan2d=' + ToStr(Self.ItemDef.Xan2D) +
-    ' offX=' + ToStr(xOffset) +
-    ' offY=' + ToStr(Self.LitModel.ModelHeight div 2 + pitchOffsetY + yOffset) +
-    ' offZ=' + ToStr(pitchOffsetZ + yOffset));
 
   Self.LitModel.ProjectAndDraw(
     Self.Graphics,
@@ -362,18 +311,6 @@ begin
     Self.LitModel.ModelHeight div 2 + pitchOffsetY + yOffset,
     pitchOffsetZ + yOffset
   );
-
-  if SpriteDebugEnabled then
-  begin
-    SetLength(dump, Self.LitModel.VerticesCount);
-    for i := 0 to Self.LitModel.VerticesCount - 1 do dump[i] := Viewport.ScreenX[i];
-    DebugInts('project', 'screenX', dump, Self.LitModel.VerticesCount);
-    for i := 0 to Self.LitModel.VerticesCount - 1 do dump[i] := Viewport.ScreenY[i];
-    DebugInts('project', 'screenY', dump, Self.LitModel.VerticesCount);
-    for i := 0 to Self.LitModel.VerticesCount - 1 do dump[i] := Viewport.Depth[i];
-    DebugInts('project', 'depth', dump, Self.LitModel.VerticesCount);
-    DebugPixelRows('pixels', Self.Pixels.Pixels, 36, 32);
-  end;
 end;
 
 (*

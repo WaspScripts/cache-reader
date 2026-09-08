@@ -222,14 +222,19 @@ returned indexed `[x, y]`.
 The result is identical to calling `Calculate` per tile, but the three noise layers it sums are
 built as grids first. The two coarse layers are sampled every 4 and every 2 tiles, so a whole
 square shares a handful of their points rather than re-deriving them for each tile.
+
+The cosine blend {ref}`THeightCalc.Interpolate` would do is folded in as well: at frequency 4 a
+tile's position within a sample can only be one of four, so the four weights are taken from the
+cosine table once per column and row instead of once per tile.
 *)
 function THeightCalc.CalculateArea(x, y, size: Integer): TIntegerMatrix;
 var
   coarseX, coarseY, midX, midY,
-  i, j, n, sample, interpolatedLow, interpolatedHigh: Integer;
+  i, j, n, idxY, sample, interpolatedLow, interpolatedHigh,
+  weightX, weightY, invWeightX, invWeightY: Integer;
   coarse, mid, fine: TIntegerMatrix;
-  coarseIdxX, coarseIdxY, coarseFracX, coarseFracY, midIdxX, midIdxY: TIntegerArray;
-  row, fineRow: TIntegerArray;
+  coarseIdxX, coarseIdxY, coarseWeightX, coarseWeightY, midIdxX, midIdxY: TIntegerArray;
+  row, fineRow, midRow, coarseRow, coarseNextRow: TIntegerArray;
 begin
   coarseX := (x + 45365) div 4;
   coarseY := (y + 91923) div 4;
@@ -251,17 +256,17 @@ begin
 
   SetLength(coarseIdxX, size);
   SetLength(coarseIdxY, size);
-  SetLength(coarseFracX, size);
-  SetLength(coarseFracY, size);
+  SetLength(coarseWeightX, size);
+  SetLength(coarseWeightY, size);
   SetLength(midIdxX, size);
   SetLength(midIdxY, size);
 
   for i := 0 to size - 1 do
   begin
-    coarseIdxX[i]  := ((x + 45365 + i) div 4) - coarseX;
-    coarseFracX[i] := (x + 45365 + i) and 3;
-    coarseIdxY[i]  := ((y + 91923 + i) div 4) - coarseY;
-    coarseFracY[i] := (y + 91923 + i) and 3;
+    coarseIdxX[i]    := ((x + 45365 + i) div 4) - coarseX;
+    coarseWeightX[i] := (65536 - Self.CosTable[256 * ((x + 45365 + i) and 3)]) shr 1;
+    coarseIdxY[i]    := ((y + 91923 + i) div 4) - coarseY;
+    coarseWeightY[i] := (65536 - Self.CosTable[256 * ((y + 91923 + i) and 3)]) shr 1;
     //at frequency 2 the client snaps to the nearer grid point instead of interpolating
     midIdxX[i] := ((x + 10294 + i) div 2) + ((x + 10294 + i) and 1) - midX;
     midIdxY[i] := ((y + 37821 + i) div 2) + ((y + 37821 + i) and 1) - midY;
@@ -270,26 +275,30 @@ begin
   SetLength(Result, size, size);
   for i := 0 to size - 1 do
   begin
-    row     := Result[i];
-    fineRow := fine[i];
+    row           := Result[i];
+    fineRow       := fine[i];
+    midRow        := mid[midIdxX[i]];
+    coarseRow     := coarse[coarseIdxX[i]];
+    coarseNextRow := coarse[coarseIdxX[i] + 1];
+    weightX       := coarseWeightX[i];
+    invWeightX    := 65536 - weightX;
 
     for j := 0 to size - 1 do
     begin
-      interpolatedLow := Self.Interpolate(
-        coarse[coarseIdxX[i], coarseIdxY[j]],
-        coarse[coarseIdxX[i] + 1, coarseIdxY[j]],
-        coarseFracX[i], 4
-      );
-      interpolatedHigh := Self.Interpolate(
-        coarse[coarseIdxX[i], coarseIdxY[j] + 1],
-        coarse[coarseIdxX[i] + 1, coarseIdxY[j] + 1],
-        coarseFracX[i], 4
-      );
+      idxY := coarseIdxY[j];
 
-      sample := Self.Interpolate(interpolatedLow, interpolatedHigh, coarseFracY[j], 4);
+      interpolatedLow  := ((weightX * coarseNextRow[idxY]) shr 16) +
+                          ((coarseRow[idxY] * invWeightX) shr 16);
+      interpolatedHigh := ((weightX * coarseNextRow[idxY + 1]) shr 16) +
+                          ((coarseRow[idxY + 1] * invWeightX) shr 16);
+
+      weightY    := coarseWeightY[j];
+      invWeightY := 65536 - weightY;
+      sample     := ((weightY * interpolatedHigh) shr 16) +
+                    ((interpolatedLow * invWeightY) shr 16);
 
       n := sample - 128 +
-           ((mid[midIdxX[i], midIdxY[j]] - 128) shr 1) +
+           ((midRow[midIdxY[j]] - 128) shr 1) +
            ((fineRow[j] - 128) shr 2);
 
       n := 35 + (n * 3) div 10;

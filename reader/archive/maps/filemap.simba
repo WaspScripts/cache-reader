@@ -19,15 +19,29 @@ type
 ## MapHash
 ```pascal
 function MapHash(key, size: Integer): Integer; static;
+function MapHashSize(expectedCount: Integer): Integer; static;
 ```
-The slot a key hashes to in a table of `size` slots. Ids are already well spread, so this is a
-plain modulo, folded back into range for negative keys.
+`MapHash` is the slot a key hashes to in a table of `size` slots, and `MapHashSize` is the size
+to give a table holding roughly `expectedCount` entries.
+
+Ids are already well spread, so hashing one is only a fold back into range. Table sizes are
+always powers of two - at least twice the expected count, so probing stays short - which makes
+that fold a mask rather than a modulo, and lands a negative id in range without a correction.
+Doubling a power of two leaves a power of two, so {ref}`TFileMap._Grow` keeps the property.
 *)
 function MapHash(key, size: Integer): Integer; static;
 begin
-  Result := key mod size;
-  if Result < 0 then
-    Result := Result + size;
+  Result := key and (size - 1);
+end;
+
+function MapHashSize(expectedCount: Integer): Integer; static;
+var
+  wanted: Integer;
+begin
+  wanted := expectedCount * 2;
+  Result := 16;
+  while Result < wanted do
+    Result := Result * 2;
 end;
 
 
@@ -38,12 +52,12 @@ procedure TFileMap._Init(expectedCount: Integer);
 ```
 Empties the map and sizes its hash table for roughly `expectedCount` entries.
 
-The table is deliberately over-allocated - twice the expected count plus a margin - so that
-probing stays short; {ref}`TFileMap._Grow` doubles it again if it ever fills past 60%.
+The table is deliberately over-allocated - see {ref}`MapHashSize` - so that probing stays
+short; {ref}`TFileMap._Grow` doubles it again if it ever fills past 60%.
 *)
 procedure TFileMap._Init(expectedCount: Integer);
 begin
-  Self.HashSize := expectedCount * 2 + 16;
+  Self.HashSize := MapHashSize(expectedCount);
 
   //dropping the arrays before resizing them hands back freshly zeroed memory, so the slots
   //do not have to be cleared by hand
@@ -73,7 +87,7 @@ begin
 
   slot := MapHash(key, Self.HashSize);
   while (Self.HashSlots[slot] <> 0) and (Self.Keys[Self.HashSlots[slot] - 1] <> key) do
-    slot := (slot + 1) mod Self.HashSize;
+    slot := (slot + 1) and (Self.HashSize - 1);
   Result := slot;
 end;
 
@@ -112,9 +126,11 @@ reuse one buffer. They must be in ascending order, which is how reference tables
 *)
 procedure TFileMap.Build(const keys: TIntegerArray; count: Integer);
 var
-  i, slot: Integer;
+  i, slot, mask: Integer;
+  slots: TIntegerArray;
+  values: TFileArray;
 begin
-  Self.HashSize := count * 2 + 16;
+  Self.HashSize := MapHashSize(count);
   Self.Count := count;
   Self.IsSetup := True;
 
@@ -126,16 +142,23 @@ begin
   SetLength(Self.HashSlots, 0);
   SetLength(Self.HashSlots, Self.HashSize);
 
+  //one map is built per archive of an index, so hundreds of thousands of them are built to open
+  //a cache - hence the aliases, and the hash written out rather than called: at this scale the
+  //field lookups and the call per key cost more than the probing does
+  slots  := Self.HashSlots;
+  values := Self.Values;
+  mask   := Self.HashSize - 1;
+
   //the keys are distinct, so a slot is claimed by the first empty one rather than by _FindSlot
   for i := 0 to count - 1 do
   begin
-    Self.Values[i].ID := keys[i];
+    values[i].ID := keys[i];
 
-    slot := MapHash(keys[i], Self.HashSize);
-    while Self.HashSlots[slot] <> 0 do
-      slot := (slot + 1) mod Self.HashSize;
+    slot := keys[i] and mask;
+    while slots[slot] <> 0 do
+      slot := (slot + 1) and mask;
 
-    Self.HashSlots[slot] := i + 1;
+    slots[slot] := i + 1;
   end;
 end;
 

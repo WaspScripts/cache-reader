@@ -54,25 +54,6 @@ begin
 end;
 
 (*
-## Archive.FileIds
-```pascal
-function TArchive.FileIds(): TIntegerArray;
-```
-The ids of this archive's files, in the order they are stored.
-*)
-function TArchive.FileIds(): TIntegerArray;
-var
-  files: TFileArray;
-  i: Integer;
-begin
-  files := Self.Files.Values;
-  SetLength(Result, Length(files));
-  for i := 0 to High(files) do
-    Result[i] := files[i].ID;
-end;
-
-
-(*
 ## Archive.Read
 ```pascal
 procedure TArchive.Read(const data: TByteArray);
@@ -82,30 +63,36 @@ Splits an archive's decompressed bytes across the files it holds.
 An archive with one file is that file. With more than one, the bytes are interleaved in chunks -
 a piece of every file, then another piece of every file - and a table at the end gives each
 piece's size as a delta from the piece before it. So the sizes are summed in a first pass to
-allocate each file, and a second pass copies the pieces into place.
+allocate each file, and a second pass copies the pieces into place, each file carrying how far
+into its buffer the next piece goes.
 *)
 procedure TArchive.Read(const data: TByteArray);
 var
   i, j, chunkCount, fileCount,
-  dataOffset, tableOffset, chunkSize: Integer;
-  sizes: TIntegerArray;
+  dataOffset, tableOffset, tableStart, chunkSize: Integer;
+  sizes, writeOffsets: TIntegerArray;
+  files: TFileArray;
 begin
   fileCount := Self.Files.Count;
 
   if fileCount = 0 then
     Exit;
 
+  files := Self.Files.Values;
+
   if fileCount = 1 then
   begin
-    Self.Files.Values[0].Data := data;
+    files[0].Data := data;
     Exit;
   end;
 
   chunkCount := data.Last;
   SetLength(sizes, fileCount);
-  tableOffset := Length(data) - 1 - (chunkCount * fileCount * 4);
+  SetLength(writeOffsets, fileCount);
+  tableStart := Length(data) - 1 - (chunkCount * fileCount * 4);
 
   //calculate final file sizes.
+  tableOffset := tableStart;
   for i := 0 to chunkCount - 1 do
   begin
     chunkSize := 0;
@@ -118,11 +105,11 @@ begin
 
   //allocate buffers
   for i := 0 to fileCount - 1 do
-    SetLength(Self.Files.Values[i].Data, sizes[i]);
+    SetLength(files[i].Data, sizes[i]);
 
   //copy chunk data.
   dataOffset := 0;
-  tableOffset := Length(data) - 1 - (chunkCount * fileCount * 4);
+  tableOffset := tableStart;
 
   for i := 0 to chunkCount - 1 do
   begin
@@ -130,10 +117,10 @@ begin
     for j := 0 to fileCount - 1 do
     begin
       chunkSize += Read32Bits(data, tableOffset);
-      Move(data[dataOffset], Self.Files.Values[j].Data[Length(Self.Files.Values[j].Data) - sizes[j]], chunkSize);
+      Move(data[dataOffset], files[j].Data[writeOffsets[j]], chunkSize);
 
       Inc(dataOffset, chunkSize);
-      sizes[j] -= chunkSize;
+      writeOffsets[j] += chunkSize;
     end;
   end;
 end;

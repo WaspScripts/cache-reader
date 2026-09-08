@@ -91,14 +91,20 @@ and why they always come out ascending.
 
 Version 7 tables write ids as {ref}`ReadBigSmart` because they can exceed 16 bits; earlier ones
 always use 2 bytes. Anything outside versions 5 to 7 raises.
+
+Opening a cache runs this over every index, which comes to some hundreds of thousands of ids and
+as many again of per-archive fields, and it is the bulk of what {ref}`TCacheReader.Load` costs.
+So the id and 32 bit reads are written out here rather than going through {ref}`ReadBigSmart` and
+{ref}`Read32Bits` - a call per field is worth about a third of the running time at this scale -
+and the version is branched on once instead of once per id.
 *)
 procedure TReferenceTable.Read(const data: TByteArray; var offset: Integer);
 var
-  named: Boolean;
-  i, j, count, id: Integer;
+  named, bigIDs: Boolean;
+  i, j, count, id, pos, fileCount: Integer;
   archives: TArchiveArray;
+  files: TFileArray;
   fileCounts, ids: TIntegerArray;
-  _ReadFunc: function (constref data: TByteArray; var offset: Integer): Integer;
 begin
   Self.Version := Read8Bits(data, offset);
 
@@ -112,61 +118,103 @@ begin
 
   Self.Mask := Read8Bits(data, offset);
 
-  named := Self.HasName();
+  named  := Self.HasName();
+  bigIDs := Self.Version >= 7;
 
-  if Self.Version >= 7 then
-    _ReadFunc := @ReadBigSmart
+  if bigIDs then
+    count := ReadBigSmart(data, offset)
   else
-    _ReadFunc := @Read16Bits;
+    count := Read16Bits(data, offset);
 
-  count := _ReadFunc(data, offset);
+  pos := offset;
 
   SetLength(ids, count);
-  for i := 0 to count - 1 do
-  begin
-    id += _ReadFunc(data, offset);
-    ids[i] := id;
-  end;
+  if bigIDs then
+    for i := 0 to count - 1 do
+    begin
+      if data[pos] < 128 then
+      begin
+        id += (data[pos] shl 8) or data[pos+1];
+        Inc(pos, 2);
+      end
+      else
+      begin
+        id += ((data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3]) and $7FFFFFFF;
+        Inc(pos, 4);
+      end;
+      ids[i] := id;
+    end
+  else
+    for i := 0 to count - 1 do
+    begin
+      id += (data[pos] shl 8) or data[pos+1];
+      Inc(pos, 2);
+      ids[i] := id;
+    end;
 
   Self.Archives.Build(ids, count);
   archives := Self.Archives.Values;
 
   if named then
     for i := 0 to High(archives) do
-      archives[i].HashName := Read32Bits(data, offset);
+    begin
+      archives[i].HashName := (data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3];
+      Inc(pos, 4);
+    end;
 
   for i := 0 to High(archives) do
-    archives[i].CRC := Read32Bits(data, offset);
+  begin
+    archives[i].CRC := (data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3];
+    Inc(pos, 4);
+  end;
 
   if Self.HasChecksums() then
     for i := 0 to High(archives) do
-      archives[i].Checksum := Read32Bits(data, offset);
+    begin
+      archives[i].Checksum := (data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3];
+      Inc(pos, 4);
+    end;
 
   if Self.HasWhirlpool() then
     for i := 0 to High(archives) do
     begin
       SetLength(archives[i].Whirlpool, 64);
-      Move(data[offset], archives[i].Whirlpool[0], 64);
-      Inc(offset, 64);
+      Move(data[pos], archives[i].Whirlpool[0], 64);
+      Inc(pos, 64);
     end;
 
   if Self.HasLengths() then
     for i := 0 to High(archives) do
     begin
-      archives[i].CompressedLength := Read32Bits(data, offset);
-      archives[i].DecompressedLength := Read32Bits(data, offset);
+      archives[i].CompressedLength := (data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3];
+      archives[i].DecompressedLength := (data[pos+4] shl 24) or (data[pos+5] shl 16) or (data[pos+6] shl 8) or data[pos+7];
+      Inc(pos, 8);
     end;
 
   for i := 0 to High(archives) do
-    archives[i].Revision := Read32Bits(data, offset);
+  begin
+    archives[i].Revision := (data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3];
+    Inc(pos, 4);
+  end;
 
   SetLength(fileCounts, Self.Archives.Count);
   count := 0;
   for i := 0 to High(archives) do
   begin
-    fileCounts[i] := _ReadFunc(data, offset);
-    if fileCounts[i] > count then
-      count := fileCounts[i];
+    if bigIDs and (data[pos] >= 128) then
+    begin
+      fileCount := ((data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3]) and $7FFFFFFF;
+      Inc(pos, 4);
+    end
+    else
+    begin
+      fileCount := (data[pos] shl 8) or data[pos+1];
+      Inc(pos, 2);
+    end;
+
+    fileCounts[i] := fileCount;
+    if fileCount > count then
+      count := fileCount;
   end;
 
   //one buffer big enough for the largest archive, reused for all of them
@@ -175,21 +223,46 @@ begin
   for i := 0 to High(archives) do
   begin
     id := 0;
-    for j := 0 to fileCounts[i] - 1 do
-    begin
-      id += _ReadFunc(data, offset);
-      ids[j] := id;
-    end;
+    fileCount := fileCounts[i];
 
-    archives[i].Files.Build(ids, fileCounts[i]);
+    if bigIDs then
+      for j := 0 to fileCount - 1 do
+      begin
+        if data[pos] < 128 then
+        begin
+          id += (data[pos] shl 8) or data[pos+1];
+          Inc(pos, 2);
+        end
+        else
+        begin
+          id += ((data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3]) and $7FFFFFFF;
+          Inc(pos, 4);
+        end;
+        ids[j] := id;
+      end
+    else
+      for j := 0 to fileCount - 1 do
+      begin
+        id += (data[pos] shl 8) or data[pos+1];
+        Inc(pos, 2);
+        ids[j] := id;
+      end;
+
+    archives[i].Files.Build(ids, fileCount);
   end;
 
-  if not named then
-    Exit;
+  if named then
+    for i := 0 to High(archives) do
+    begin
+      files := archives[i].Files.Values;
+      for j := 0 to High(files) do
+      begin
+        files[j].HashName := (data[pos] shl 24) or (data[pos+1] shl 16) or (data[pos+2] shl 8) or data[pos+3];
+        Inc(pos, 4);
+      end;
+    end;
 
-  for i := 0 to High(archives) do
-    for j := 0 to archives[i].Files.Count - 1 do
-      archives[i].Files.Values[j].HashName := Read32Bits(data, offset);
+  offset := pos;
 end;
 
 (*
@@ -209,13 +282,14 @@ id := CacheReader.Indices[ECacheIndex.SPRITES].ReferenceTable.ArchiveID('mapscen
 *)
 function TReferenceTable.ArchiveID(const name: String): Integer;
 var
-  hash: Integer;
-  archive: TArchive;
+  hash, i: Integer;
+  archives: TArchiveArray;
 begin
   hash := CacheString2Hash(name);
-  for archive in Self.Archives.Values do
-    if archive.HashName = hash then
-      Exit(archive.ID);
+  archives := Self.Archives.Values;
+  for i := 0 to High(archives) do
+    if archives[i].HashName = hash then
+      Exit(archives[i].ID);
   Result := -1;
 end;
 

@@ -106,6 +106,11 @@ end;
 Every `pixels` matrix built here is row-major, indexed `[y, x]`, matching how Simba indexes
 a {ref}`TIntegerMatrix` and how `TImage.FromMatrix` reads one. `x` and `y` below are tile
 coordinates, so the square each tile occupies is `SCALE` pixels wide and tall.
+
+The square goes through `TIntegerMatrix.Fill` rather than a loop over its `SCALE * SCALE` pixels.
+That looks like the long way round for 16 pixels, but `Fill` is native while a loop here is not,
+and measuring the two puts the native call ahead by about a factor of two - which matters, since
+this runs for most of the 4096 tiles of every plane of every region.
 *)
 procedure TMapChunkLoader.DrawMapSquare(var pixels: TIntegerMatrix; x, y, color: Integer); static;
 var
@@ -188,6 +193,7 @@ world counts y upwards.
 procedure TMapChunkLoader.DrawObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
   i, objIdx, color, scale: Integer;
+  objs: TObjectDefinitionArray;
 begin
   // 0..3 normal walls/doors and 9 are diagonal walls/doors
   if (loc.LocType > 3) and not InRange(loc.LocType, 9, 11) and (loc.LocType <> 22) then
@@ -197,21 +203,22 @@ begin
   if objIdx = -1 then
     Exit;
 
+  objs := Self.MapData.Objects;
   scale := TMapChunkLoader.SCALE;
 
   x := x * scale;
-  y := (TMapChunkLoader.REGION_SIZE - Self.MapData.Objects[objIdx].SizeY - y) * scale;
+  y := (TMapChunkLoader.REGION_SIZE - objs[objIdx].SizeY - y) * scale;
 
-  if Self.MapData.Objects[objIdx].MapSceneID > -1 then
+  if objs[objIdx].MapSceneID > -1 then
   begin
-    Self.BlitMapDecoration(pixels, x, y, Self.MapData.Objects[objIdx]);
+    Self.BlitMapDecoration(pixels, x, y, objs[objIdx]);
     Exit;
   end;
 
   if loc.LocType > 9 then
     Exit;
 
-  if Self.MapData.Objects[objIdx].WallOrDoor <> 0 then
+  if objs[objIdx].WallOrDoor <> 0 then
     color := TColorUtils.DOOR_COLOR
   else
     color := TColorUtils.WALL_COLOR;
@@ -318,8 +325,10 @@ var
   objIdx, areaIdx, drawX, drawY: Integer;
   bridgePlane: TIntegerMatrix;
   sprite: TSpriteDefinition;
+  objs: TObjectDefinitionArray;
 begin
   bridgePlane := region.TileSettings[1];
+  objs := Self.MapData.Objects;
 
   //Only a handful of the region's locations carry an icon, so the definitions are read field by
   //field instead of being copied out - copying a whole TObjectDefinition per location dominates.
@@ -342,10 +351,10 @@ begin
     if objIdx = -1 then
       Continue;
 
-    if Self.MapData.Objects[objIdx].MapAreaId < 0 then
+    if objs[objIdx].MapAreaId < 0 then
       Continue;
 
-    areaIdx := Self.MapData.Areas.IndexOf(Self.MapData.Objects[objIdx].MapAreaId);
+    areaIdx := Self.MapData.Areas.IndexOf(objs[objIdx].MapAreaId);
     if areaIdx = -1 then
       Continue;
 
@@ -387,16 +396,24 @@ function TMapChunkLoader.BuildRegionPlane(constref region: TRegion; z: Integer):
 const
   DIRS: TIntegerArray = [1, -1];
 var
-  x, y, i, j, dir, idx, neighbor, localX, localY,
+  x, y, i, j, dir, idx, neighbor, neighborRegionX, localX, localY,
   underlayID, overlayID,
   runHue, runSat, runLight, runMul, runNum,
   underlayBGR, overlayBGR, shape, rotation, drawX, drawY: Integer;
 
   bounds, outterBounds: TBox;
   hues, sats, light, mul, num,
-  shapes, rotations, row: TIntegerArray;
+  shapes, rotations, row,
+  underlayRow, overlayRow, pathRow, rotationRow: TIntegerArray;
+  underlays: TUnderlayDefinitionArray;
+  overlays: TOverlayDefinitionArray;
+  textures: TTextureDefinitionArray;
 begin
   SetLength(Result, TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
+
+  underlays := Self.MapData.Underlays;
+  overlays  := Self.MapData.Overlays;
+  textures  := Self.MapData.Textures;
 
   i := TMapChunkLoader.REGION_SIZE + TMapChunkLoader.BLEND * 2;
   SetLength(hues, i);
@@ -440,9 +457,11 @@ begin
         Continue;
 
       localX := TMapChunkLoader.ConvertLocal(neighbor);
+      neighborRegionX := (region.BaseX + neighbor) shr 6;
+
       for y := bounds.Y1 to bounds.Y2 do
       begin
-        i := Self.RegionLoader.WorldCoordinateIndex(region.BaseX + neighbor, region.BaseY + y);
+        i := Self.RegionLoader.RegionCoordinateIndex(neighborRegionX, (region.BaseY + y) shr 6);
         if i = -1 then
           Continue;
 
@@ -451,10 +470,10 @@ begin
           Continue;
 
         i := underlayID - 1;
-        if i <= High(Self.MapData.Underlays) then
+        if i <= High(underlays) then
         begin
           idx := y + TMapChunkLoader.BLEND;
-          with Self.MapData.Underlays[i] do
+          with underlays[i] do
           begin
             hues[idx]  += dir * Hue;
             sats[idx]  += dir * Saturation;
@@ -478,6 +497,11 @@ begin
     localX := TMapChunkLoader.ConvertLocal(x);
     drawX := x * TMapChunkLoader.SCALE;
 
+    underlayRow := region.UnderlayIds[z, localX];
+    overlayRow  := region.OverlayIds[z, localX];
+    pathRow     := region.OverlayPaths[z, localX];
+    rotationRow := region.OverlayRotations[z, localX];
+
     for y := outterBounds.Y1 to outterBounds.Y2 do
     begin
       for dir in DIRS do
@@ -498,8 +522,8 @@ begin
         Continue;
 
       localY := TMapChunkLoader.ConvertLocal(y);
-      underlayID := region.GetUnderlayID(z, localX, localY);
-      overlayID  := region.GetOverlayID(z, localX, localY);
+      underlayID := underlayRow[localY] and $7FFF;
+      overlayID  := overlayRow[localY] and $7FFF;
       if (underlayID <= 0) and (overlayID <= 0) then
         Continue;
 
@@ -519,22 +543,22 @@ begin
 
       if overlayID <> 0 then
       begin
-        shape    := region.OverlayPaths[z, localX, localY] + 1;
-        rotation := region.OverlayRotations[z, localX, localY];
+        shape    := pathRow[localY] + 1;
+        rotation := rotationRow[localY];
 
-        i := Self.MapData.Overlays.IndexOf(overlayID-1);
+        i := overlays.IndexOf(overlayID-1);
         if i > -1 then
         begin
-          with Self.MapData.Overlays[i] do
+          with overlays[i] do
           begin
             if SecondaryRGBColor <> -1 then
               overlayBGR :=
                 ColorUtils.OverlayColor(ColorUtils.PackHSL(OtherHue, OtherSaturation, OtherLightness)) or $FF000000
             else if Texture >= 0 then
             begin
-              idx := Self.MapData.Textures.IndexOf(Texture);
+              idx := textures.IndexOf(Texture);
               if idx <> -1 then
-                overlayBGR := ColorUtils.OverlayColor(Self.MapData.Textures[idx].AverageRGB) or $FF000000;
+                overlayBGR := ColorUtils.OverlayColor(textures[idx].AverageRGB) or $FF000000;
             end
             else if RGBColor <> $FF00FF then
               overlayBGR :=
@@ -797,8 +821,9 @@ A bridge tile reports the height of the surface walked on rather than the one un
 *)
 function TMapChunkLoader.GetChunkHeightMap(regionX, regionY, z: Integer): THeightMap;
 var
-  i, x, y, setting: Integer;
+  i, x, y: Integer;
   region: TRegion;
+  settingsRow, bridgeRow, heightRow, bridgeHeightRow, row: TIntegerArray;
 begin
   SetLength(Result, TMapChunkLoader.REGION_SIZE, TMapChunkLoader.REGION_SIZE);
 
@@ -812,18 +837,19 @@ begin
   region := Self.RegionLoader.Regions[i];
 
   for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+  begin
+    row             := Result[x];
+    settingsRow     := region.TileSettings[z, x];
+    bridgeRow       := region.TileSettings[1, x];
+    heightRow       := region.TileHeights[z, x];
+    bridgeHeightRow := region.TileHeights[1, x];
+
     for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
-    begin
-      if (region.TileSettings[z, x, y] and 24) = 0 then
-      begin
-        if (z = 0) and ((region.TileSettings[1, x, y] and 2) <> 0) then
-          Result[x, y] := region.TileHeights[1, x, y]
-        else
-          Result[x, y] := region.TileHeights[z, x, y];
-      end
+      if (z = 0) and ((settingsRow[y] and 24) = 0) and ((bridgeRow[y] and 2) <> 0) then
+        row[y] := bridgeHeightRow[y]
       else
-        Result[x, y] := region.TileHeights[z, x, y];
-    end;
+        row[y] := heightRow[y];
+  end;
 end;
 
 (*
@@ -1035,6 +1061,7 @@ marked there.
 procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
   i, objIdx, color, drawX, drawY, xSize, ySize, sX, sY: Integer;
+  objs: TObjectDefinitionArray;
 begin
   if InRange(loc.LocType, 4, 8) then
     Exit;
@@ -1043,18 +1070,25 @@ begin
   if objIdx = -1 then
     Exit;
 
-  if Self.MapData.Objects[objIdx].InteractType = 0 then
+  objs := Self.MapData.Objects;
+
+  if objs[objIdx].InteractType = 0 then
     Exit;
 
   if loc.LocType = 22 then
-    if Self.MapData.Objects[objIdx].InteractType <> 1 then
+    if objs[objIdx].InteractType <> 1 then
       Exit;
 
   drawX := x * TMapChunkLoader.SCALE;
-  drawY := (TMapChunkLoader.REGION_SIZE - Self.MapData.Objects[objIdx].SizeY - y) * TMapChunkLoader.SCALE;
+  drawY := (TMapChunkLoader.REGION_SIZE - objs[objIdx].SizeY - y) * TMapChunkLoader.SCALE;
 
   if drawY < 0 then
     Exit;
+
+  if objs[objIdx].WallOrDoor <> 0 then
+    color := TColorUtils.COLLISION_DOOR_COLOR
+  else
+    color := TColorUtils.COLLISION_WALL_COLOR;
 
   // Types 0-3: walls and corners
   if loc.LocType <= 3 then
@@ -1062,16 +1096,11 @@ begin
     if loc.ID = 24720 then
       Exit;
 
-    if Self.MapData.Objects[objIdx].WallOrDoor <> 0 then
-      color := TColorUtils.COLLISION_DOOR_COLOR
-    else
-      color := TColorUtils.COLLISION_WALL_COLOR;
-
     case loc.LocType of
-      0: TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(Self.MapData.Objects[objIdx]));
+      0: TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(objs[objIdx]));
       2:
       begin
-        TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(Self.MapData.Objects[objIdx]));
+        TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(objs[objIdx]));
         //corner walls occupy two edges, so the wall itself is drawn plus the edge next to it
         TMapChunkLoader.DrawCollisionEdge(pixels, drawX, drawY, (loc.Orientation + 1) and 3, color);
       end;
@@ -1090,11 +1119,6 @@ begin
   // Type 9: diagonal walls
   if loc.LocType = 9 then
   begin
-    if Self.MapData.Objects[objIdx].WallOrDoor <> 0 then
-      color := TColorUtils.COLLISION_DOOR_COLOR
-    else
-      color := TColorUtils.COLLISION_WALL_COLOR;
-
     //begin/end is required here: Lape binds a trailing `else` to the `for`, not to the `if`
     if (loc.Orientation <> 0) and (loc.Orientation <> 2) then
     begin
@@ -1113,16 +1137,16 @@ begin
   // Types 10-22: collision objects
   if InRange(loc.LocType, 10, 22) then
   begin
-    if (Self.MapData.Objects[objIdx].Name = 'null') or (Self.MapData.Objects[objIdx].Name = '') then
+    if (objs[objIdx].Name = 'null') or (objs[objIdx].Name = '') then
       Exit;
-    if Self.MapData.Objects[objIdx].ObjectModels.IsEmpty then
+    if objs[objIdx].ObjectModels.IsEmpty then
       Exit;
 
     if drawX < 0 then
       Exit;
 
-    xSize := Self.MapData.Objects[objIdx].SizeX * TMapChunkLoader.SCALE;
-    ySize := Self.MapData.Objects[objIdx].SizeY * TMapChunkLoader.SCALE;
+    xSize := objs[objIdx].SizeX * TMapChunkLoader.SCALE;
+    ySize := objs[objIdx].SizeY * TMapChunkLoader.SCALE;
 
     if (xSize = ySize) or (loc.Orientation = 0) or (loc.Orientation = 2) then
     begin
@@ -1162,22 +1186,15 @@ being walked on, and tiles the plane says are not rendered are skipped.
 procedure TMapChunkLoader.DrawCollisionObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
 var
   loc: TWorldLocation;
-  localX, localY: Integer;
-  isBridge: Boolean;
-  tileZ: Integer;
+  localX, localY, tileZ: Integer;
 begin
   for loc in region.Locations do
   begin
     localX := loc.X - region.BaseX;
     localY := loc.Y - region.BaseY;
 
-    if (z = 0) and ((region.TileSettings[1, localX, localY] and 2) <> 0) then
-      isBridge := True
-    else
-      isBridge := False;
-
     tileZ := z;
-    if (z = 0) and isBridge then
+    if (z = 0) and ((region.TileSettings[1, localX, localY] and 2) <> 0) then
       tileZ := 1;
 
     if loc.Z <> tileZ then
@@ -1203,9 +1220,9 @@ This is the terrain flag only - objects are not included. Use
 *)
 function TMapChunkLoader.GetChunkCollisionMap(regionX, regionY, z: Integer): TCollisionMap;
 var
-  i, x, y: Integer;
+  i, x, y, setting: Integer;
   region: TRegion;
-  setting: Integer;
+  settingsRow, bridgeRow, row: TIntegerArray;
 begin
   SetLength(Result, TMapChunkLoader.REGION_SIZE, TMapChunkLoader.REGION_SIZE);
 
@@ -1219,18 +1236,21 @@ begin
   region := Self.RegionLoader.Regions[i];
 
   for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+  begin
+    row         := Result[x];
+    settingsRow := region.TileSettings[z, x];
+    bridgeRow   := region.TileSettings[1, x];
+
     for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
     begin
-      if (z = 0) and ((region.TileSettings[1, x, y] and 2) <> 0) then
-        setting := region.TileSettings[1, x, y]
+      if (z = 0) and ((bridgeRow[y] and 2) <> 0) then
+        setting := bridgeRow[y]
       else
-        setting := region.TileSettings[z, x, y];
+        setting := settingsRow[y];
 
-      if (setting and 1) <> 0 then
-        Result[x, y] := 1
-      else
-        Result[x, y] := 0;
+      row[y] := setting and 1;
     end;
+  end;
 end;
 
 (*
@@ -1246,58 +1266,45 @@ var
   pixels: TIntegerMatrix;
   i, x, y, invertedY, setting: Integer;
   region: TRegion;
+  settingsRow, bridgeRow: TIntegerArray;
 begin
-  SetLength(pixels, TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
+  Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
 
   if not Self.RegionLoader.LoadRegionAndNeighbors(regionX, regionY) then
-  begin
-    Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
     Exit;
-  end;
 
   i := Self.RegionLoader.RegionCoordinateIndex(regionX, regionY);
   if i = -1 then
-  begin
-    Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
     Exit;
-  end;
 
   region := Self.RegionLoader.Regions[i];
+  SetLength(pixels, TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
 
   // Draw tile background
   for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+  begin
+    settingsRow := region.TileSettings[z, x];
+    bridgeRow   := region.TileSettings[1, x];
+
     for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
     begin
       invertedY := TMapChunkLoader.REGION_SIZE - y - 1;
 
-      if (region.TileSettings[z, x, invertedY] and 24) <> 0 then
-      begin
-        if (region.TileSettings[z, x, invertedY] and 1) = 0 then
-          TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALKABLE_COLOR)
-        else
-          TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALL_COLOR);
-        Continue;
-      end;
+      //a bridge tile is walked on at plane 1, so on the ground plane it is its settings that count
+      setting := settingsRow[invertedY];
+      if (setting and 24) = 0 then
+        if (z = 0) and ((bridgeRow[invertedY] and 2) <> 0) then
+          setting := bridgeRow[invertedY];
 
-      if (z = 0) and ((region.TileSettings[1, x, invertedY] and 2) <> 0) then
-      begin
-        setting := region.TileSettings[1, x, invertedY];
-        if (setting and 1) = 0 then
-          TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALKABLE_COLOR)
-        else
-          TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALL_COLOR);
-        Continue;
-      end;
-
-      if (region.TileSettings[z, x, invertedY] and 1) = 0 then
+      if (setting and 1) = 0 then
         TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALKABLE_COLOR)
       else
         TMapChunkLoader.DrawMapSquare(pixels, x, y, TColorUtils.COLLISION_WALL_COLOR);
     end;
+  end;
 
   Self.DrawCollisionObjectsOnPlane(pixels, region, z);
 
-  Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
   Result.FromMatrix(pixels);
 end;
 

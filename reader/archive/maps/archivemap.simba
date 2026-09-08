@@ -22,12 +22,12 @@ procedure TArchiveMap._Init(expectedCount: Integer);
 ```
 Empties the map and sizes its hash table for roughly `expectedCount` entries.
 
-The table is deliberately over-allocated - twice the expected count plus a margin - so that
-probing stays short; {ref}`TArchiveMap._Grow` doubles it again if it ever fills past 60%.
+The table is deliberately over-allocated - see {ref}`MapHashSize` - so that probing stays
+short; {ref}`TArchiveMap._Grow` doubles it again if it ever fills past 60%.
 *)
 procedure TArchiveMap._Init(expectedCount: Integer);
 begin
-  Self.HashSize := expectedCount * 2 + 16;
+  Self.HashSize := MapHashSize(expectedCount);
 
   //dropping the arrays before resizing them hands back freshly zeroed memory, so the slots
   //do not have to be cleared by hand
@@ -57,7 +57,7 @@ begin
 
   slot := MapHash(key, Self.HashSize);
   while (Self.HashSlots[slot] <> 0) and (Self.Keys[Self.HashSlots[slot] - 1] <> key) do
-    slot := (slot + 1) mod Self.HashSize;
+    slot := (slot + 1) and (Self.HashSize - 1);
   Result := slot;
 end;
 
@@ -96,9 +96,11 @@ reuse one buffer. They must be in ascending order, which is how reference tables
 *)
 procedure TArchiveMap.Build(const keys: TIntegerArray; count: Integer);
 var
-  i, slot: Integer;
+  i, slot, mask: Integer;
+  slots: TIntegerArray;
+  values: TArchiveArray;
 begin
-  Self.HashSize := count * 2 + 16;
+  Self.HashSize := MapHashSize(count);
   Self.Count := count;
   Self.IsSetup := True;
 
@@ -110,16 +112,23 @@ begin
   SetLength(Self.HashSlots, 0);
   SetLength(Self.HashSlots, Self.HashSize);
 
+  //one map is built per archive of an index, so hundreds of thousands of them are built to open
+  //a cache - hence the aliases, and the hash written out rather than called: at this scale the
+  //field lookups and the call per key cost more than the probing does
+  slots  := Self.HashSlots;
+  values := Self.Values;
+  mask   := Self.HashSize - 1;
+
   //the keys are distinct, so a slot is claimed by the first empty one rather than by _FindSlot
   for i := 0 to count - 1 do
   begin
-    Self.Values[i].ID := keys[i];
+    values[i].ID := keys[i];
 
-    slot := MapHash(keys[i], Self.HashSize);
-    while Self.HashSlots[slot] <> 0 do
-      slot := (slot + 1) mod Self.HashSize;
+    slot := keys[i] and mask;
+    while slots[slot] <> 0 do
+      slot := (slot + 1) and mask;
 
-    Self.HashSlots[slot] := i + 1;
+    slots[slot] := i + 1;
   end;
 end;
 
@@ -164,14 +173,6 @@ end;
 ```pascal
 property TArchiveMap.Value(key: Integer; const val: TArchive);
 property TArchiveMap.Value(key: Integer): TArchive;
-(*
-## TArchiveMap.Value
-```pascal
-property TArchiveMap.Value(key: EConfigArchive; const val: TArchive);
-property TArchiveMap.Value(key: EConfigArchive): TArchive;
-```
-Overloads of {ref}`TArchiveMap.Value` for the config index, whose archives have names.
-*)
 property TArchiveMap.Value(key: EConfigArchive; const val: TArchive);
 property TArchiveMap.Value(key: EConfigArchive): TArchive;
 ```

@@ -13,25 +13,24 @@ definition is drawn for more than one item.
 
 type
   TLitModel = record
-    VerticesCount: Integer;
-    VertexX, VertexY, VertexZ: TIntegerArray;
-    IndicesCount: Integer;
-    FaceIndices1, FaceIndices2, FaceIndices3: TIntegerArray;
-    FaceColors1, FaceColors2, FaceColors3: TIntegerArray;
-    FacePriorities: TByteArray;
-    FaceTransparencies: TByteArray;
-    TextureCoords: TByteArray;
-    FaceTextures: TIntegerArray;
-    FaceColors: TIntegerArray;
-    FaceRenderTypes: TByteArray;
-    NumTextureFaces: Integer;
-    TexIndices1, TexIndices2, TexIndices3: TIntegerArray;
-    BoundsType: Integer;
-    BottomY: Integer;
-    XYZMag: Integer;
-    Radius, Diameter: Integer;
+    VerticesCount, IndicesCount,
+    NumTextureFaces,
+    BoundsType,
+    BottomY,
+    XYZMag,
+    Radius, Diameter, ModelHeight: Integer;
+
     Extremes: array [0..2] of Integer;
-    ModelHeight: Integer;
+
+    VertexX, VertexY, VertexZ,
+    FaceIndices1, FaceIndices2, FaceIndices3,
+    FaceColors1, FaceColors2, FaceColors3,
+    FaceTextures, FaceColors,
+    TexIndices1, TexIndices2, TexIndices3: TIntegerArray;
+
+    FacePriorities, FaceTransparencies,
+    TextureCoords,
+    FaceRenderTypes: TByteArray;
   end;
 
 (*
@@ -51,21 +50,15 @@ var
 begin
   Result.VerticesCount := src.VertexCount;
 
-  SetLength(Result.VertexX, src.VertexCount);
-  SetLength(Result.VertexY, src.VertexCount);
-  SetLength(Result.VertexZ, src.VertexCount);
-  Move(src.VertexX[0], Result.VertexX[0], src.VertexCount * SizeOf(Integer));
-  Move(src.VertexY[0], Result.VertexY[0], src.VertexCount * SizeOf(Integer));
-  Move(src.VertexZ[0], Result.VertexZ[0], src.VertexCount * SizeOf(Integer));
+  Result.VertexX := Copy(src.VertexX);
+  Result.VertexY := Copy(src.VertexY);
+  Result.VertexZ := Copy(src.VertexZ);
 
   Result.IndicesCount := src.FaceCount;
 
-  SetLength(Result.FaceIndices1, src.FaceCount);
-  SetLength(Result.FaceIndices2, src.FaceCount);
-  SetLength(Result.FaceIndices3, src.FaceCount);
-  Move(src.FaceIndices1[0], Result.FaceIndices1[0], src.FaceCount * SizeOf(Integer));
-  Move(src.FaceIndices2[0], Result.FaceIndices2[0], src.FaceCount * SizeOf(Integer));
-  Move(src.FaceIndices3[0], Result.FaceIndices3[0], src.FaceCount * SizeOf(Integer));
+  Result.FaceIndices1 := Copy(src.FaceIndices1);
+  Result.FaceIndices2 := Copy(src.FaceIndices2);
+  Result.FaceIndices3 := Copy(src.FaceIndices3);
 
   SetLength(Result.FaceColors1, src.FaceCount);
   SetLength(Result.FaceColors2, src.FaceCount);
@@ -215,7 +208,7 @@ begin
   else
     graphics.RasterAlpha := Self.FaceTransparencies[faceIdx] and $FF;
 
-  hasTextures := Self.FaceTextures <> [];
+  hasTextures := Length(Self.FaceTextures) > 0;
   if hasTextures and (Self.FaceTextures[faceIdx] <> -1) then
   begin
     // Textured face. We do not sample textures yet, so approximate with a flat fill.
@@ -399,7 +392,7 @@ begin
     Viewport.SortedFaceDepth[j + 1] := tmpD;
   end;
 
-  if Self.FacePriorities = [] then
+  if Length(Self.FacePriorities) = 0 then
   begin
     for i := 0 to Viewport.SortedCount - 1 do
       Self.RasterFace(graphics, Viewport.SortedFaceIdx[i]);

@@ -10,8 +10,6 @@ var
   idStr: String;
   itemId: Integer;
 begin
-  SpriteDebugEnabled := True;
-
   CacheReader := TCacheReader.Create();
 
   CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
@@ -44,18 +42,13 @@ begin
 
     // Render the sprite
     sprite := TItemSprite.Create(CacheReader, itemDef, ColorUtils.BRIGHTNESS_MAX);
-    if sprite.Valid then
-    begin
-      img := sprite.ToImage();
-      img.Show();
-      WriteLn('Sprite rendered OK');
-      img.Save('whip.png', True);
-    end
-    else
+    if not sprite.Valid then
     begin
       WriteLn('Failed to render (no model?). InventoryModel = ', itemDef.InventoryModel);
+      Continue;
     end;
 
-    WriteLn('');
+    img := sprite.ToImage();
+    img.Show();
   end;
 end.

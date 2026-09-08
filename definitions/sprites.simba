@@ -13,7 +13,6 @@ type
     MaxWidth, MaxHeight: Integer;
 
     Pixels, Palette: TIntegerArray;
-    PixelIdx: TByteArray;
 
     const FLAG_VERTICAL: Integer = 1;
     const FLAG_ALPHA:    Integer = 2;
@@ -39,9 +38,10 @@ function TSpriteDefinition.Create(id: Integer; const data: TByteArray): TSpriteD
 var
   offset, spriteCount, width, height, paletteLength: Integer;
   palette: TIntegerArray;
-  i, j, k, dimension, flags, index: Integer;
+  i, j, k, dimension, flags, index, frameWidth, frameHeight: Integer;
   pixelIdx, pixelAlphas: TByteArray;
   bgr: Integer;
+  frameHasAlpha: Boolean;
 begin
   offset := Length(data) - 2;
   spriteCount := Read16Bits(data, offset);
@@ -85,12 +85,15 @@ begin
 
   for i := 0 to spriteCount - 1 do
   begin
-    dimension := Result[i].Width * Result[i].Height;
+    frameWidth  := Result[i].Width;
+    frameHeight := Result[i].Height;
+    dimension   := frameWidth * frameHeight;
+
     SetLength(pixelIdx, dimension);
-    SetLength(pixelAlphas, dimension);
     Result[i].Palette := palette;
 
     flags := Read8Bits(data, offset);
+    frameHasAlpha := (flags and TSpriteDefinition.FLAG_ALPHA) <> 0;
 
     if (flags and TSpriteDefinition.FLAG_VERTICAL) = 0 then
     begin
@@ -99,13 +102,18 @@ begin
     end
     else
     begin
-      for j := 0 to Result[i].Width - 1 do
-        for k := 0 to Result[i].Height - 1 do
-          pixelIdx[Result[i].Width * k + j] := Read8Bits(data, offset);
+      for j := 0 to frameWidth - 1 do
+        for k := 0 to frameHeight - 1 do
+          pixelIdx[frameWidth * k + j] := Read8Bits(data, offset);
     end;
 
-    if (flags and TSpriteDefinition.FLAG_ALPHA) <> 0 then
+    if frameHasAlpha then
     begin
+      //the buffer is dropped rather than resized so a shorter frame cannot read the previous
+      //frame's alphas back out of the tail SetLength leaves untouched
+      SetLength(pixelAlphas, 0);
+      SetLength(pixelAlphas, dimension);
+
       if (flags and TSpriteDefinition.FLAG_VERTICAL) = 0 then
       begin
         for j := 0 to dimension - 1 do
@@ -113,25 +121,22 @@ begin
       end
       else
       begin
-        for j := 0 to Result[i].Width - 1 do
-          for k := 0 to Result[i].Height - 1 do
-            pixelAlphas[Result[i].Width * k + j] := Read8Bits(data, offset);
+        for j := 0 to frameWidth - 1 do
+          for k := 0 to frameHeight - 1 do
+            pixelAlphas[frameWidth * k + j] := Read8Bits(data, offset);
       end;
     end;
 
-    for j := 0 to dimension - 1 do
-      if pixelIdx[j] <> 0 then
-        pixelAlphas[j] := $FF;
-
-    Result[i].PixelIdx := pixelIdx;
-
+    //ABGR which is what simba uses. Palette index 0 is transparent, so it keeps whatever alpha
+    //the frame stored for it - which is none at all when the frame has no alpha channel.
     SetLength(Result[i].Pixels, dimension);
     for j := 0 to dimension - 1 do
     begin
       index := pixelIdx[j];
-      bgr := palette[index];
-      //ABGR which is what simba uses
-      Result[i].Pixels[j] := (pixelAlphas[j] shl 24) or bgr;
+      if index <> 0 then
+        Result[i].Pixels[j] := $FF000000 or palette[index]
+      else if frameHasAlpha then
+        Result[i].Pixels[j] := pixelAlphas[j] shl 24;
     end;
   end;
 end;

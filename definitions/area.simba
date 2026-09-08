@@ -6,11 +6,11 @@ Map areas: the named places the world map labels and the icons the minimap draws
 
 type
   TAreaDefinition = record
-    ID, SpriteId, Field3294, TextColor, Category, TextScale: Integer;
-    Name, Field3308: String;
-    Field3298: array [0..4] of String;
-    Field3300, Field3292: TIntegerArray;
-    Field3309: TByteArray;
+    ID, SpriteId, SecondarySpriteID, TextColor, Category, TextScale: Integer;
+    Name, Tooltip: String; //not sure if tooltip is a tooltip lol.
+    MenuActions: array [0..4] of String;
+    PolygonVertices, PolygonColors: TIntegerArray;
+    PolygonColorIndices: TByteArray;
   end;
 
   TAreaDefinitionArray = array of TAreaDefinition;
@@ -33,7 +33,7 @@ var
 begin
   Result.ID := id;
   Result.SpriteId := -1;
-  Result.Field3294 := -1;
+  Result.SecondarySpriteID := -1;
   Result.Category := -1;
 
   while True do
@@ -43,31 +43,31 @@ begin
     case opcode of
       0: Break;
       1: Result.SpriteId := ReadBigSmart2(data, offset);
-      2: Result.Field3294 := ReadBigSmart2(data, offset);
+      2: Result.SecondarySpriteID := ReadBigSmart2(data, offset);
       3: Result.Name := data.ReadCString(offset);
       4: Result.TextColor := Read24Bits(data, offset);
       6: Result.TextScale := Read8Bits(data, offset);
-      10..14: Result.Field3298[opcode-10] := data.ReadCString(offset);
+      10..14: Result.MenuActions[opcode-10] := data.ReadCString(offset);
       15:
         begin
           count := Read8Bits(data, offset);
-          SetLength(Result.Field3300, count * 2);
+          SetLength(Result.PolygonVertices, count * 2);
           for i := 0 to count * 2 - 1 do
-            Result.Field3300[i] := Read16Bits(data, offset);
+            Result.PolygonVertices[i] := Read16Bits(data, offset);
 
           Read32Bits(data, offset); // discarded
 
           count2 := Read8Bits(data, offset);
-          SetLength(Result.Field3292, count2);
+          SetLength(Result.PolygonColors, count2);
           for i := 0 to count2 - 1 do
-            Result.Field3292[i] := Read32Bits(data, offset);
+            Result.PolygonColors[i] := Read32Bits(data, offset);
 
-          SetLength(Result.Field3309, count);
+          SetLength(Result.PolygonColorIndices, count);
           for i := 0 to count - 1 do
-            Result.Field3309[i] := Read8Bits(data, offset);
+            Result.PolygonColorIndices[i] := Read8Bits(data, offset);
         end;
       16: ; //no bytes read
-      17: Result.Field3308 := data.ReadCString(offset);
+      17: Result.Tooltip := data.ReadCString(offset);
       19: Result.Category := Read16Bits(data, offset);
 
       //all below are discarded

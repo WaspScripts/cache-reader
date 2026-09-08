@@ -1,4 +1,4 @@
-{$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
+{.$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
@@ -10,10 +10,10 @@ var
   img: TImage;
   t: Double;
 begin
-  for 1 to 100 do img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+  //for 1 to 100 do img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
 
   t := PerformanceTime();
-  for 1 to 100 do
+  //for 1 to 100 do
     img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
   WriteLn('Took: ', PerformanceTime()-t, 'ms to run.');
   img.Show();
@@ -54,7 +54,7 @@ begin
   x1Spinner.Top := 100;
   x1Spinner.Left := 20;
   x1Spinner.MinValue := 0;
-  x1Spinner.MaxValue := 199;
+  x1Spinner.MaxValue := 99;
   x1Spinner.Value := 50;
 
   lbl := TLazLabel.Create(form);
@@ -89,7 +89,7 @@ begin
   x2Spinner.Top := 100;
   x2Spinner.Left := 120;
   x2Spinner.MinValue := 0;
-  x2Spinner.MaxValue := 199;
+  x2Spinner.MaxValue := 99;
   x2Spinner.Value := 50;
 
   lbl := TLazLabel.Create(form);

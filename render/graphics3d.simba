@@ -1,6 +1,6 @@
 (*
 # Graphics3D
-Software 3D rasterizer ported from RuneLite's Graphics3D / Rasterizer2D.
+Software 3D rasterizer.
 Renders Gouraud-shaded and flat-coloured triangles into an integer pixel buffer.
 
 The pixel format is ABGR (Alpha<<24 | Blue<<16 | Green<<8 | Red), matching
@@ -13,8 +13,7 @@ Palette field, which the caller points at a ColorUtils.SpritePalette result.
 type
   TGraphics3D = record
     // Rasterizer2D fields
-    Pixels: TIntegerArray;
-    Palette: TIntegerArray;
+    Pixels, Palette: TIntegerArray;
     PixelWidth, PixelHeight,
     DrawTop, DrawBottom, DrawLeft, DrawRight: Integer;
 
@@ -166,17 +165,18 @@ begin
 end;
 
 (*
-  Gouraud scanline filler — writes one horizontal span of interpolated colour.
+## Graphics3D.GouraudRaster
+```pascal
+procedure TGraphics3D.GouraudRaster(baseIdx, leftX, rightX, startColor, colorStep: Integer);
+```
+Interpolates a colour value across [leftX, rightX]
+using a fixed-point step, looks up each pixel in the colour palette, and optionally
+applies alpha blending.
 
-  Follows RuneLite's gouraudRaster: interpolates a colour value across [leftX, rightX]
-  using a fixed-point step, looks up each pixel in the colour palette, and optionally
-  applies alpha blending.
-
-  `startColor` is the colour extrapolated back to x = 0, not the colour at
-  `leftX` - this re-adds leftX * colorStep itself, exactly as RuneLite's
-  gouraudRaster does (var6 += var4 * var7), so that clipping leftX to 0 still
-  lands on the right colour. When RasterGouraudLowRes is true, every 4 pixels share one
-  colour for speed (as the original client does on low-res mode).
+`startColor` is the colour extrapolated back to x = 0, not the colour at
+`leftX` - this re-adds leftX * colorStep itself, so that clipping leftX to 0 still
+lands on the right colour. When RasterGouraudLowRes is true, every 4 pixels share one
+colour for speed (as the original client does on low-res mode).
 *)
 procedure TGraphics3D.GouraudRaster(baseIdx, leftX, rightX, startColor, colorStep: Integer);
 var
@@ -800,8 +800,11 @@ end;
 
 
 (*
-  Flat-colour scanline filler — writes one horizontal span of a single colour.
-  Follows RuneLite's method2842.
+## Graphics3D.RasterFlat
+```pascal
+procedure TGraphics3D.RasterFlat(x0, x1, x2, y0, y1, y2, color: Integer);
+```
+Flat-colour scanline filler — writes one horizontal span of a single colour.
 *)
 procedure TGraphics3D.FlatRaster(baseIdx, leftX, rightX, color: Integer);
 var
@@ -845,8 +848,12 @@ begin
 end;
 
 (*
-  Flat-coloured triangle — three vertices with X/Y, filled with a single colour.
-  Uses the same scanline approach as GouraudTriangle but without colour interpolation.
+## Graphics3D.RasterFlat
+```pascal
+procedure TGraphics3D.RasterFlat(x0, x1, x2, y0, y1, y2, color: Integer);
+```
+Flat-coloured triangle — three vertices with X/Y, filled with a single colour.
+Uses the same scanline approach as {ref}`Graphics3D.GouraudTriangle` but without colour interpolation.
 *)
 procedure TGraphics3D.RasterFlat(x0, x1, x2, y0, y1, y2, color: Integer);
 var

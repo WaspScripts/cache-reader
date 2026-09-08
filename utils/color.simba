@@ -27,7 +27,6 @@ type
     const SATURATION_OFFSET: Double = 0.5 / 8.0;
 
     Palette: TIntegerArray;
-    PaletteBGR: TIntegerArray;
     IsSetup: Boolean;
 
     CachedBrightnesses: TDoubleArray;
@@ -185,8 +184,12 @@ end;
 ```pascal
 procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
 ```
-Builds the palettes everything else colours through. Called once at startup by `cache.simba`,
+Builds the palette the map renderer colours through. Called once at startup by `cache.simba`,
 and a no-op afterwards.
+
+The sprite rasterizer's palettes are not built here - {ref}`TColorUtils.SpritePalette` builds and
+keeps one the first time a given brightness is asked for, so a script that never renders a sprite
+never pays for one.
 *)
 procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
 begin
@@ -194,8 +197,6 @@ begin
     Exit;
 
   Self.Palette := TColorUtils.CreateHSVPalette(brightness, 0, 65536);
-  Self.PaletteBGR := Self.SpritePalette(TColorUtils.BRIGHTNESS_LOW);
-
   Self.IsSetup := True;
 end;
 
