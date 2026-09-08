@@ -818,17 +818,9 @@ begin
   else
     slopeBC := 0;
 
-  yMid := by;
-  if yMid < 0 then yMid := 0;
-  if yMid > Self.ClipHeight then yMid := Self.ClipHeight;
-
-  yStart := ay;
-  if yStart < 0 then yStart := 0;
-  if yStart > Self.ClipHeight then yStart := Self.ClipHeight;
-
-  yEnd := cy;
-  if yEnd < 0 then yEnd := 0;
-  if yEnd > Self.ClipHeight then yEnd := Self.ClipHeight;
+  yMid := EnsureRange(by, 0, Self.ClipHeight);
+  yStart := EnsureRange(ay, 0, Self.ClipHeight);
+  yEnd := EnsureRange(cy, 0, Self.ClipHeight);
 
   // Upper half
   if yStart < yMid then
