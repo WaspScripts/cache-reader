@@ -104,7 +104,7 @@ begin
     nZ := nZ shr 1;
   end;
 
-  len := Max(Round(Sqrt(nZ * nZ + nX * nX + nY * nY)), 1);
+  len := Max(Trunc(Sqrt(nZ * nZ + nX * nX + nY * nY)), 1);
 
   nX := nX * 256 div len;
   nY := nY * 256 div len;

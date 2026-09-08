@@ -38,13 +38,8 @@ function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TCol
 var
   i, rIdx, gIdx, bIdx: Integer;
   hue, sat, lum, r, g, b, p, q, t1, t2: Double;
-  gamma: array [0..255] of Integer;
 begin
   SetLength(Result, 65536);
-
-  // Precompute gamma table
-  for i := 0 to 255 do
-    gamma[i] := Trunc(Power(i / 255, brightness) * 256);
 
   for i := mn to mx - 1 do
   begin
@@ -97,15 +92,11 @@ begin
         b := p;
     end;
 
-    rIdx := Round(r * 255);
-    gIdx := Round(g * 255);
-    bIdx := Round(b * 255);
+    rIdx := Trunc(Power(r, brightness) * 256);
+    gIdx := Trunc(Power(g, brightness) * 256);
+    bIdx := Trunc(Power(b, brightness) * 256);
 
-    if rIdx > 255 then rIdx := 255;
-    if gIdx > 255 then gIdx := 255;
-    if bIdx > 255 then bIdx := 255;
-
-    Result[i] := gamma[rIdx] + (gamma[bIdx] shl 16) + (gamma[gIdx] shl 8);
+    Result[i] := rIdx + (bIdx shl 16) + (gIdx shl 8);
   end;
 end;
 

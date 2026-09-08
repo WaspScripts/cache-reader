@@ -52,7 +52,6 @@ begin
       img := sprite.ToImage();
       img.Show();
       WriteLn('Sprite rendered OK');
-      img.FillWithAlpha($FF);
       img.Save('whip.png', True);
     end
     else
