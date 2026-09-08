@@ -1,3 +1,8 @@
+(*
+# Region
+One 64 by 64 tile square of the world, expanded from the cache into the per-plane arrays the map
+renderer walks: heights, settings, ground overlays and underlays, and the objects standing on it.
+*)
 {$include_once ../definitions/map.simba}
 {$include_once ../definitions/locations.simba}
 {$include_once ../utils/heightcalc.simba}
@@ -20,6 +25,13 @@ type
     Locations: array of TWorldLocation;
   end;
 
+(*
+## Region._InitArrays
+```pascal
+procedure TRegion._InitArrays();
+```
+Allocates the region's per-plane tile arrays - 4 planes of 64 by 64, indexed `[z, x, y]`.
+*)
 procedure TRegion._InitArrays();
 begin
   SetLength(Self.TileHeights, 4, 64, 64);
@@ -30,6 +42,19 @@ begin
   SetLength(Self.UnderlayIds, 4, 64, 64);
 end;
 
+(*
+## Region.Create
+```pascal
+function TRegion.Create(id: Integer): TRegion; static;
+function TRegion.Create(x, y: Integer): TRegion; static; overload;
+```
+An empty region at the given position, addressed either by its packed id or by its region
+coordinates.
+
+A region id packs its x into the high byte and its y into the low one, and each region covers 64
+by 64 world tiles starting at `BaseX, BaseY`. The tile arrays are allocated but hold nothing
+until {ref}`TRegion.LoadTerrain` fills them.
+*)
 function TRegion.Create(id: Integer): TRegion; static;
 begin
   Result.RegionID := id;
@@ -56,6 +81,17 @@ begin
   Result._InitArrays();
 end;
 
+(*
+## Region.LoadTerrain
+```pascal
+procedure TRegion.LoadTerrain(constref map: TMapDefinition);
+```
+Expands a decoded {ref}`TMapDefinition` into the region's per-plane tile arrays.
+
+A tile with no stored height falls back to the procedural terrain height, which depends only on
+the tile's world x and y - not on its plane - so the whole region's worth is built in one pass
+the first time any tile asks for it, and all four planes then read out of it.
+*)
 procedure TRegion.LoadTerrain(constref map: TMapDefinition);
 var
   z, x, y, height, xOffset, yOffset, tmp: Integer;
@@ -95,6 +131,14 @@ begin
     end;
 end;
 
+(*
+## Region.LoadLocations
+```pascal
+procedure TRegion.LoadLocations(constref locs: TLocationsDefinition);
+```
+Takes the region's object placements from a decoded {ref}`TLocationsDefinition`, converting each
+one from a position within the region to a world coordinate.
+*)
 procedure TRegion.LoadLocations(constref locs: TLocationsDefinition);
 var
   i: Integer;
@@ -111,11 +155,28 @@ begin
   end;
 end;
 
+(*
+## Region.GetOverlayID
+```pascal
+function TRegion.GetOverlayID(z, x, y: Integer): Integer;
+```
+The ground overlay of one tile, or `0` if it has none.
+
+The stored value keeps a flag in its top bit, which is masked off here.
+*)
 function TRegion.GetOverlayID(z, x, y: Integer): Integer;
 begin
   Result := Self.OverlayIds[z,x,y] and $7FFF;
 end;
 
+(*
+## Region.GetUnderlayID
+```pascal
+function TRegion.GetUnderlayID(z, x, y: Integer): Integer;
+```
+The ground underlay of one tile, or `0` if it has none, with the same flag bit masked off that
+{ref}`TRegion.GetOverlayID` masks.
+*)
 function TRegion.GetUnderlayID(z, x, y: Integer): Integer;
 begin
   Result := Self.UnderlayIds[z,x,y] and $7FFF;

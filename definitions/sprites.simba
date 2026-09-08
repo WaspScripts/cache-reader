@@ -1,3 +1,8 @@
+(*
+# Sprite Definition
+2D images. One sprite archive holds several frames that share a palette and a canvas size, so
+decoding one gives an array.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -141,12 +146,29 @@ begin
   end;
 end;
 
+(*
+## SpriteDefinition.ToImage
+```pascal
+function TSpriteDefinition.ToImage(): TImage;
+```
+The frame as an image, at its own size rather than the archive's canvas size.
+*)
 function TSpriteDefinition.ToImage(): TImage;
 begin
   Result := new TImage(Self.Width, Self.Height);
   Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);
 end;
 
+(*
+## TSpriteDefinitionArray.IndexOf
+```pascal
+function TSpriteDefinitionArray.IndexOf(id: Integer): Integer;
+```
+The position of `id` in the array, or `-1` if there is no such sprite.
+
+Sprite definitions are stored one per id with no gaps, so an id is its own index; this exists to
+keep that assumption in one place.
+*)
 function TSpriteDefinitionArray.IndexOf(id: Integer): Integer;
 begin
   if InRange(id, 0, High(Self)) then

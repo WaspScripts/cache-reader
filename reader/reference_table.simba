@@ -1,3 +1,11 @@
+(*
+# Reference Table
+An index's catalogue: which archives it holds, which files are in each of them, and the
+revisions and checksums of both.
+
+It is read when the cache is opened, so what exists is known long before anything is
+decompressed.
+*)
 {$include_once ./archive/maps/archivemap.simba}
 
 type
@@ -7,11 +15,25 @@ type
     Archives: TArchiveMap;
   end;
 
+(*
+## ReferenceTable.Create
+```pascal
+function TReferenceTable.Create(id: Integer): TReferenceTable; static;
+```
+An empty reference table for index `id`. {ref}`TReferenceTable.Read` fills it in.
+*)
 function TReferenceTable.Create(id: Integer): TReferenceTable; static;
 begin
   Result.ID := id;
 end;
 
+(*
+## ReferenceTable.Contains
+```pascal
+function TReferenceTable.Contains(id: Integer): Boolean;
+```
+Whether this index holds an archive with the given id.
+*)
 function TReferenceTable.Contains(id: Integer): Boolean;
 begin
   Result := Self.Archives.Exists(id);
@@ -19,6 +41,20 @@ end;
 
 
 
+(*
+## ReferenceTable flags
+```pascal
+function TReferenceTable.HasName(): Boolean;
+function TReferenceTable.HasWhirlpool(): Boolean;
+function TReferenceTable.HasLengths(): Boolean;
+function TReferenceTable.HasChecksums(): Boolean;
+```
+Which optional fields this table stores for each of its archives.
+
+The table's `Mask` is a bitfield that says which of the four are present, and they appear in
+that order in the encoded table, so {ref}`TReferenceTable.Read` has to consult these to know
+where each following field starts.
+*)
 function TReferenceTable.HasName(): Boolean;
 begin
   Result := (Self.Mask and $1) <> 0;
@@ -40,6 +76,22 @@ begin
 end;
 
 
+(*
+## ReferenceTable.Read
+```pascal
+procedure TReferenceTable.Read(const data: TByteArray; var offset: Integer);
+```
+Decodes an index's reference table: which archives it holds, which files are in each of them,
+and the metadata the table carries about both.
+
+The table is stored column by column rather than archive by archive - every archive's CRC, then
+every archive's revision, and so on - so this makes one pass per field over the whole archive
+list. Ids themselves are stored as deltas from the previous id, which is why they accumulate
+and why they always come out ascending.
+
+Version 7 tables write ids as {ref}`ReadBigSmart` because they can exceed 16 bits; earlier ones
+always use 2 bytes. Anything outside versions 5 to 7 raises.
+*)
 procedure TReferenceTable.Read(const data: TByteArray; var offset: Integer);
 var
   named: Boolean;
@@ -133,6 +185,21 @@ begin
       archives[i].Files.Values[j].HashName := Read32Bits(data, offset);
 end;
 
+(*
+## ReferenceTable.ArchiveID
+```pascal
+function TReferenceTable.ArchiveID(const name: String): Integer;
+```
+The id of the archive named `name`, or `-1` if this index has no such archive.
+
+The cache does not store names, only their hashes, so this compares against
+{ref}`CacheString2Hash` of the name.
+
+Example:
+```pascal
+id := CacheReader.Indices[ECacheIndex.SPRITES].ReferenceTable.ArchiveID('mapscene');
+```
+*)
 function TReferenceTable.ArchiveID(const name: String): Integer;
 var
   hash: Integer;

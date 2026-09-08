@@ -1,12 +1,38 @@
+(*
+# Sprite Debug
+Tracing for the sprite renderer, off unless `SpriteDebugEnabled` is set.
+
+The renderer is a port of the game's own, so the way to find a difference is to dump the same
+intermediate values at each step and compare them against the original's.
+*)
 var
   SpriteDebugEnabled: Boolean = False;
 
+(*
+## DebugLine
+```pascal
+procedure DebugLine(stage, body: String);
+```
+Prints one tagged line while `SpriteDebugEnabled` is set, and nothing otherwise.
+
+The sprite renderer is a port of the game's own, so the way to tell whether it went wrong is to
+dump the same intermediate values the original produces and compare. `stage` names which step
+the line belongs to.
+*)
 procedure DebugLine(stage, body: String);
 begin
   if not SpriteDebugEnabled then Exit;
   WriteLn('[', stage, '] ', body);
 end;
 
+(*
+## DebugInts
+```pascal
+procedure DebugInts(stage, name: String; constref values: TIntegerArray; count: Integer);
+```
+Summarises an array as its length, its sum and its first few entries - enough to spot a
+divergence without printing thousands of numbers.
+*)
 procedure DebugInts(stage, name: String; constref values: TIntegerArray; count: Integer);
 var
   i, shown: Integer;
@@ -35,6 +61,13 @@ begin
   WriteLn('[', stage, '] ', name, ' n=', count, ' sum=', sum, ' head=', head);
 end;
 
+(*
+## DebugBytes
+```pascal
+procedure DebugBytes(stage, name: String; constref values: TByteArray; count: Integer);
+```
+{ref}`DebugInts` for a byte array, widened so the values print unsigned.
+*)
 procedure DebugBytes(stage, name: String; constref values: TByteArray; count: Integer);
 var
   i: Integer;
@@ -58,6 +91,14 @@ begin
   DebugInts(stage, name, widened, count);
 end;
 
+(*
+## DebugPixelRows
+```pascal
+procedure DebugPixelRows(stage: String; constref pixels: TIntegerArray; width, height: Integer);
+```
+Summarises a rendered buffer per row: how much colour each row holds and how many of its pixels
+were touched, which localises a difference to a band of the image.
+*)
 procedure DebugPixelRows(stage: String; constref pixels: TIntegerArray; width, height: Integer);
 var
   row, col, value, nonzero, rowNonzero: Integer;
@@ -99,6 +140,14 @@ begin
   WriteLn('[', stage, '] rowcounts=', rowCounts);
 end;
 
+(*
+## DebugPalette
+```pascal
+procedure DebugPalette(stage: String; constref palette: TIntegerArray);
+```
+Prints a handful of fixed entries of a palette, to confirm two palettes are the same one without
+comparing 65536 values.
+*)
 procedure DebugPalette(stage: String; constref palette: TIntegerArray);
 var
   i: Integer;

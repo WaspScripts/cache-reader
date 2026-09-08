@@ -1,6 +1,24 @@
+(*
+# Cache Reader
+The entry point to a cache: {ref}`TCacheReader.Create` opens one, and its `Indices` are the
+{ref}`TCacheIndex` records everything else is read through.
+
+The global `CacheReader` is what the rest of this library reads from, so assign to it rather
+than keeping your own.
+*)
 {$include_once ./index.simba}
 
 //Type defined in index.simba
+(*
+## CacheReader.Load
+```pascal
+procedure TCacheReader.Load();
+```
+Reads the cache's data file and its master index off disk, then opens one {ref}`TCacheIndex`
+per index file listed in the master index.
+
+`Path` must already be set. Call this again to pick up a cache that has changed on disk.
+*)
 procedure TCacheReader.Load();
 var
   len, i: Integer;
@@ -18,6 +36,27 @@ begin
   end;
 end;
 
+(*
+## CacheReader.Create
+```pascal
+function TCacheReader.Create(path: String): TCacheReader; static;
+function TCacheReader.Create(): TCacheReader; static; overload;
+```
+Opens the cache that a client keeps under `path`, which is the directory holding `jagexcache`
+rather than the cache directory itself.
+
+The overload without arguments uses the RuneLite cache in the current user's home directory.
+
+Opening the cache reads every index's reference table, so afterwards you know which archives
+exist and what is in them, but no archive's contents have been decompressed yet - that is what
+{ref}`TCacheIndex.Cache` is for.
+
+Example:
+```pascal
+CacheReader := TCacheReader.Create();
+CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+```
+*)
 function TCacheReader.Create(path: String): TCacheReader; static;
 begin
   Result.Path := path + 'jagexcache' + PATH_SEP + 'oldschool' + PATH_SEP + 'LIVE' + PATH_SEP;

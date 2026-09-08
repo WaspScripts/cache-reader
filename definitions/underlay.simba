@@ -1,3 +1,8 @@
+(*
+# Underlay Definition
+Ground underlays: the base terrain colour that overlays are drawn on top of, and the weight its
+hue carries when neighbouring tiles are blended together.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -8,6 +13,18 @@ type
 
   TUnderlayDefinitionArray = array of TUnderlayDefinition;
 
+(*
+## UnderlayDefinition.Create
+```pascal
+function TUnderlayDefinition.Create(id: Integer; const data: TByteArray): TUnderlayDefinition; static;
+```
+Decodes a ground underlay - the base terrain colour an overlay is drawn on top of.
+
+Beyond the HSL of the colour itself this works out a hue multiplier, which is how heavily this
+underlay's hue counts when neighbouring tiles are blended together: a washed out colour has
+little hue worth spreading, so it is weighted down, while a saturated mid-tone is weighted up.
+`Hue` is pre-multiplied by it so that blending is a plain weighted sum.
+*)
 function TUnderlayDefinition.Create(id: Integer; const data: TByteArray): TUnderlayDefinition; static;
 var
   offset, opcode: Integer;
@@ -37,6 +54,16 @@ begin
   Result.Hue := Trunc(Result.HueMultiplier * hsl.H);
 end;
 
+(*
+## TUnderlayDefinitionArray.IndexOf
+```pascal
+function TUnderlayDefinitionArray.IndexOf(id: Integer): Integer;
+```
+The position of `id` in the array, or `-1` if there is no such underlay.
+
+Underlay definitions are stored one per id with no gaps, so an id is its own index; this exists to
+keep that assumption in one place.
+*)
 function TUnderlayDefinitionArray.IndexOf(id: Integer): Integer;
 begin
   if InRange(id, 0, High(Self)) then

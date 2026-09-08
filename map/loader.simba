@@ -1,3 +1,10 @@
+(*
+# Map Data Loader
+Everything {ref}`TMapChunkLoader` needs before it can draw a map: ground colours, object
+definitions, and the sprites for map scenes and area icons.
+
+Load it once - see {ref}`TMapDataLoader.Load` - not per chunk.
+*)
 {$include_once ../reader/reader.simba}
 {$include_once ../definitions/objects.simba}
 {$include_once ../definitions/underlay.simba}
@@ -16,6 +23,13 @@ type
     MapScenes, AreaIcons: TSpriteDefinitionArray;
   end;
 
+(*
+## MapDataLoader.LoadUnderlays
+```pascal
+procedure TMapDataLoader.LoadUnderlays();
+```
+Loads every ground underlay definition. The config index has to be cached first.
+*)
 procedure TMapDataLoader.LoadUnderlays();
 var
   archive: TArchive;
@@ -30,6 +44,13 @@ begin
     Self.Underlays[i] := TUnderlayDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
 end;
 
+(*
+## MapDataLoader.LoadOverlays
+```pascal
+procedure TMapDataLoader.LoadOverlays();
+```
+Loads every ground overlay definition. The config index has to be cached first.
+*)
 procedure TMapDataLoader.LoadOverlays();
 var
   archive: TArchive;
@@ -44,6 +65,16 @@ begin
     Self.Overlays[i] := TOverlayDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
 end;
 
+(*
+## MapDataLoader.LoadObjects
+```pascal
+procedure TMapDataLoader.LoadObjects();
+```
+Loads every world object definition. The config index has to be cached first.
+
+This is the slowest part of {ref}`TMapDataLoader.Load` by some distance - there are tens of
+thousands of them, and the map renderer needs any of them to be reachable by id.
+*)
 procedure TMapDataLoader.LoadObjects();
 var
   archive: TArchive;
@@ -58,6 +89,13 @@ begin
     Self.Objects[i] := TObjectDefinition.Create(ids[i], archive.Revision, archive.Files.Value[ids[i]].Data);
 end;
 
+(*
+## MapDataLoader.LoadAreas
+```pascal
+procedure TMapDataLoader.LoadAreas();
+```
+Loads every map area definition. The config index has to be cached first.
+*)
 procedure TMapDataLoader.LoadAreas();
 var
   archive: TArchive;
@@ -72,6 +110,17 @@ begin
     Self.Areas[i] := TAreaDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
 end;
 
+(*
+## MapDataLoader.LoadSpriteArchive
+```pascal
+function TMapDataLoader.LoadSpriteArchive(archiveId: Integer): TSpriteDefinitionArray;
+```
+Every frame of one sprite archive.
+
+Sprite archives are read straight out of the index rather than through
+{ref}`TCacheIndex.Cache`, so that pulling in a handful of icons does not mean decompressing all
+of them. A negative id, a missing archive or an empty one all come back as an empty array.
+*)
 function TMapDataLoader.LoadSpriteArchive(archiveId: Integer): TSpriteDefinitionArray;
 var
   spritesIdx: TCacheIndex;
@@ -94,6 +143,14 @@ begin
   Result := TSpriteDefinition.Create(archiveId, data);
 end;
 
+(*
+## MapDataLoader.LoadMapScenes
+```pascal
+procedure TMapDataLoader.LoadMapScenes();
+```
+Loads the map scene sprites - the little pictures the minimap draws in place of certain objects,
+such as staircases, altars and furnaces.
+*)
 procedure TMapDataLoader.LoadMapScenes();
 var
   idx: TCacheIndex;
@@ -102,6 +159,16 @@ begin
   Self.MapScenes := Self.LoadSpriteArchive(idx.ReferenceTable.ArchiveID('mapscene'));
 end;
 
+(*
+## MapDataLoader.LoadAreaIcons
+```pascal
+procedure TMapDataLoader.LoadAreaIcons();
+```
+Loads the icon of every area that has one, indexed to line up with `Areas`.
+
+{ref}`TMapDataLoader.LoadAreas` has to have run first, since it is the area definitions that say
+which sprite each icon comes from.
+*)
 procedure TMapDataLoader.LoadAreaIcons();
 var
   i: Integer;
@@ -120,6 +187,14 @@ begin
   end;
 end;
 
+(*
+## MapDataLoader.LoadSpriteFrame
+```pascal
+function TMapDataLoader.LoadSpriteFrame(archiveId, frame: Integer): TSpriteDefinition; static;
+```
+A single frame of a sprite archive, for when the whole archive is not wanted. A missing archive
+or frame comes back blank.
+*)
 function TMapDataLoader.LoadSpriteFrame(archiveId, frame: Integer): TSpriteDefinition; static;
 var
   sector: TArchiveSector;
@@ -145,6 +220,16 @@ begin
 end;
 
 
+(*
+## MapDataLoader.LoadTextures
+```pascal
+procedure TMapDataLoader.LoadTextures();
+```
+Loads every texture definition, caching the texture index first if it has not been already.
+
+The map renderer only wants their average colours, which is what a textured ground overlay is
+drawn as.
+*)
 procedure TMapDataLoader.LoadTextures();
 var
   archive: TArchive;
@@ -161,6 +246,24 @@ begin
 end;
 
 
+(*
+## MapDataLoader.Load
+```pascal
+procedure TMapDataLoader.Load();
+```
+Loads everything {ref}`TMapChunkLoader` needs to draw a map: ground colours, object definitions,
+and the sprites for map scenes and area icons.
+
+This caches the config index, so it takes a second or so and a few hundred megabytes. Do it once
+before rendering rather than per chunk.
+
+Example:
+```pascal
+CacheReader := TCacheReader.Create();
+CacheReader.Indices[ECacheIndex.MAPS].Cache();
+chunkLoader.MapData.Load();
+```
+*)
 procedure TMapDataLoader.Load();
 begin
   CacheReader.Indices[ECacheIndex.CONFIGS].Cache();

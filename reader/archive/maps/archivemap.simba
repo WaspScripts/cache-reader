@@ -1,3 +1,10 @@
+(*
+# Archive Map
+An id-keyed container for the {ref}`TArchive` records of one index, laid out the same way
+{ref}`TFileMap` is.
+
+Config archives can also be addressed by their {ref}`EConfigArchive` name.
+*)
 {$include_once ../archive.simba}
 
 type
@@ -8,6 +15,16 @@ type
     IsSetup: Boolean;
   end;
 
+(*
+## TArchiveMap._Init
+```pascal
+procedure TArchiveMap._Init(expectedCount: Integer);
+```
+Empties the map and sizes its hash table for roughly `expectedCount` entries.
+
+The table is deliberately over-allocated - twice the expected count plus a margin - so that
+probing stays short; {ref}`TArchiveMap._Grow` doubles it again if it ever fills past 60%.
+*)
 procedure TArchiveMap._Init(expectedCount: Integer);
 var
   i: Integer;
@@ -24,6 +41,14 @@ begin
   Self.IsSetup := True;
 end;
 
+(*
+## TArchiveMap._FindSlot
+```pascal
+function TArchiveMap._FindSlot(key: Integer): Integer;
+```
+The hash slot belonging to `key`: either the one already holding it, or the first free one after
+where it hashes to. Collisions walk forward one slot at a time and wrap around.
+*)
 function TArchiveMap._FindSlot(key: Integer): Integer;
 var
   slot: Integer;
@@ -37,6 +62,14 @@ begin
   Result := slot;
 end;
 
+(*
+## TArchiveMap._Grow
+```pascal
+procedure TArchiveMap._Grow();
+```
+Doubles the hash table and reinserts every key into it. Entry order is untouched - only the
+slots that point at the entries are rebuilt.
+*)
 procedure TArchiveMap._Grow();
 var
   i: Integer;
@@ -81,6 +114,13 @@ begin
 end;
 
 
+(*
+## TArchiveMap.Exists
+```pascal
+function TArchiveMap.Exists(key: Integer): Boolean;
+```
+Whether the map holds an entry with this id.
+*)
 function TArchiveMap.Exists(key: Integer): Boolean;
 begin
   if not Self.IsSetup then
@@ -88,6 +128,13 @@ begin
   Result := Self.HashSlots[Self._FindSlot(key)] <> 0;
 end;
 
+(*
+## TArchiveMap.IndexOf
+```pascal
+function TArchiveMap.IndexOf(key: Integer): Integer;
+```
+The position of this id in `Values`, or `-1` if it is not in the map.
+*)
 function TArchiveMap.IndexOf(key: Integer): Integer;
 var
   slot: Integer;
@@ -102,6 +149,27 @@ begin
 end;
 
 
+(*
+## TArchiveMap.Value
+```pascal
+property TArchiveMap.Value(key: Integer; const val: TArchive);
+property TArchiveMap.Value(key: Integer): TArchive;
+(*
+## TArchiveMap.Value
+```pascal
+property TArchiveMap.Value(key: EConfigArchive; const val: TArchive);
+property TArchiveMap.Value(key: EConfigArchive): TArchive;
+```
+Overloads of {ref}`TArchiveMap.Value` for the config index, whose archives have names.
+*)
+property TArchiveMap.Value(key: EConfigArchive; const val: TArchive);
+property TArchiveMap.Value(key: EConfigArchive): TArchive;
+```
+Reads or writes the archive stored under `key`, which may be an id or, for the config index, an
+{ref}`EConfigArchive` name. Reading an id the map does not hold raises.
+
+Writing keeps `Values` sorted by id, with the same trade-off {ref}`TFileMap.Value` describes.
+*)
 property TArchiveMap.Value(key: Integer; const val: TArchive);
 var
   slot, idx, i, insertPos: Integer;
@@ -180,6 +248,13 @@ begin
 end;
 
 
+(*
+## TArchiveMap.Clear
+```pascal
+procedure TArchiveMap.Clear();
+```
+Drops every entry and the hash table with them, leaving the map as if it had never been used.
+*)
 procedure TArchiveMap.Clear();
 begin
   SetLength(Self.Keys, 0);

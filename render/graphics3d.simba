@@ -28,6 +28,14 @@ type
     RasterAlpha: Integer;
   end;
 
+(*
+## Graphics3D.SetDrawRegion
+```pascal
+procedure TGraphics3D.SetDrawRegion(bounds: TBox);
+```
+Restricts drawing to `bounds`, clipped to the buffer. Call
+{ref}`TGraphics3D.SetRasterClipping` afterwards to rebuild the row table for the new region.
+*)
 procedure TGraphics3D.SetDrawRegion(bounds: TBox);
 begin
   bounds := bounds.Clip([0,0,Self.PixelWidth, Self.PixelHeight]);
@@ -38,6 +46,16 @@ begin
   Self.DrawBottom := bounds.Y2;
 end;
 
+(*
+## Graphics3D.SetRasterBuffer
+```pascal
+procedure TGraphics3D.SetRasterBuffer(constref buf: TIntegerArray; w, h: Integer);
+```
+Points the rasterizer at the pixel buffer it should draw into and resets the draw region to all
+of it.
+
+The buffer is shared rather than copied, so whatever owns it sees the drawing as it happens.
+*)
 procedure TGraphics3D.SetRasterBuffer(constref buf: TIntegerArray; w, h: Integer);
 begin
   Self.Pixels := buf;
@@ -50,6 +68,13 @@ begin
   Self.DrawBottom := Min(h, Self.PixelHeight);
 end;
 
+(*
+## Graphics3D.Reset
+```pascal
+procedure TGraphics3D.Reset();
+```
+Clears the pixel buffer to transparent.
+*)
 procedure TGraphics3D.Reset();
 var
   i: Integer;
@@ -58,6 +83,14 @@ begin
     Self.Pixels[i] := 0;
 end;
 
+(*
+## Graphics3D.UpdateClipDims
+```pascal
+procedure TGraphics3D.UpdateClipDims();
+```
+Recentres projection on the middle of the clip region and recomputes the bounds triangles are
+tested against.
+*)
 procedure TGraphics3D.UpdateClipDims();
 begin
   Self.CenterX := Self.ClipWidth div 2;
@@ -68,6 +101,17 @@ begin
   Self.ClipMidY2 := Self.ClipHeight - Self.CenterY;
 end;
 
+(*
+## Graphics3D.SetRasterClipping
+```pascal
+procedure TGraphics3D.SetRasterClipping();
+```
+Prepares the rasterizer for the current draw region.
+
+`ClipY` ends up holding the buffer offset of each row of that region, so a scanline can start
+from a single lookup instead of a multiply. It is grown to the next power of two and kept, since
+this runs per rendered sprite.
+*)
 procedure TGraphics3D.SetRasterClipping();
 var
   v, area, i: Integer;
@@ -95,6 +139,16 @@ begin
   end;
 end;
 
+(*
+## Graphics3D.SetOffset
+```pascal
+procedure TGraphics3D.SetOffset(x, y: Integer);
+```
+Moves the point that projection treats as the centre to `x, y` within the buffer.
+
+An item icon is drawn around the middle of its 36 by 32 canvas rather than around the middle of
+the draw region, which is what this is for.
+*)
 procedure TGraphics3D.SetOffset(x, y: Integer);
 var
   base, row, col: Integer;
@@ -234,6 +288,23 @@ begin
   end;
 end;
 
+(*
+## Graphics3D.GouraudTriangle
+```pascal
+procedure TGraphics3D.GouraudTriangle(y0, y1, y2, x0, x1, x2, c0, c1, c2: Integer);
+```
+Fills a triangle whose three corners each have their own colour, blending between them across
+the face.
+
+The three vertices are sorted by height and the triangle is walked one scanline at a time, with
+the two edges bounding that scanline and the colour along it all advanced by fixed point steps
+rather than recomputed. Colour is a palette index, so what is interpolated is the index and not
+the colour itself - which is why shading a face means walking its palette rather than mixing
+channels. Each scanline is handed to {ref}`TGraphics3D.GouraudRaster`.
+
+A degenerate triangle - one with no area - is dropped, since it has no gradient to interpolate
+along.
+*)
 procedure TGraphics3D.GouraudTriangle(y0, y1, y2, x0, x1, x2, c0, c1, c2: Integer);
 var
   dx1, dy1, dx2, dy2, dc1, dc2,

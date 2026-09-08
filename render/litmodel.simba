@@ -1,3 +1,11 @@
+(*
+# Lit Model
+A model prepared for drawing: a copy of the geometry, plus the per face colours lighting writes
+into it and the routines that project and rasterize it.
+
+The geometry is copied rather than shared because lighting is destructive and the same model
+definition is drawn for more than one item.
+*)
 {$include_once ../utils/helpers.simba}
 {$include_once ./circularangle.simba}
 {$include_once ./graphics3d.simba}
@@ -28,6 +36,17 @@ type
     FaceNormals: TFaceNormalArray;
   end;
 
+(*
+## LitModel.Create
+```pascal
+function TLitModel.Create(const src: TModelDefinition): TLitModel; static;
+```
+Takes a copy of a decoded model to light and draw.
+
+The geometry is copied rather than shared because lighting writes per face colours back into it,
+and the same model definition is used by more than one item. Apply any recolouring, retexturing
+or resizing to the definition first - by the time it reaches here the geometry is fixed.
+*)
 function TLitModel.Create(const src: TModelDefinition): TLitModel; static;
 var
   i: Integer;
@@ -233,6 +252,18 @@ type
 var
   Viewport: TLitModelViewport;
 
+(*
+## LitModel.RasterFace
+```pascal
+procedure TLitModel.RasterFace(var graphics: TGraphics3D; faceIdx: Integer);
+```
+Draws one face, already projected to screen space by
+{ref}`TLitModel.ProjectAndDraw`.
+
+A face with three distinct vertex colours is Gouraud shaded; one with a single colour, or one
+carrying a texture, is filled flat - textures are approximated by their base colour rather than
+sampled. Clipping is only turned on for faces that actually reach outside the viewport.
+*)
 procedure TLitModel.RasterFace(var graphics: TGraphics3D; faceIdx: Integer);
 var
   idx1, idx2, idx3, pal: Integer;
@@ -266,6 +297,18 @@ begin
   end;
 end;
 
+(*
+## LitModel.DrawByPriority
+```pascal
+procedure TLitModel.DrawByPriority(var graphics: TGraphics3D);
+```
+Draws faces in the order their render priorities ask for, rather than purely by depth.
+
+Depth sorting alone gets some models wrong, so faces can carry a priority that pins them in
+front of or behind others regardless of where they sit. Priorities 0 to 9 are drawn as groups in
+order, while 10 and 11 stay depth sorted and are woven in between them at the points where their
+depth passes the average depth of the group being drawn.
+*)
 procedure TLitModel.DrawByPriority(var graphics: TGraphics3D);
 var
   i, j, face, priority, dist, pos, listEnd, idx, curDist,
@@ -363,6 +406,17 @@ begin
   end;
 end;
 
+(*
+## LitModel.Draw
+```pascal
+procedure TLitModel.Draw(var graphics: TGraphics3D);
+```
+Draws every visible face of the projected model, furthest first.
+
+Back faces are dropped by the sign of their screen-space winding, and what is left is sorted by
+average depth with an insertion sort - models are small enough that it beats anything cleverer.
+Models with render priorities are handed to {ref}`TLitModel.DrawByPriority` instead.
+*)
 procedure TLitModel.Draw(var graphics: TGraphics3D);
 var
   i, idx1, idx2, idx3, j, tmpI, tmpD, viewport1, viewport2, viewport3: Integer;
@@ -419,6 +473,18 @@ begin
   Self.DrawByPriority(graphics);
 end;
 
+(*
+## LitModel.ProjectAndDraw
+```pascal
+procedure TLitModel.ProjectAndDraw(var graphics: TGraphics3D; yzRot, xzRot, xyRot, orientation, xOffset, yOffset, zOffset: Integer);
+```
+Rotates the model, projects its vertices onto the screen and draws it.
+
+The three rotations are applied about each axis in turn, the model is moved by the offsets, and
+then the camera pitch given by `orientation` is applied. Every angle is in the client's units of
+2048 to a full turn and every multiply is fixed point, matching what the game does rather than
+using floating point. Vertices land in {ref}`Viewport`, which {ref}`TLitModel.Draw` then reads.
+*)
 procedure TLitModel.ProjectAndDraw(var graphics: TGraphics3D; yzRot, xzRot, xyRot, orientation, xOffset, yOffset, zOffset: Integer);
 var
   centerX, centerY, sinR1, cosR1, sinY, cosY, sinZ, cosZ, sinX, cosX, zRelatedVar, tmp: Integer;

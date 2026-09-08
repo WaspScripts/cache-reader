@@ -1,6 +1,9 @@
 (*
 # Archive
-Types and methods to handle cache archives.
+An archive is one addressable unit of an index, and holds one or more {ref}`TFile` records.
+
+{ref}`EConfigArchive` names the archives of the config index, which is where item, object and
+npc definitions live.
 *)
 
 {$include_once ./maps/filemap.simba}
@@ -28,6 +31,16 @@ type
 
   TArchiveArray = array of TArchive;
 
+(*
+## Archive.Create
+```pascal
+function TArchive.Create(id: Integer): TArchive; static;
+function TArchive.Create(id, hashName: Integer): TArchive; static; overload;
+```
+An empty archive with the given id, and optionally the hash of its name - see
+{ref}`CacheString2Hash`. A named archive is assumed to be gzipped, which is what the cache uses
+for everything it names.
+*)
 function TArchive.Create(id: Integer): TArchive; static;
 begin
   Result.ID := id;
@@ -76,6 +89,18 @@ begin
 end;
 
 
+(*
+## Archive.Read
+```pascal
+procedure TArchive.Read(const data: TByteArray);
+```
+Splits an archive's decompressed bytes across the files it holds.
+
+An archive with one file is that file. With more than one, the bytes are interleaved in chunks -
+a piece of every file, then another piece of every file - and a table at the end gives each
+piece's size as a delta from the piece before it. So the sizes are summed in a first pass to
+allocate each file, and a second pass copies the pieces into place.
+*)
 procedure TArchive.Read(const data: TByteArray);
 var
   i, j, chunkCount, fileCount,

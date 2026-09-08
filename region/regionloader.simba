@@ -1,3 +1,10 @@
+(*
+# Region Loader
+Loads regions on demand and keeps track of which ones are in memory.
+
+Ground colours blend across region boundaries, so a region is never useful on its own - see
+{ref}`TRegionLoader.LoadRegionAndNeighbors`.
+*)
 {$include_once ../reader/reader.simba}
 {$include_once ./region.simba}
 
@@ -7,6 +14,17 @@ type
     Lookup: TIntegerArray;
   end;
 
+(*
+## RegionLoader.BuildLookup
+```pascal
+procedure TRegionLoader.BuildLookup();
+```
+Builds the table that turns a region coordinate into an index into `Regions`.
+
+It is a flat 256 by 256 array of indices rather than a search, since region coordinates are
+bounded and small, and `-1` marks a coordinate with no region loaded. Already-built tables are
+left alone; {ref}`TRegionLoader.LoadRegionAndNeighbors` keeps it up to date as it goes.
+*)
 procedure TRegionLoader.BuildLookup();
 const
   LOOKUP_SIZE: Integer = 256*256;
@@ -28,6 +46,13 @@ begin
   end;
 end;
 
+(*
+## RegionLoader.RegionCoordinateIndex
+```pascal
+function TRegionLoader.RegionCoordinateIndex(x, y: Integer): Integer;
+```
+The index in `Regions` of the region at region coordinates `x, y`, or `-1` if it is not loaded.
+*)
 function TRegionLoader.RegionCoordinateIndex(x, y: Integer): Integer;
 begin
   if not InRange(x, 0, 255) or not InRange(y, 0, 255) then
@@ -35,12 +60,30 @@ begin
   Result := Self.Lookup[(x shl 8) or y];
 end;
 
+(*
+## RegionLoader.WorldCoordinateIndex
+```pascal
+function TRegionLoader.WorldCoordinateIndex(x, y: Integer): Integer;
+```
+{ref}`TRegionLoader.RegionCoordinateIndex` for a world tile rather than a region, so it is the
+region that tile falls in.
+*)
 function TRegionLoader.WorldCoordinateIndex(x, y: Integer): Integer;
 begin
   Result := Self.RegionCoordinateIndex(x shr 6, y shr 6);
 end;
 
 
+(*
+## RegionLoader.LoadMapDef
+```pascal
+function TRegionLoader.LoadMapDef(id: Integer; out map: TMapDefinition): Boolean;
+```
+Decodes the terrain of region `id`, returning False if the map index holds nothing for it -
+which is the normal case for the many region ids that are simply empty world.
+
+The map index has to be cached first.
+*)
 function TRegionLoader.LoadMapDef(id: Integer; out map: TMapDefinition): Boolean;
 var
   x, y: Integer;
@@ -63,6 +106,16 @@ begin
   Result := True;
 end;
 
+(*
+## RegionLoader.LoadLocDef
+```pascal
+function TRegionLoader.LoadLocDef(id: Integer; out locs: TLocationsDefinition): Boolean;
+```
+Decodes the object placements of region `id`, returning False if it has none.
+
+A region that has terrain need not have objects, which is why this is separate from
+{ref}`TRegionLoader.LoadMapDef`.
+*)
 function TRegionLoader.LoadLocDef(id: Integer; out locs: TLocationsDefinition): Boolean;
 var
   x, y: Integer;
@@ -86,6 +139,14 @@ begin
 end;
 
 
+(*
+## RegionLoader.LoadRegion
+```pascal
+function TRegionLoader.LoadRegion(id: Integer; out region: TRegion): Boolean;
+```
+Builds one region from the cache: its terrain, and its objects if it has any. Returns False if
+there is no such region.
+*)
 function TRegionLoader.LoadRegion(id: Integer; out region: TRegion): Boolean;
 var
   map: TMapDefinition;
@@ -104,6 +165,18 @@ begin
 end;
 
 
+(*
+## RegionLoader.LoadRegionAndNeighbors
+```pascal
+function TRegionLoader.LoadRegionAndNeighbors(regionX, regionY: Integer): Boolean;
+```
+Loads the region at `regionX, regionY` along with the four next to it, and returns whether the
+middle one exists.
+
+The neighbours are needed because ground colours blend across region boundaries - without them
+the map would show a seam at every edge. Regions already loaded are left alone, so calling this
+per chunk while panning around only pays for what is new.
+*)
 function TRegionLoader.LoadRegionAndNeighbors(regionX, regionY: Integer): Boolean;
 var
   region: TRegion;
@@ -138,6 +211,16 @@ begin
   end;
 end;
 
+(*
+## RegionLoader.LoadAllRegions
+```pascal
+procedure TRegionLoader.LoadAllRegions();
+```
+Loads every region the cache has, reporting progress as it goes.
+
+This is minutes of work and gigabytes of memory - it is for dumping the whole world, not for
+rendering part of it. {ref}`TRegionLoader.LoadRegionAndNeighbors` is what a map viewer wants.
+*)
 procedure TRegionLoader.LoadAllRegions();
 const
   MAX_REGIONS: Integer = 25287;

@@ -1,3 +1,10 @@
+(*
+# File Map
+An id-keyed container for the {ref}`TFile` records of one archive.
+
+`Values` is kept sorted by id and `HashSlots` is an open-addressed table pointing into it, so
+lookups are constant time while iteration still comes out in id order.
+*)
 {$include_once ../file.simba}
 
 type
@@ -8,6 +15,14 @@ type
     IsSetup: Boolean;
   end;
 
+(*
+## MapHash
+```pascal
+function MapHash(key, size: Integer): Integer; static;
+```
+The slot a key hashes to in a table of `size` slots. Ids are already well spread, so this is a
+plain modulo, folded back into range for negative keys.
+*)
 function MapHash(key, size: Integer): Integer; static;
 begin
   Result := key mod size;
@@ -16,6 +31,16 @@ begin
 end;
 
 
+(*
+## TFileMap._Init
+```pascal
+procedure TFileMap._Init(expectedCount: Integer);
+```
+Empties the map and sizes its hash table for roughly `expectedCount` entries.
+
+The table is deliberately over-allocated - twice the expected count plus a margin - so that
+probing stays short; {ref}`TFileMap._Grow` doubles it again if it ever fills past 60%.
+*)
 procedure TFileMap._Init(expectedCount: Integer);
 var
   i: Integer;
@@ -30,6 +55,14 @@ begin
   Self.IsSetup := True;
 end;
 
+(*
+## TFileMap._FindSlot
+```pascal
+function TFileMap._FindSlot(key: Integer): Integer;
+```
+The hash slot belonging to `key`: either the one already holding it, or the first free one after
+where it hashes to. Collisions walk forward one slot at a time and wrap around.
+*)
 function TFileMap._FindSlot(key: Integer): Integer;
 var
   slot: Integer;
@@ -43,6 +76,14 @@ begin
   Result := slot;
 end;
 
+(*
+## TFileMap._Grow
+```pascal
+procedure TFileMap._Grow();
+```
+Doubles the hash table and reinserts every key into it. Entry order is untouched - only the
+slots that point at the entries are rebuilt.
+*)
 procedure TFileMap._Grow();
 var
   i: Integer;
@@ -87,6 +128,13 @@ begin
 end;
 
 
+(*
+## TFileMap.Exists
+```pascal
+function TFileMap.Exists(key: Integer): Boolean;
+```
+Whether the map holds an entry with this id.
+*)
 function TFileMap.Exists(key: Integer): Boolean;
 begin
   if not Self.IsSetup then
@@ -94,6 +142,13 @@ begin
   Result := Self.HashSlots[Self._FindSlot(key)] <> 0;
 end;
 
+(*
+## TFileMap.IndexOf
+```pascal
+function TFileMap.IndexOf(key: Integer): Integer;
+```
+The position of this id in `Values`, or `-1` if it is not in the map.
+*)
 function TFileMap.IndexOf(key: Integer): Integer;
 var
   slot: Integer;
@@ -108,6 +163,19 @@ begin
 end;
 
 
+(*
+## TFileMap.Value
+```pascal
+property TFileMap.Value(key: Integer; const val: TFile);
+property TFileMap.Value(key: Integer): TFile;
+```
+Reads or writes the file stored under `key`. Reading an id the map does not hold raises.
+
+Writing keeps `Values` sorted by id. Appending an id above every existing one - which is how
+reference tables arrive - only costs the append; inserting one in the middle has to shift the
+entries after it and rebuild the hash table, so prefer {ref}`TFileMap.Build` when filling a map
+from scratch.
+*)
 property TFileMap.Value(key: Integer; const val: TFile);
 var
   slot, idx, i, insertPos: Integer;
@@ -173,6 +241,13 @@ begin
 end;
 
 
+(*
+## TFileMap.Clear
+```pascal
+procedure TFileMap.Clear();
+```
+Drops every entry and the hash table with them, leaving the map as if it had never been used.
+*)
 procedure TFileMap.Clear();
 begin
   SetLength(Self.Keys, 0);

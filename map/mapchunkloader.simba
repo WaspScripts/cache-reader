@@ -1,3 +1,22 @@
+(*
+# Map Chunk Loader
+Renders regions of the world straight from the cache: minimap images, terrain height maps and
+collision maps.
+
+A region is 64 by 64 tiles drawn at `SCALE` pixels each. Rendering one means blending its ground
+colours - which reaches into the neighbouring regions, so those are loaded too - drawing the
+walls, doors and map scene symbols on top, and then compositing the planes each tile is visible
+on. Finished planes and tile classifications are cached per region, so panning back over ground
+already drawn is cheap.
+
+Example:
+```pascal
+CacheReader := TCacheReader.Create();
+CacheReader.Indices[ECacheIndex.MAPS].Cache();
+chunkLoader.MapData.Load();
+chunkLoader.GetChunksImage([48, 48, 52, 52], 0).Show();
+```
+*)
 {$include_once ./loader.simba}
 {$include_once ../utils/color.simba}
 {$include_once ../region/regionloader.simba}
@@ -36,6 +55,16 @@ type
     ];
   end;
 
+(*
+## MapChunkLoader.EnsurePlaneCache
+```pascal
+procedure TMapChunkLoader.EnsurePlaneCache(regionIndex: Integer);
+```
+Makes room in the render caches for a region that has just been loaded.
+
+Nothing is rendered here - the slots start empty and are filled the first time each plane of
+that region is asked for. Regions are never evicted, so a chunk is only ever built once.
+*)
 procedure TMapChunkLoader.EnsurePlaneCache(regionIndex: Integer);
 var
   i: Integer;
@@ -54,6 +83,16 @@ begin
   end;
 end;
 
+(*
+## MapChunkLoader.ConvertLocal
+```pascal
+function TMapChunkLoader.ConvertLocal(d: Integer): Integer; static;
+```
+Wraps a coordinate that may have run off the edge of a region back into `0` to `63`.
+
+Blending reads a few tiles past the region it is drawing, into whichever neighbour is there, and
+this is what turns the out of range coordinate into an index into that neighbour.
+*)
 function TMapChunkLoader.ConvertLocal(d: Integer): Integer; static;
 begin
   if d >= 0 then
@@ -81,6 +120,18 @@ begin
 end;
 
 
+(*
+## MapChunkLoader.BlitMapDecoration
+```pascal
+procedure TMapChunkLoader.BlitMapDecoration(var pixels: TIntegerMatrix; x, y: Integer; constref obj: TObjectDefinition);
+```
+Draws an object's map scene sprite - the staircase, altar or furnace symbol the minimap uses in
+place of the object itself.
+
+The sprite is centred on the object's footprint and clipped to the chunk. Sprites are stored
+RGB while the buffer is BGR, so the channels are swapped as they are copied, and a pixel that is
+black with no alpha is transparent rather than drawn.
+*)
 procedure TMapChunkLoader.BlitMapDecoration(var pixels: TIntegerMatrix; x, y: Integer; constref obj: TObjectDefinition);
 var
   sprite: TSpriteDefinition;
@@ -121,6 +172,19 @@ begin
 end;
 
 
+(*
+## MapChunkLoader.DrawObjectAtTile
+```pascal
+procedure TMapChunkLoader.DrawObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
+```
+Draws one object onto a minimap plane, if it is the kind of object the minimap shows at all -
+walls, doors and the objects that carry a map scene symbol.
+
+Walls are drawn as a line along whichever tile edge their orientation points at, corner walls
+along the two edges they occupy, corner posts as a single pixel, and diagonal walls across the
+tile. `y` is flipped on the way in because the map is drawn with north at the top while the
+world counts y upwards.
+*)
 procedure TMapChunkLoader.DrawObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
   i, color, scale: Integer;
@@ -219,6 +283,13 @@ begin
   end;
 end;
 
+(*
+## MapChunkLoader.DrawObjectsOnPlane
+```pascal
+procedure TMapChunkLoader.DrawObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
+```
+Draws every object of a region that sits on plane `z`.
+*)
 procedure TMapChunkLoader.DrawObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
 var
   loc: TWorldLocation;
@@ -232,6 +303,18 @@ begin
 end;
 
 
+(*
+## MapChunkLoader.DrawMapIcons
+```pascal
+procedure TMapChunkLoader.DrawMapIcons(img: TImage; constref region: TRegion; z, offsetX, offsetY: Integer);
+```
+Draws the area icons of a region on top of an already rendered map, offset by `offsetX, offsetY`
+within `img`.
+
+Icons go on last, and onto the whole image rather than a single chunk, so that one sitting on a
+chunk boundary is not cut in half - which is why {ref}`TMapChunkLoader.GetChunksImage` renders
+its chunks with icons turned off and then comes back for them.
+*)
 procedure TMapChunkLoader.DrawMapIcons(img: TImage; constref region: TRegion; z, offsetX, offsetY: Integer);
 var
   x, y, isBridge, tileZ, i,
@@ -282,6 +365,27 @@ begin
 end;
 
 
+(*
+## MapChunkLoader.BuildRegionPlane
+```pascal
+function TMapChunkLoader.BuildRegionPlane(constref region: TRegion; z: Integer): TIntegerMatrix;
+```
+Renders one plane of one region into a pixel matrix: ground colours first, then the objects the
+minimap draws on top of them.
+
+Underlay colours are blended over a `BLEND` tile radius so that terrain types fade into each
+other instead of meeting at a hard edge. That blend is a running sum: rather than re-adding a
+whole neighbourhood per tile, each step adds the row entering the window and subtracts the one
+leaving it. Where the window runs past the edge of the region it continues into the neighbouring
+one, which is why {ref}`TRegionLoader.LoadRegionAndNeighbors` loads four neighbours as well.
+
+Overlays are drawn over the result in one of 13 shapes at one of 4 rotations - a full tile, a
+half, a corner, and so on - which is how the map gets diagonal shorelines and path edges out of
+square tiles.
+
+The result is cached by {ref}`TMapChunkLoader.GetChunkImage`, so this only runs once per region
+and plane.
+*)
 function TMapChunkLoader.BuildRegionPlane(constref region: TRegion; z: Integer): TIntegerMatrix;
 const
   DIRS: TIntegerArray = [1, -1];
@@ -660,6 +764,14 @@ end;
 type
   THeightMap = type TIntegerMatrix;
 
+(*
+## HeightMap.ToImage
+```pascal
+function THeightMap.ToImage(): TImage;
+```
+The height map as a greyscale image, black at ground level and white at the highest terrain the
+game uses.
+*)
 function THeightMap.ToImage(): TImage;
 var
   w, h, x, y: Integer;
@@ -676,6 +788,16 @@ begin
       Result.Pixel[x, y] := TColorUtils.Height2Color(Self[x, y]);
 end;
 
+(*
+## MapChunkLoader.GetChunkHeightMap
+```pascal
+function TMapChunkLoader.GetChunkHeightMap(regionX, regionY, z: Integer): THeightMap;
+```
+The terrain height of every tile of one region on plane `z`, one entry per tile rather than per
+pixel.
+
+A bridge tile reports the height of the surface walked on rather than the one underneath it.
+*)
 function TMapChunkLoader.GetChunkHeightMap(regionX, regionY, z: Integer): THeightMap;
 var
   i, x, y, setting: Integer;
@@ -707,6 +829,22 @@ begin
     end;
 end;
 
+(*
+## MapChunkLoader.GetChunksImage
+```pascal
+function TMapChunkLoader.GetChunksImage(bounds: TBox; z: Integer): TImage;
+```
+Renders a rectangle of regions into one image, in region coordinates.
+
+The chunks are drawn without their icons and the icons are added afterwards over the finished
+image, so an icon straddling a chunk boundary stays whole.
+
+Example:
+```pascal
+img := chunkLoader.GetChunksImage([48, 48, 52, 52], 0);
+img.Show();
+```
+*)
 function TMapChunkLoader.GetChunksImage(bounds: TBox; z: Integer): TImage;
 var
   x, y, drawX, drawY, i: Integer;
@@ -740,6 +878,14 @@ begin
     Self.DrawMapIcons(Result, Self.RegionLoader.Regions[idx[i]], z, offX[i], offY[i]);
 end;
 
+(*
+## MapChunkLoader.GetChunksHeightMap
+```pascal
+function TMapChunkLoader.GetChunksHeightMap(bounds: TBox; z: Integer): THeightMap;
+```
+{ref}`TMapChunkLoader.GetChunkHeightMap` across a rectangle of regions, stitched into one map
+laid out the way the image is - north at the top.
+*)
 function TMapChunkLoader.GetChunksHeightMap(bounds: TBox; z: Integer): THeightMap;
 var
   cx, cy, x, y, drawX, drawY: Integer;
@@ -771,6 +917,14 @@ end;
 type
   TCollisionMap = type TIntegerMatrix;
 
+(*
+## CollisionMap.ToImage
+```pascal
+function TCollisionMap.ToImage(): TImage;
+```
+The collision map as an image: white where a tile can be walked on, black where it is blocked,
+grey where an object stands on it.
+*)
 function TCollisionMap.ToImage(): TImage;
 var
   w, h, x, y: Integer;
@@ -787,6 +941,18 @@ begin
       Result.Pixel[x, y] := TColorUtils.Collision2Color(Self[x, y]);
 end;
 
+(*
+## MapChunkLoader.HasDoorOps
+```pascal
+function TMapChunkLoader.HasDoorOps(constref obj: TObjectDefinition): Boolean;
+```
+Whether this object is a door that can actually be opened, which decides which tile its
+collision belongs to - a closed door blocks the tile it opens into rather than the one it stands
+on.
+
+An object qualifies if it is wall shaped and offers a `Close` operation. Curtains are excluded
+by name: they have the operations of a door but do not block anything.
+*)
 function TMapChunkLoader.HasDoorOps(constref obj: TObjectDefinition): Boolean;
 var
   i: Integer;
@@ -857,6 +1023,18 @@ begin
   TMapChunkLoader.DrawCollisionEdge(pixels, drawX, drawY, (orientation + 1) and 3, color);
 end;
 
+(*
+## MapChunkLoader.DrawCollisionObjectAtTile
+```pascal
+procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
+```
+Marks the tiles one object blocks on a collision map.
+
+Walls and corners block the edge they sit on - or the next edge round, if
+{ref}`TMapChunkLoader.HasDoorOps` says the object is an openable door. Everything larger blocks
+its whole footprint, rotated with the object, and does not paint over a wall that was already
+marked there.
+*)
 procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
   i, color, drawX, drawY, xSize, ySize, sX, sY: Integer;
@@ -977,6 +1155,16 @@ begin
   end;
 end;
 
+(*
+## MapChunkLoader.DrawCollisionObjectsOnPlane
+```pascal
+procedure TMapChunkLoader.DrawCollisionObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
+```
+Marks every object of a region that blocks movement on plane `z`.
+
+On the ground plane a bridge tile takes its objects from plane 1, since that is the surface
+being walked on, and tiles the plane says are not rendered are skipped.
+*)
 procedure TMapChunkLoader.DrawCollisionObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
 var
   loc: TWorldLocation;
@@ -1008,6 +1196,17 @@ begin
   end;
 end;
 
+(*
+## MapChunkLoader.GetChunkCollisionMap
+```pascal
+function TMapChunkLoader.GetChunkCollisionMap(regionX, regionY, z: Integer): TCollisionMap;
+```
+Which tiles of one region are blocked on plane `z`, one entry per tile: `1` for blocked terrain
+and `0` for walkable.
+
+This is the terrain flag only - objects are not included. Use
+{ref}`TMapChunkLoader.GetChunkCollisionImage` for a picture that has them.
+*)
 function TMapChunkLoader.GetChunkCollisionMap(regionX, regionY, z: Integer): TCollisionMap;
 var
   i, x, y: Integer;
@@ -1040,6 +1239,14 @@ begin
     end;
 end;
 
+(*
+## MapChunkLoader.GetChunkCollisionImage
+```pascal
+function TMapChunkLoader.GetChunkCollisionImage(regionX, regionY, z: Integer): TImage;
+```
+One region's collision drawn at the same scale as its minimap image, with blocked terrain, walls
+and doors, and the footprints of the objects standing on it.
+*)
 function TMapChunkLoader.GetChunkCollisionImage(regionX, regionY, z: Integer): TImage;
 var
   pixels: TIntegerMatrix;
@@ -1100,6 +1307,14 @@ begin
   Result.FromMatrix(pixels);
 end;
 
+(*
+## MapChunkLoader.GetChunksCollisionMap
+```pascal
+function TMapChunkLoader.GetChunksCollisionMap(bounds: TBox; z: Integer): TCollisionMap;
+```
+{ref}`TMapChunkLoader.GetChunkCollisionMap` across a rectangle of regions, stitched into one map
+indexed `[y, x]`.
+*)
 function TMapChunkLoader.GetChunksCollisionMap(bounds: TBox; z: Integer): TCollisionMap;
 var
   cx, cy, x, y, drawX, drawY: Integer;
@@ -1127,6 +1342,14 @@ begin
     end;
 end;
 
+(*
+## MapChunkLoader.GetChunksCollisionImage
+```pascal
+function TMapChunkLoader.GetChunksCollisionImage(bounds: TBox; z: Integer): TImage;
+```
+{ref}`TMapChunkLoader.GetChunkCollisionImage` across a rectangle of regions, stitched into one
+image.
+*)
 function TMapChunkLoader.GetChunksCollisionImage(bounds: TBox; z: Integer): TImage;
 var
   x, y, drawX, drawY: Integer;

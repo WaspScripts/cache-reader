@@ -18,6 +18,13 @@ type
     Width, Height, OffsetX, OffsetY: Integer;
   end;
 
+(*
+## SpritePixels.Create
+```pascal
+function TSpritePixels.Create(width, height: Integer): TSpritePixels; static;
+```
+An empty, fully transparent pixel buffer.
+*)
 function TSpritePixels.Create(width, height: Integer): TSpritePixels; static;
 begin
   Result.Width := width;
@@ -25,6 +32,17 @@ begin
   SetLength(Result.Pixels, width * height);
 end;
 
+(*
+## SpritePixels.DrawBorder
+```pascal
+procedure TSpritePixels.DrawBorder(color: Integer);
+```
+Outlines the drawn pixels, colouring every transparent pixel that touches one of them on any of
+its four sides.
+
+It builds a second buffer rather than writing in place, so that the outline it is adding does
+not itself count as a neighbour and grow outwards.
+*)
 procedure TSpritePixels.DrawBorder(color: Integer);
 var
   x, y, i: Integer;
@@ -57,6 +75,16 @@ begin
   Self.Pixels := newPixels;
 end;
 
+(*
+## SpritePixels.DrawShadow
+```pascal
+procedure TSpritePixels.DrawShadow(color: Integer);
+```
+Casts a one pixel shadow down and to the right of the drawn pixels.
+
+This one does work in place, walking from the bottom right corner backwards so that a pixel it
+writes is never read again as a source.
+*)
 procedure TSpritePixels.DrawShadow(color: Integer);
 var
   x, y, rowOffset: Integer;
@@ -77,6 +105,14 @@ begin
   end;
 end;
 
+(*
+## SpritePixels.DrawAtOn
+```pascal
+procedure TSpritePixels.DrawAtOn(var graphics: TGraphics3D; x, y: Integer);
+```
+Copies this buffer onto a rasterizer's buffer at `x, y`, clipped to its draw region and skipping
+transparent pixels.
+*)
 procedure TSpritePixels.DrawAtOn(var graphics: TGraphics3D; x, y: Integer);
 var
   pixelIdx, deltaIndex,
@@ -137,6 +173,17 @@ begin
   end;
 end;
 
+(*
+## SpritePixels.ToImage
+```pascal
+function TSpritePixels.ToImage(): TImage;
+```
+The buffer as an image with proper transparency.
+
+The rasterizer leaves the alpha byte at zero, so every pixel it touched has to be made opaque
+and every pixel it did not stays transparent - which is exactly how the original client turns
+its buffers into images.
+*)
 function TSpritePixels.ToImage(): TImage;
 var
   i: Integer;

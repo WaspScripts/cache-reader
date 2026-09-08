@@ -1,6 +1,10 @@
 (*
-## Archive Sector
-Types and methods to handle archive sectors.
+# Archive Sector
+An archive as it is stored: a chain of fixed size sectors scattered through the data file, still
+compressed.
+
+{ref}`TCacheIndex.ReadArchiveSector` walks that chain and hands back the bytes;
+{ref}`TArchiveSector.Decompress` turns them into the archive's contents.
 *)
 {$include_once ../../utils/helpers.simba}
 
@@ -23,6 +27,16 @@ type
     const WHIRLPOOL_SIZE: Integer = 64;
   end;
 
+(*
+## ArchiveSector.Create
+```pascal
+function TArchiveSector.Create(position, size: Integer; big: Boolean): TArchiveSector; static;
+```
+An empty sector chain of `size` bytes starting at `position` in the data file.
+
+`big` marks an archive whose id needs 4 bytes rather than 2, which makes its sector headers two
+bytes longer and leaves that much less room for data in each one.
+*)
 function TArchiveSector.Create(position, size: Integer; big: Boolean): TArchiveSector; static;
 begin
   Result.Position := position;
@@ -56,6 +70,11 @@ begin
     Exit(Copy(Self.Data, offset, compressedLen));
 
   decompressedLen := Read32Bits(Self.Data, offset);
+
+  //the payload is handed to the decompressor by pointer, so a length that runs off the end of a
+  //truncated sector has to be clamped here - Copy() above would have clamped it for us
+  if compressedLen > Length(Self.Data) - offset then
+    compressedLen := Length(Self.Data) - offset;
 
   case compression of
     ECacheCompression.BZIP2:

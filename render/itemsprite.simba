@@ -1,3 +1,16 @@
+(*
+# Item Sprite
+Renders an item's inventory icon from its 3D model, the way the game does: light the model from
+the fixed inventory light, project it through the item's own camera angles onto a 36 by 32
+canvas, then outline it and drop a shadow behind it.
+
+Example:
+```pascal
+sprite := TItemSprite.Create(CacheReader, itemDef);
+if sprite.Valid then
+  sprite.ToImage().Show();
+```
+*)
 {$include_once ../utils/color.simba}
 {$include_once ./circularangle.simba}
 {$include_once ./graphics3d.simba}
@@ -23,6 +36,16 @@ type
     Valid: Boolean;
   end;
 
+(*
+## Bound2To126
+```pascal
+function Bound2To126(val: Integer): Integer; static;
+```
+Clamps a luminance to the range the palette actually covers.
+
+A palette index packs luminance into 7 bits, but `0`, `1` and `127` are not usable levels, so
+lighting is kept inside `2` to `126`.
+*)
 function Bound2To126(val: Integer): Integer; static;
 begin
   if val < 2 then Exit(2);

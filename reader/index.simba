@@ -1,6 +1,11 @@
 (*
 # Cache Index
-Cache index docs
+An index is one category of cache content - models, sprites, maps, and so on - and is stored as
+a `main_file_cache.idxN` file that says where each of its archives lives inside the single
+`main_file_cache.dat2` data file.
+
+{ref}`ECacheIndex` names the ones worth knowing about. {ref}`TCacheIndex` opens one and reads
+its reference table; {ref}`TCacheIndex.Cache` unpacks its archives.
 *)
 {$include_once ./reference_table.simba}
 
@@ -28,6 +33,18 @@ type
     Indices: array of TCacheIndex;
   end;
 
+(*
+## CacheIndex.Create
+```pascal
+function TCacheIndex.Create(id: Integer; constref reader: TCacheReader): TCacheIndex; static;
+function TCacheIndex.Create(id: ECacheIndex; constref reader: TCacheReader): TCacheIndex; static; overload;
+```
+Opens index `id` of `reader`'s cache by reading its `.idxN` file, and raises if that file is
+missing.
+
+This only opens the index. Its reference table is read by {ref}`TCacheIndex.Load`, which
+{ref}`TCacheReader.Load` calls straight afterwards.
+*)
 function TCacheIndex.Create(id: Integer; constref reader: TCacheReader): TCacheIndex; static;
 var
   path: String;
@@ -49,6 +66,21 @@ begin
 end;
 
 
+(*
+## CacheIndex.ReadArchiveSector
+```pascal
+function TCacheIndex.ReadArchiveSector(id, owner: Integer; constref data: TByteArray): TArchiveSector;
+```
+Reassembles archive `id` out of the data file and returns it still compressed - call
+{ref}`TArchiveSector.Decompress` on the result to get at its contents.
+
+`data` is the index table to look the archive up in, and `owner` is the index number the sectors
+must be tagged with. An archive is not stored in one piece: the index gives its total size and
+the position of its first sector, and every sector's header points at the next one. Each header
+also repeats the archive id, the sector's position in the chain and the owning index, all of
+which are checked as the chain is walked - anything that does not line up means the cache is
+corrupt or the archive does not exist, and an empty sector is returned.
+*)
 function TCacheIndex.ReadArchiveSector(id, owner: Integer; constref data: TByteArray): TArchiveSector;
 var
   sector: TArchiveSector;
@@ -129,6 +161,17 @@ begin
 end;
 
 
+(*
+## CacheIndex.Load
+```pascal
+procedure TCacheIndex.Load();
+```
+Reads this index's entry out of the master index, which is where its reference table lives, and
+records the CRC and whirlpool digest of that entry.
+
+The reference table is what says which archives the index holds and what is in them, so this
+has to run before the index can be used for anything.
+*)
 procedure TCacheIndex.Load();
 var
   sector: TArchiveSector;
@@ -158,6 +201,24 @@ begin
   Self.CompressionType := sector.CompressionType;
 end;
 
+(*
+## CacheIndex.Cache
+```pascal
+procedure TCacheIndex.Cache();
+```
+Decompresses every archive in this index and splits it into its files, leaving the contents in
+`ReferenceTable.Archives`.
+
+This is the expensive step, and how expensive depends on the index - decompressing all of
+`ECacheIndex.MAPS` unpacks well over a hundred megabytes. It is a no-op the second time, so
+calling it before reaching for an archive's data is safe.
+
+Example:
+```pascal
+CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+```
+*)
 procedure TCacheIndex.Cache();
 var
   archives: TArchiveArray;

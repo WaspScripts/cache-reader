@@ -1,7 +1,7 @@
 (*
 # CircularAngle
-Sine and cosine lookup tables used by the RuneScape client for all
-angular math. Angles are encoded as integers in the range [0, 2047]
+Sine and cosine lookup tables used for all angular math.
+Angles are encoded as integers in the range [0, 2047]
 where 2048 units = 2π radians. Each table entry is the trig value
 multiplied by 65536 and stored as an integer (fixed-point 16.16).
 *)
@@ -10,6 +10,13 @@ type
     SINE, COSINE: array [0..2047] of Integer;
   end;
 
+(*
+## CircularAngle.Setup
+```pascal
+procedure TCircularAngle.Setup();
+```
+Fills the sine and cosine tables. Called once at startup by `cache.simba`.
+*)
 procedure TCircularAngle.Setup();
 var
   i: Integer;

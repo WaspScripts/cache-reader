@@ -1,3 +1,8 @@
+(*
+# File
+A single file inside an archive. Its `Data` stays empty until the archive it belongs to is
+decompressed by {ref}`TCacheIndex.Cache`.
+*)
 type
   TFile = record
     ID, HashName: Integer;
@@ -6,6 +11,14 @@ type
 
   TFileArray = array of TFile;
 
+(*
+## File.Create
+```pascal
+function TFile.Create(id: Integer): TFile; static;
+```
+An empty file record with the given id. Its `Data` is filled in when the archive it belongs to
+is decompressed by {ref}`TCacheIndex.Cache`.
+*)
 function TFile.Create(id: Integer): TFile; static;
 begin
   Result.ID := id;

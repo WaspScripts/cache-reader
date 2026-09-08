@@ -1,3 +1,11 @@
+(*
+# Model Definition
+The 3D geometry of a model: its vertices, the triangles between them, and the colour, texture
+and transparency of each of those.
+
+The cache holds three generations of the format, which {ref}`TModelDefinition.Create` tells
+apart and decodes.
+*)
 {$include_once ../utils/helpers.simba}
 
 type
@@ -29,6 +37,17 @@ type
   end;
 
 
+(*
+## ModelDefinition.DetectFormat
+```pascal
+function TModelDefinition.DetectFormat(const data: TByteArray): Integer; static;
+```
+Which of the model formats `data` is in: `0` for the original one, or `2` or `3` for the two
+that came after it.
+
+The newer formats mark themselves with a two byte tag at the very end of the buffer. The
+original one has no tag, so anything without a recognised one is assumed to be it.
+*)
 function TModelDefinition.DetectFormat(const data: TByteArray): Integer; static;
 var
   i: Integer;
@@ -45,6 +64,19 @@ begin
   end;
 end;
 
+(*
+## ModelDefinition.DecodeOldFormat
+```pascal
+function TModelDefinition.DecodeOldFormat(id: Integer; const data: TByteArray): TModelDefinition; static;
+```
+Decodes a model in the original format. Use {ref}`TModelDefinition.Create` rather than calling
+this directly.
+
+A model is not stored as one stream but as several parallel ones, and the header at the end of
+the buffer gives the length of each so that the cursors into them can be positioned before
+anything is read. Vertices are deltas from the vertex before, and face indices are deltas from
+the face before, in one of four ways that the compression type per face selects between.
+*)
 function TModelDefinition.DecodeOldFormat(id: Integer; const data: TByteArray): TModelDefinition; static;
 var
   c1, c2, c3, c4, c5: Integer; //data cursors
@@ -314,6 +346,17 @@ begin
     SetLength(Result.FaceRenderTypes, 0);
 end;
 
+(*
+## ModelDefinition.DecodeType2
+```pascal
+function TModelDefinition.DecodeType2(id: Integer; const data: TByteArray): TModelDefinition; static;
+```
+Decodes a model in format 2, which adds vertex skinning groups. Use
+{ref}`TModelDefinition.Create` rather than calling this directly.
+
+It is laid out like the original format - see {ref}`TModelDefinition.DecodeOldFormat` - with the
+flags in the trailing header rearranged and the animation groups added.
+*)
 function TModelDefinition.DecodeType2(id: Integer; const data: TByteArray): TModelDefinition; static;
 var
   c1, c2, c3, c4, c5: Integer; //data cursors
@@ -621,6 +664,17 @@ begin
     SetLength(Result.FaceRenderTypes, 0);
 end;
 
+(*
+## ModelDefinition.DecodeType3
+```pascal
+function TModelDefinition.DecodeType3(id: Integer; const data: TByteArray): TModelDefinition; static;
+```
+Decodes a model in format 3, the current one. Use {ref}`TModelDefinition.Create` rather than
+calling this directly.
+
+The layout follows {ref}`TModelDefinition.DecodeType2`, with textures given their own stream and
+their mapping described per texture rather than per face.
+*)
 function TModelDefinition.DecodeType3(id: Integer; const data: TByteArray): TModelDefinition; static;
 var
   c1, c2, c3, c4, c5, c6, c7: Integer; // 7 data cursors
@@ -945,6 +999,16 @@ begin
     SetLength(Result.FaceRenderTypes, 0);
 end;
 
+(*
+## ModelDefinition.Create
+```pascal
+function TModelDefinition.Create(id: Integer; const data: TByteArray): TModelDefinition; static;
+```
+Decodes a model's geometry: its vertices, the triangles between them, and the colour, texture
+and transparency of each of those.
+
+Which of the three formats to decode is worked out by {ref}`TModelDefinition.DetectFormat`.
+*)
 function TModelDefinition.Create(id: Integer; const data: TByteArray): TModelDefinition; static;
 begin
   case TModelDefinition.DetectFormat(data) of
@@ -955,6 +1019,16 @@ begin
 end;
 
 
+(*
+## ModelDefinition.Recolor
+```pascal
+procedure TModelDefinition.Recolor(findColor, replaceColor: Integer);
+```
+Repaints every face currently coloured `findColor`.
+
+This is how one model serves many items: the cache stores the recolours an item wants alongside
+it rather than storing a separate model per colour.
+*)
 procedure TModelDefinition.Recolor(findColor, replaceColor: Integer);
 var
   i: Integer;
@@ -964,6 +1038,13 @@ begin
       Self.FaceColors[i] := replaceColor;
 end;
 
+(*
+## ModelDefinition.Retexture
+```pascal
+procedure TModelDefinition.Retexture(findTex, replaceTex: Integer);
+```
+{ref}`TModelDefinition.Recolor` for textures rather than flat colours.
+*)
 procedure TModelDefinition.Retexture(findTex, replaceTex: Integer);
 var
   i: Integer;
@@ -975,6 +1056,13 @@ begin
       Self.FaceTextures[i] := replaceTex;
 end;
 
+(*
+## ModelDefinition.Resize
+```pascal
+procedure TModelDefinition.Resize(x, y, z: Integer);
+```
+Scales the model along each axis, where `128` is its original size.
+*)
 procedure TModelDefinition.Resize(x, y, z: Integer);
 var
   i: Integer;
