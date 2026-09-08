@@ -21,8 +21,6 @@ end;
 function TCacheReader.Create(path: String): TCacheReader; static;
 begin
   Result.Path := path + 'jagexcache' + PATH_SEP + 'oldschool' + PATH_SEP + 'LIVE' + PATH_SEP;
-  Result.MainData := FileReadBytes(Result.Path + 'main_file_cache.dat2');
-  Result.Index255Data := FileReadBytes(Result.Path + 'main_file_cache.idx255');
   Result.Load();
 end;
 

@@ -14,7 +14,6 @@ type
 
     CompressionType: ECacheCompression;
 
-    GetID: function (constref data: TByteArray; var offset: Integer): Integer;
     const INDEX_SIZE: Integer = 6;
     const HEADER_SIZE_SMALL: Integer = 8;
     const HEADER_SIZE_BIG: Integer = 10;
@@ -30,33 +29,7 @@ begin
   Result.Size := size;
   Result.Big := big;
   SetLength(Result.Data, size);
-
-  if big then
-    Result.GetID := @Read32Bits
-  else
-    Result.GetID := @Read16Bits;
 end;
-
-(*
-## ArchiveSector.Read
-```pascal
-procedure TArchiveSector.Read(constref data: TByteArray; var offset: Integer);
-```
-Reads information about the archive sector.
-`offset` should be "pointing" to the start of the sector information and will be modified to hold the
-offset of what comes next.
-
-This is not really used for anything as `CacheIndex.ReadArchiveSector` already does this
-in a slightly more efficient way but you may use it if you need and know what you are doing.
-*)
-procedure TArchiveSector.Read(constref data: TByteArray; var offset: Integer);
-begin
-  Self.ID := Self.GetID(data, offset);
-  Self.Chunk := Read16Bits(data, offset);
-  Self.NextPosition := Read24Bits(data, offset);
-  Self.Index := Read8Bits(data, offset);
-end;
-
 
 (*
 ## ArchiveSector.Decompress
@@ -83,16 +56,21 @@ begin
     Exit(Copy(Self.Data, offset, compressedLen));
 
   decompressedLen := Read32Bits(Self.Data, offset);
-  compressed := Copy(Self.Data, offset, compressedLen);
 
   case compression of
     ECacheCompression.BZIP2:
     begin
-      compressed := [66,90,104,49] + compressed; //Add 'BZh1' bytes, the bzip2 header
-      DecompressData(ECompressAlgo.BZIP2, @compressed[0], Length(compressed), output, size);
+      //bzip2 needs its 'BZh1' header prepended, the cache stores the payload without it
+      SetLength(compressed, compressedLen + 4);
+      compressed[0] := 66;
+      compressed[1] := 90;
+      compressed[2] := 104;
+      compressed[3] := 49;
+      Move(Self.Data[offset], compressed[4], compressedLen);
+      DecompressData(ECompressAlgo.BZIP2, @compressed[0], compressedLen + 4, output, size);
     end;
-    ECacheCompression.GZIP:  DecompressData(ECompressAlgo.GZ, @compressed[0], Length(compressed), output, size);
-    ECacheCompression.LZMA:  DecompressData(ECompressAlgo.LZMA, @compressed[0], Length(compressed), output, size);
+    ECacheCompression.GZIP:  DecompressData(ECompressAlgo.GZ, @Self.Data[offset], compressedLen, output, size);
+    ECacheCompression.LZMA:  DecompressData(ECompressAlgo.LZMA, @Self.Data[offset], compressedLen, output, size);
   end;
 
   if decompressedLen <> size then

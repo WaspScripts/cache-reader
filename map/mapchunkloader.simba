@@ -8,6 +8,7 @@ type
     MapData: TMapDataLoader;
 
     RegionPlaneCache: array of array of TIntegerMatrix;
+    RegionTileCodes: array of array of TIntegerArray;
 
     LastIndex: Integer;
 
@@ -44,9 +45,11 @@ begin
 
   i := Length(Self.RegionPlaneCache);
   SetLength(Self.RegionPlaneCache, regionIndex + 1);
+  SetLength(Self.RegionTileCodes, regionIndex + 1);
   while i <= regionIndex do
   begin
     SetLength(Self.RegionPlaneCache[i], TMapChunkLoader.REGION_Z);
+    SetLength(Self.RegionTileCodes[i], TMapChunkLoader.REGION_Z);
     Inc(i);
   end;
 end;
@@ -59,13 +62,18 @@ begin
 end;
 
 
+(*
+## MapChunkLoader pixel buffers
+Every `pixels` matrix built here is row-major, indexed `[y, x]`, matching how Simba indexes
+a {ref}`TIntegerMatrix` and how `TImage.FromMatrix` reads one. `x` and `y` below are tile
+coordinates, so the square each tile occupies is `SCALE` pixels wide and tall.
+*)
 procedure TMapChunkLoader.DrawMapSquare(var pixels: TIntegerMatrix; x, y, color: Integer); static;
 var
   b: TBox;
 begin
-  //swapped x with y on purpose. Simba's TIntegerMatrix are indexed Y by X
-  b.X1 := y * TMapChunkLoader.SCALE;
-  b.Y1 := x * TMapChunkLoader.SCALE;
+  b.X1 := x * TMapChunkLoader.SCALE;
+  b.Y1 := y * TMapChunkLoader.SCALE;
   b.X2 := b.X1 + TMapChunkLoader.SCALE - 1;
   b.Y2 := b.Y1 + TMapChunkLoader.SCALE - 1;
 
@@ -107,7 +115,7 @@ begin
 
       // RGB => BGR
       color := ((color and $0000FF) shl 16) or (color and $00FF00) or ((color shr 16) and $0000FF);
-      pixels[drawX + x, drawY + y] := color or $FF000000;
+      pixels[drawY + y, drawX + x] := color or $FF000000;
     end;
   end;
 end;
@@ -150,10 +158,10 @@ begin
   if (loc.LocType = 0) then
   begin
     case loc.Orientation of
-      0: for i := 0 to scale - 1 do pixels[x, y + i] := color;
-      1: for i := 0 to scale - 1 do pixels[x + i, y] := color;
-      2: for i := 0 to scale - 1 do pixels[x + scale - 1, y + i] := color;
-      3: for i := 0 to scale - 1 do pixels[x + i, y + scale - 1] := color;
+      0: for i := 0 to scale - 1 do pixels[y + i, x] := color;
+      1: for i := 0 to scale - 1 do pixels[y, x + i] := color;
+      2: for i := 0 to scale - 1 do pixels[y + i, x + scale - 1] := color;
+      3: for i := 0 to scale - 1 do pixels[y + scale - 1, x + i] := color;
     end;
     Exit;
   end;
@@ -164,23 +172,23 @@ begin
     case loc.Orientation of
       0: for i := 0 to scale - 1 do
          begin
-           pixels[x, y + i] := color;
-           pixels[x + i, y] := color;
+           pixels[y + i, x] := color;
+           pixels[y, x + i] := color;
          end;
       1: for i := 0 to scale - 1 do
          begin
-           pixels[x + i, y] := color;
-           pixels[x + scale - 1, y + i] := color;
+           pixels[y, x + i] := color;
+           pixels[y + i, x + scale - 1] := color;
          end;
       2: for i := 0 to scale - 1 do
          begin
-           pixels[x + scale - 1, y + i] := color;
-           pixels[x + i, y + scale - 1] := color;
+           pixels[y + i, x + scale - 1] := color;
+           pixels[y + scale - 1, x + i] := color;
          end;
       3: for i := 0 to scale - 1 do
          begin
-           pixels[x + i, y + scale - 1] := color;
-           pixels[x, y + i] := color;
+           pixels[y + scale - 1, x + i] := color;
+           pixels[y + i, x] := color;
          end;
     end;
     Exit;
@@ -189,10 +197,10 @@ begin
   if loc.LocType = 3 then
   begin
     case loc.Orientation of
-      0: pixels[x, y] := color;
-      1: pixels[x + scale - 1, y] := color;
-      2: pixels[x + scale - 1, y + scale - 1] := color;
-      3: pixels[x, y + scale - 1] := color;
+      0: pixels[y, x] := color;
+      1: pixels[y, x + scale - 1] := color;
+      2: pixels[y + scale - 1, x + scale - 1] := color;
+      3: pixels[y + scale - 1, x] := color;
     end;
     Exit;
   end;
@@ -202,12 +210,12 @@ begin
     if (loc.Orientation <> 0) and (loc.Orientation <> 2) then
     begin
       for i := 0 to scale - 1 do
-        pixels[x + i, y + i] := color;
+        pixels[y + i, x + i] := color;
       Exit;
     end;
 
     for i := 0 to scale - 1 do
-      pixels[x + i, y + (scale - 1 - i)] := color;
+      pixels[y + (scale - 1 - i), x + i] := color;
   end;
 end;
 
@@ -226,40 +234,42 @@ end;
 
 procedure TMapChunkLoader.DrawMapIcons(img: TImage; constref region: TRegion; z, offsetX, offsetY: Integer);
 var
-  x, y, isBridge, tileZ,
-  idx, drawX, drawY: Integer;
-  obj: TObjectDefinition;
+  x, y, isBridge, tileZ, i,
+  objIdx, areaIdx, drawX, drawY: Integer;
+  bridgePlane: TIntegerMatrix;
   sprite: TSpriteDefinition;
-  loc: TWorldLocation;
 begin
-  for loc in region.Locations do
-  begin
-    x := loc.X - region.BaseX;
-    y := loc.Y - region.BaseY;
+  bridgePlane := region.TileSettings[1];
 
-    if (region.TileSettings[1, x, y] and 2) <> 0 then
+  //Only a handful of the region's locations carry an icon, so the definitions are read field by
+  //field instead of being copied out - copying a whole TObjectDefinition per location dominates.
+  for i := 0 to High(region.Locations) do
+  begin
+    x := region.Locations[i].X - region.BaseX;
+    y := region.Locations[i].Y - region.BaseY;
+
+    if (bridgePlane[x, y] and 2) <> 0 then
       isBridge := 1
     else
       isBridge := 0;
 
     tileZ := z + isBridge;
 
-    if loc.Z <> tileZ then
+    if region.Locations[i].Z <> tileZ then
       Continue;
 
-    idx := Self.MapData.Objects.IndexOf(loc.ID);
-    if idx = -1 then
+    objIdx := Self.MapData.Objects.IndexOf(region.Locations[i].ID);
+    if objIdx = -1 then
       Continue;
 
-    obj := Self.MapData.Objects[idx];
-    if obj.MapAreaId < 0 then
+    if Self.MapData.Objects[objIdx].MapAreaId < 0 then
       Continue;
 
-    idx := Self.MapData.Areas.IndexOf(obj.MapAreaId);
-    if idx = -1 then
+    areaIdx := Self.MapData.Areas.IndexOf(Self.MapData.Objects[objIdx].MapAreaId);
+    if areaIdx = -1 then
       Continue;
 
-    sprite := Self.MapData.AreaIcons[idx];
+    sprite := Self.MapData.AreaIcons[areaIdx];
 
     if (sprite.Width <= 0) or (sprite.Height <= 0) then
       Continue;
@@ -283,7 +293,7 @@ var
 
   bounds, outterBounds: TBox;
   hues, sats, light, mul, num,
-  shapes, rotations: TIntegerArray;
+  shapes, rotations, row: TIntegerArray;
 begin
   SetLength(Result, TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
 
@@ -452,35 +462,112 @@ begin
 
       idx := 0;
       for i := 0 to TMapChunkLoader.SCALE - 1 do
+      begin
+        row := Result[drawY + i];
         for j := 0 to TMapChunkLoader.SCALE - 1 do
         begin
           if shapes[rotations[idx]] <> 0 then
-            Result[drawX + j, drawY + i] := overlayBGR
+            row[drawX + j] := overlayBGR
           else if underlayBGR <> 0 then
-            Result[drawX + j, drawY + i] := underlayBGR;
+            row[drawX + j] := underlayBGR;
           Inc(idx);
         end;
+      end;
     end;
   end;
 
   Self.DrawObjectsOnPlane(Result, region, z);
 end;
 
+(*
+## MapChunkLoader.CompositePlanes
+```pascal
+procedure TMapChunkLoader.CompositePlanes(var pixels: TIntegerMatrix; constref planes: array of TIntegerMatrix; constref tileCodes: TIntegerArray); static;
+```
+Flattens the planes a chunk uses into `pixels`, following the per-tile plan in `tileCodes`.
+
+It walks whole pixel rows and copies runs of tiles that share a plan in one go, because
+aliasing a row out of a matrix costs far more than the handful of pixel copies it saves.
+Within a run the topmost plane is written over untouched pixels and the ones below it only
+fill in whatever the topmost left clear.
+*)
+procedure TMapChunkLoader.CompositePlanes(var pixels: TIntegerMatrix; constref planes: array of TIntegerMatrix; constref tileCodes: TIntegerArray); static;
+var
+  drawY, tileRow, x, runEnd, code, n, k, px, drawX, runStop: Integer;
+  row, src: TIntegerArray;
+begin
+  for drawY := 0 to TMapChunkLoader.IMAGE_SIZE - 1 do
+  begin
+    row := pixels[drawY];
+    tileRow := (drawY div TMapChunkLoader.SCALE) * TMapChunkLoader.REGION_SIZE;
+
+    x := 0;
+    while x < TMapChunkLoader.REGION_SIZE do
+    begin
+      code := tileCodes[tileRow + x];
+
+      runEnd := x + 1;
+      while runEnd < TMapChunkLoader.REGION_SIZE do
+      begin
+        if tileCodes[tileRow + runEnd] <> code then
+          Break;
+        Inc(runEnd);
+      end;
+
+      n := code and $F;
+      if n > 0 then
+      begin
+        drawX   := x * TMapChunkLoader.SCALE;
+        runStop := runEnd * TMapChunkLoader.SCALE - 1;
+
+        for k := n - 1 downto 0 do
+        begin
+          src := planes[(code shr (4 + 4 * k)) and $F, drawY];
+
+          //begin/end is required here: Lape binds a trailing `else` to the `for`, not to the `if`
+          if k = n - 1 then
+          begin
+            for px := drawX to runStop do
+              row[px] := src[px];
+          end
+          else
+          begin
+            for px := drawX to runStop do
+              if row[px] = 0 then
+                row[px] := src[px];
+          end;
+        end;
+      end;
+
+      x := runEnd;
+    end;
+  end;
+end;
+
+
+(*
+## MapChunkLoader.GetChunkImage
+```pascal
 function TMapChunkLoader.GetChunkImage(regionX, regionY, z: Integer; drawIcons: Boolean = True): TImage;
-const
-  PIXEL_SIZE: Integer = TMapChunkLoader.SCALE - 1;
+```
+Renders one region as a `IMAGE_SIZE` by `IMAGE_SIZE` minimap image.
+
+Each tile picks up to 3 planes to composite, topmost first. Those are packed into a single
+integer per tile - the low nibble is how many planes the tile uses and each nibble above it
+holds one plane index - so classifying every tile costs one `TIntegerArray` rather than one
+array per plane slot.
+*)
+function TMapChunkLoader.GetChunkImage(regionX, regionY, z: Integer; drawIcons: Boolean = True): TImage;
 var
   needed: array [0..3] of Boolean;
-  tileZList, tileCount: TIntegerArray;
+  tileCodes: TIntegerArray;
   settings: array of TIntegerMatrix;
-  i, regionIdx, x, y, k, n, t, px, py, color,
-  invertedY, isBridge, tileZ: Integer;
+  bridgeRow, planeRow, aboveRow: TIntegerArray;
+  pixels: TIntegerMatrix;
+  i, n, regionIdx, x, y, code, invertedY, isBridge, tileZ: Integer;
   region: TRegion;
 begin
-  Result := new TImage(
-    TMapChunkLoader.REGION_SIZE * TMapChunkLoader.SCALE,
-    TMapChunkLoader.REGION_SIZE * TMapChunkLoader.SCALE
-  );
+  Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
 
   Self.LastIndex := -1;
 
@@ -493,86 +580,77 @@ begin
   if regionIdx = -1 then
     Exit;
 
-  region   := Self.RegionLoader.Regions[regionIdx];
-  settings := region.TileSettings;
+  region := Self.RegionLoader.Regions[regionIdx];
 
   Self.EnsurePlaneCache(regionIdx);
+  tileCodes := Self.RegionTileCodes[regionIdx, z];
 
-  SetLength(tileZList, TMapChunkLoader.REGION_SIZE * TMapChunkLoader.REGION_SIZE * 3);
-  SetLength(tileCount, TMapChunkLoader.REGION_SIZE * TMapChunkLoader.REGION_SIZE);
-
-  //Classify tiles
-  for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
+  if tileCodes.IsEmpty then
   begin
-    invertedY := TMapChunkLoader.REGION_SIZE - y - 1;
+    settings := region.TileSettings;
+    SetLength(tileCodes, TMapChunkLoader.REGION_SIZE * TMapChunkLoader.REGION_SIZE);
 
+    //Classify tiles
     for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
     begin
-      if (settings[1, x, invertedY] and 2) <> 0 then
-        isBridge := 1
-      else
-        isBridge := 0;
+      bridgeRow := settings[1, x];
+      planeRow  := settings[z, x];
+      if z + 1 < TMapChunkLoader.REGION_Z then
+        aboveRow := settings[z + 1, x];
 
-      tileZ := z + isBridge;
-      if tileZ >= TMapChunkLoader.REGION_Z then
-        Continue;
-
-      t := (y * TMapChunkLoader.REGION_SIZE + x) * 3;
-
-      n := 0;
-      if (settings[z, x, invertedY] and 24) = 0 then
+      for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
       begin
-        if (z = 0) and (isBridge = 1) then
+        invertedY := TMapChunkLoader.REGION_SIZE - y - 1;
+
+        if (bridgeRow[invertedY] and 2) <> 0 then
+          isBridge := 1
+        else
+          isBridge := 0;
+
+        tileZ := z + isBridge;
+        if tileZ >= TMapChunkLoader.REGION_Z then
+          Continue;
+
+        code := 0;
+        n := 0;
+
+        if (planeRow[invertedY] and 24) = 0 then
         begin
-          tileZList[t + n] := 0;
+          //a bridge tile keeps plane 0 underneath it, which stays nibble 0 of the code
+          if (z = 0) and (isBridge = 1) then
+          begin
+            needed[0] := True;
+            Inc(n);
+          end;
+
+          code := code or (tileZ shl (4 + 4 * n));
+          needed[tileZ] := True;
           Inc(n);
         end;
 
-        tileZList[t + n] := tileZ;
-        Inc(n);
-      end;
+        if tileZ < TMapChunkLoader.REGION_Z - 1 then
+          if (aboveRow[invertedY] and 8) <> 0 then
+          begin
+            code := code or ((tileZ + 1) shl (4 + 4 * n));
+            needed[tileZ + 1] := True;
+            Inc(n);
+          end;
 
-      if (tileZ < TMapChunkLoader.REGION_Z - 1) and
-         ((settings[z + 1, x, invertedY] and 8) <> 0) then
-      begin
-        tileZList[t + n] := tileZ + 1;
-        Inc(n);
+        tileCodes[y * TMapChunkLoader.REGION_SIZE + x] := code or n;
       end;
-
-      tileCount[y * TMapChunkLoader.REGION_SIZE + x] := n;
-      for k := 0 to n - 1 do
-        needed[tileZList[t + k]] := True;
     end;
+
+    //Build the planes for this chunk if not cached
+    for i := 0 to TMapChunkLoader.REGION_Z - 1 do
+      if needed[i] and Self.RegionPlaneCache[regionIdx, i].IsEmpty then
+        Self.RegionPlaneCache[regionIdx, i] := Self.BuildRegionPlane(region, i);
+
+    Self.RegionTileCodes[regionIdx, z] := tileCodes;
   end;
 
-  //Build the planes for this chunk if not cached
-  for i := 0 to TMapChunkLoader.REGION_Z - 1 do
-    if needed[i] and Self.RegionPlaneCache[regionIdx][i].IsEmpty then
-      Self.RegionPlaneCache[regionIdx][i] := Self.BuildRegionPlane(region, i);
-
-  for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
-    for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
-    begin
-      n := tileCount[y * TMapChunkLoader.REGION_SIZE + x];
-      if n = 0 then
-        Continue;
-
-      t := (y * TMapChunkLoader.REGION_SIZE + x) * 3;
-
-      for pX := x * TMapChunkLoader.SCALE to x * TMapChunkLoader.SCALE + PIXEL_SIZE do
-        for pY := y * TMapChunkLoader.SCALE to y * TMapChunkLoader.SCALE + PIXEL_SIZE do
-        begin
-          for k := n - 1 downto 0 do
-          begin
-            color := Self.RegionPlaneCache[regionIdx][tileZList[t + k]][pX, pY];
-            if color = 0 then
-              Continue;
-
-            Result.Pixel[pX, pY] := color;
-            Break;
-          end;
-        end;
-    end;
+  SetLength(pixels, TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
+  TMapChunkLoader.CompositePlanes(pixels, Self.RegionPlaneCache[regionIdx], tileCodes);
+  Result.FromMatrix(pixels);
 
   if drawIcons then
     Self.DrawMapIcons(Result, region, z, 0, 0);
@@ -726,6 +804,59 @@ begin
   Result := False;
 end;
 
+(*
+## MapChunkLoader.DrawCollisionEdge
+```pascal
+procedure TMapChunkLoader.DrawCollisionEdge(var pixels: TIntegerMatrix; drawX, drawY, edge, color: Integer); static;
+```
+Draws one edge of the tile whose top-left pixel is `drawX, drawY`.
+`edge` is `0` for the left edge, `1` for the top, `2` for the right and `3` for the bottom,
+which is also the order a wall's orientation uses.
+*)
+procedure TMapChunkLoader.DrawCollisionEdge(var pixels: TIntegerMatrix; drawX, drawY, edge, color: Integer); static;
+var
+  i: Integer;
+begin
+  case edge of
+    0: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawY + i, drawX] := color;
+    1: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawY, drawX + i] := color;
+    2: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawY + i, drawX + TMapChunkLoader.SCALE - 1] := color;
+    3: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawY + TMapChunkLoader.SCALE - 1, drawX + i] := color;
+  end;
+end;
+
+(*
+## MapChunkLoader.DrawCollisionWall
+```pascal
+procedure TMapChunkLoader.DrawCollisionWall(var pixels: TIntegerMatrix; drawX, drawY, orientation, color: Integer; isDoor: Boolean); static;
+```
+Draws a wall on the edge its `orientation` points at.
+
+A door blocks the tile it swings into rather than the one it stands on, so it is drawn one
+edge further round, and a south-facing one lands on the row below the tile entirely - which is
+skipped when that row falls outside the chunk.
+*)
+procedure TMapChunkLoader.DrawCollisionWall(var pixels: TIntegerMatrix; drawX, drawY, orientation, color: Integer; isDoor: Boolean); static;
+var
+  i: Integer;
+begin
+  if not isDoor then
+  begin
+    TMapChunkLoader.DrawCollisionEdge(pixels, drawX, drawY, orientation, color);
+    Exit;
+  end;
+
+  if orientation = 2 then
+  begin
+    if drawY + TMapChunkLoader.SCALE < TMapChunkLoader.IMAGE_SIZE then
+      for i := 0 to TMapChunkLoader.SCALE - 1 do
+        pixels[drawY + TMapChunkLoader.SCALE, drawX + i] := color;
+    Exit;
+  end;
+
+  TMapChunkLoader.DrawCollisionEdge(pixels, drawX, drawY, (orientation + 1) and 3, color);
+end;
+
 procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
   i, color, drawX, drawY, xSize, ySize, sX, sY: Integer;
@@ -764,67 +895,21 @@ begin
     else
       color := TColorUtils.COLLISION_WALL_COLOR;
 
-    if (loc.LocType = 0) then
-    begin
-      if not Self.HasDoorOps(obj) then
+    case loc.LocType of
+      0: TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(obj));
+      2:
       begin
-        case loc.Orientation of
-          0: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX, drawY + i] := color;
-          1: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + i, drawY] := color;
-          2: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + TMapChunkLoader.SCALE - 1, drawY + i] := color;
-          3: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + i, drawY + TMapChunkLoader.SCALE - 1] := color;
-        end;
-      end
-      else
-      begin
-        case loc.Orientation of
-          0: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + i, drawY] := color;
-          1: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + TMapChunkLoader.SCALE - 1, drawY + i] := color;
-          2: for i := 0 to TMapChunkLoader.SCALE - 1 do
-               if drawY + TMapChunkLoader.SCALE < TMapChunkLoader.IMAGE_SIZE then
-                 pixels[drawX + i, drawY + TMapChunkLoader.SCALE] := color;
-          3: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX, drawY + i] := color;
-        end;
+        TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(obj));
+        //corner walls occupy two edges, so the wall itself is drawn plus the edge next to it
+        TMapChunkLoader.DrawCollisionEdge(pixels, drawX, drawY, (loc.Orientation + 1) and 3, color);
       end;
-    end
-    else if loc.LocType = 2 then
-    begin
-      if not Self.HasDoorOps(obj) then
-      begin
+      3:
         case loc.Orientation of
-          0: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX, drawY + i] := color;
-          1: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + i, drawY] := color;
-          2: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + TMapChunkLoader.SCALE - 1, drawY + i] := color;
-          3: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + i, drawY + TMapChunkLoader.SCALE - 1] := color;
+          0: pixels[drawY, drawX] := color;
+          1: pixels[drawY, drawX + TMapChunkLoader.SCALE - 1] := color;
+          2: pixels[drawY + TMapChunkLoader.SCALE - 1, drawX + TMapChunkLoader.SCALE - 1] := color;
+          3: pixels[drawY + TMapChunkLoader.SCALE - 1, drawX] := color;
         end;
-      end
-      else
-      begin
-        case loc.Orientation of
-          0: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + i, drawY] := color;
-          1: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + TMapChunkLoader.SCALE - 1, drawY + i] := color;
-          2: for i := 0 to TMapChunkLoader.SCALE - 1 do
-               if drawY + TMapChunkLoader.SCALE < TMapChunkLoader.IMAGE_SIZE then
-                 pixels[drawX + i, drawY + TMapChunkLoader.SCALE] := color;
-          3: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX, drawY + i] := color;
-        end;
-      end;
-
-      case loc.Orientation of
-        0: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + i, drawY] := color;
-        1: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + TMapChunkLoader.SCALE - 1, drawY + i] := color;
-        2: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX + i, drawY + TMapChunkLoader.SCALE - 1] := color;
-        3: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawX, drawY + i] := color;
-      end;
-    end
-    else if loc.LocType = 3 then
-    begin
-      case loc.Orientation of
-        0: pixels[drawX, drawY] := color;
-        1: pixels[drawX + TMapChunkLoader.SCALE - 1, drawY] := color;
-        2: pixels[drawX + TMapChunkLoader.SCALE - 1, drawY + TMapChunkLoader.SCALE - 1] := color;
-        3: pixels[drawX, drawY + TMapChunkLoader.SCALE - 1] := color;
-      end;
     end;
 
     Exit;
@@ -838,12 +923,16 @@ begin
     else
       color := TColorUtils.COLLISION_WALL_COLOR;
 
-    for i := 0 to TMapChunkLoader.SCALE - 1 do
+    //begin/end is required here: Lape binds a trailing `else` to the `for`, not to the `if`
+    if (loc.Orientation <> 0) and (loc.Orientation <> 2) then
     begin
-      if (loc.Orientation <> 0) and (loc.Orientation <> 2) then
-        pixels[drawX + i, drawY + i] := color
-      else
-        pixels[drawX + i, drawY + (TMapChunkLoader.SCALE - 1 - i)] := color;
+      for i := 0 to TMapChunkLoader.SCALE - 1 do
+        pixels[drawY + i, drawX + i] := color;
+    end
+    else
+    begin
+      for i := 0 to TMapChunkLoader.SCALE - 1 do
+        pixels[drawY + (TMapChunkLoader.SCALE - 1 - i), drawX + i] := color;
     end;
 
     Exit;
@@ -870,8 +959,8 @@ begin
 
       for sX := 0 to xSize - 1 do
         for sY := 0 to ySize - 1 do
-          if pixels[drawX + sX, drawY + sY] <> TColorUtils.COLLISION_WALL_COLOR then
-            pixels[drawX + sX, drawY + sY] := TColorUtils.COLLISION_COLOR;
+          if pixels[drawY + sY, drawX + sX] <> TColorUtils.COLLISION_WALL_COLOR then
+            pixels[drawY + sY, drawX + sX] := TColorUtils.COLLISION_COLOR;
     end;
 
     if (loc.Orientation = 1) or (loc.Orientation = 3) then
@@ -882,8 +971,8 @@ begin
 
       for sX := 0 to xSize - 1 do
         for sY := 0 to ySize - 1 do
-          if pixels[drawX + sY, drawY - sX] <> TColorUtils.COLLISION_WALL_COLOR then
-            pixels[drawX + sY, drawY - sX] := TColorUtils.COLLISION_COLOR;
+          if pixels[drawY - sX, drawX + sY] <> TColorUtils.COLLISION_WALL_COLOR then
+            pixels[drawY - sX, drawX + sY] := TColorUtils.COLLISION_COLOR;
     end;
   end;
 end;
@@ -954,7 +1043,7 @@ end;
 function TMapChunkLoader.GetChunkCollisionImage(regionX, regionY, z: Integer): TImage;
 var
   pixels: TIntegerMatrix;
-  i, x, y, invertedY, px, py, setting: Integer;
+  i, x, y, invertedY, setting: Integer;
   region: TRegion;
 begin
   SetLength(pixels, TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
@@ -1008,9 +1097,7 @@ begin
   Self.DrawCollisionObjectsOnPlane(pixels, region, z);
 
   Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
-  for px := 0 to TMapChunkLoader.IMAGE_SIZE - 1 do
-    for py := 0 to TMapChunkLoader.IMAGE_SIZE - 1 do
-      Result.Pixel[px, py] := pixels[px, py];
+  Result.FromMatrix(pixels);
 end;
 
 function TMapChunkLoader.GetChunksCollisionMap(bounds: TBox; z: Integer): TCollisionMap;

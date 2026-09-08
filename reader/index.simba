@@ -85,7 +85,6 @@ begin
     sectorDataSize   := TArchiveSector.DATA_SIZE_SMALL;
   end;
 
-  SetLength(sector.Data, size);
   while readBytes < size do
   begin
     if sector.Position = 0 then
@@ -99,7 +98,11 @@ begin
 
     offset := sectorOffset;
 
-    sector.ID := sector.GetID(Self.MainData, offset);
+    if big then
+      sector.ID := Read32Bits(Self.MainData, offset)
+    else
+      sector.ID := Read16Bits(Self.MainData, offset);
+
     if sector.ID <> id then
       Exit;
 
@@ -143,14 +146,10 @@ begin
   Self.CRC := CrcData(@sector.Data[0], Length(sector.Data));
   digest := DigestData(EDigest.WHIRLPOOL, @sector.Data[0], Length(sector.Data));
 
-  SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
   if Length(digest) < TArchiveSector.WHIRLPOOL_SIZE * 2 then
     raise 'Something is wrong with whirlpool digest';
 
   SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
-  if Length(digest) < TArchiveSector.WHIRLPOOL_SIZE * 2 then
-    raise 'Something is wrong with whirlpool digest';
-
   for i := 0 to TArchiveSector.WHIRLPOOL_SIZE - 1 do
     Self.Whirlpool[i] := (digest[i*2+1].ToHex() shl 4) or digest[i*2+2].ToHex();
 
@@ -161,29 +160,30 @@ end;
 
 procedure TCacheIndex.Cache();
 var
-  archive: TArchive;
+  archives: TArchiveArray;
   sector: TArchiveSector;
   data: TByteArray;
-  tailOffset, remaining, compressedFieldValue, revOffset: Integer;
+  i, tailOffset, remaining, compressedFieldValue, revOffset: Integer;
 begin
   if Self.Cached then
     Exit;
 
-  for archive in Self.ReferenceTable.Archives.Values do
+  archives := Self.ReferenceTable.Archives.Values;
+
+  for i := 0 to High(archives) do
   begin
-    sector := Self.ReadArchiveSector(archive.ID, Self.ID, Self.IndexData);
-    if Length(sector.Data) = 0 then
+    sector := Self.ReadArchiveSector(archives[i].ID, Self.ID, Self.IndexData);
+    if sector.Data.IsEmpty then
     begin
-      archive.Files.Clear();
-      Self.ReferenceTable.Archives.Value[archive.ID] := archive;
+      archives[i].Files.Clear();
       Continue;
     end;
 
     data := sector.Decompress();
-    archive.CompressionType := sector.CompressionType;
+    archives[i].CompressionType := sector.CompressionType;
 
     if Length(data) > 0 then
-      archive.Read(data);
+      archives[i].Read(data);
 
     tailOffset := 1;
     compressedFieldValue := Read32Bits(sector.Data, tailOffset);
@@ -192,10 +192,8 @@ begin
     if remaining >= 2 then
     begin
       revOffset := Length(sector.Data) - 2;
-      archive.Revision := Read16Bits(sector.Data, revOffset);
+      archives[i].Revision := Read16Bits(sector.Data, revOffset);
     end;
-
-    Self.ReferenceTable.Archives.Value[archive.ID] := archive;
   end;
 
   Self.Cached := True;

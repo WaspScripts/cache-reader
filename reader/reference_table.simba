@@ -45,7 +45,7 @@ var
   named: Boolean;
   i, j, count, id: Integer;
   archives: TArchiveArray;
-  fileCounts: TIntegerArray;
+  fileCounts, ids: TIntegerArray;
   _ReadFunc: function (constref data: TByteArray; var offset: Integer): Integer;
 begin
   Self.Version := Read8Bits(data, offset);
@@ -69,12 +69,14 @@ begin
 
   count := _ReadFunc(data, offset);
 
+  SetLength(ids, count);
   for i := 0 to count - 1 do
   begin
     id += _ReadFunc(data, offset);
-    Self.Archives.Value[id] := TArchive.Create(id);
+    ids[i] := id;
   end;
 
+  Self.Archives.Build(ids);
   archives := Self.Archives.Values;
 
   if named then
@@ -113,11 +115,14 @@ begin
   for i := 0 to High(archives) do
   begin
     id := 0;
+    SetLength(ids, fileCounts[i]);
     for j := 0 to fileCounts[i] - 1 do
     begin
       id += _ReadFunc(data, offset);
-      archives[i].Files.Value[id] := TFile.Create(id);
+      ids[j] := id;
     end;
+
+    archives[i].Files.Build(ids);
   end;
 
   if not named then

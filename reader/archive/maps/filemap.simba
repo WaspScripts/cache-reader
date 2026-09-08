@@ -56,6 +56,37 @@ begin
 end;
 
 
+(*
+## FileMap.Build
+```pascal
+procedure TFileMap.Build(const keys: TIntegerArray);
+```
+Fills the map in one pass with an empty {ref}`TFile` per key, sizing the key, value and hash
+arrays exactly once instead of regrowing them on every insert.
+
+`keys` must already be in ascending order, which is how reference tables store them.
+*)
+procedure TFileMap.Build(const keys: TIntegerArray);
+var
+  i, count: Integer;
+begin
+  count := Length(keys);
+  Self._Init(count);
+
+  SetLength(Self.Keys, count);
+  SetLength(Self.Values, count);
+
+  for i := 0 to count - 1 do
+  begin
+    Self.Keys[i] := keys[i];
+    Self.Values[i] := TFile.Create(keys[i]);
+    Self.HashSlots[Self._FindSlot(keys[i])] := i + 1;
+  end;
+
+  Self.Count := count;
+end;
+
+
 function TFileMap.Exists(key: Integer): Boolean;
 begin
   if not Self.IsSetup then
