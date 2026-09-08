@@ -1,8 +1,23 @@
+(*
+# Height Calc
+The procedural terrain the game generates rather than stores.
+
+Most tiles carry their own height, but the ones that do not fall back to layered value noise
+that depends only on the tile's world position - so it can be reproduced exactly here. See
+{ref}`THeightCalc.Calculate` for one tile and {ref}`THeightCalc.CalculateArea` for a region.
+*)
 type
   THeightCalc = record
     CosTable: array [0..1023] of Integer;
   end;
 
+(*
+## HeightCalc.Setup
+```pascal
+procedure THeightCalc.Setup();
+```
+Fills the cosine table the noise interpolation reads. Called once at startup by `cache.simba`.
+*)
 procedure THeightCalc.Setup();
 var
   i: Integer;
@@ -14,6 +29,17 @@ begin
     Self.CosTable[i] := Trunc(65536 * Cos(i * rads));
 end;
 
+(*
+## HeightCalc.Noise
+```pascal
+function THeightCalc.Noise(x, y: Integer): Integer;
+```
+A repeatable pseudo-random value from `0` to `255` for a point.
+
+It is a hash rather than a random number: the same point always gives the same value, which is
+what lets the client generate terrain on the fly instead of storing it, and lets this reproduce
+the terrain the client would have generated.
+*)
 function THeightCalc.Noise(x, y: Integer): Integer;
 var
   n: Integer;
@@ -26,6 +52,15 @@ begin
   Result := ((n * hash) and $7FFFFFFF) shr 19 and $FF;
 end;
 
+(*
+## HeightCalc.SmoothedNoise
+```pascal
+function THeightCalc.SmoothedNoise(x, y: Integer): Integer;
+```
+{ref}`THeightCalc.Noise` averaged with the eight points around it, weighted so the centre counts
+most, its edge neighbours next, and its corners least. Raw noise on its own is far too jagged to
+be terrain.
+*)
 function THeightCalc.SmoothedNoise(x, y: Integer): Integer;
 var
   corners, sides: Integer;
@@ -39,6 +74,16 @@ begin
   Result := (Self.Noise(x, y) shr 2) + (sides shr 3) + (corners shr 4);
 end;
 
+(*
+## HeightCalc.Interpolate
+```pascal
+function THeightCalc.Interpolate(a, b, x, frequency: Integer): Integer;
+```
+Blends from `a` to `b` along a cosine curve, `x` steps of the way through `frequency`.
+
+A cosine rather than a straight line, so that the terrain flattens out as it approaches each
+grid point instead of meeting the next slope at a crease.
+*)
 function THeightCalc.Interpolate(a, b, x, frequency: Integer): Integer;
 var
   f: Integer;
@@ -47,6 +92,17 @@ begin
   Result := ((f * b) shr 16) + ((a * (65536 - f)) shr 16);
 end;
 
+(*
+## HeightCalc.InterpolateNoise
+```pascal
+function THeightCalc.InterpolateNoise(x, y, frequency: Integer): Integer;
+```
+Smoothed noise sampled on a grid of `frequency` tiles and interpolated between those samples, so
+that a larger frequency gives broader, gentler features.
+
+At frequency 1 every tile is its own sample and there is nothing to interpolate; at frequency 2
+the client snaps to the nearer sample rather than blending, which is reproduced here.
+*)
 function THeightCalc.InterpolateNoise(x, y, frequency: Integer): Integer;
 var
   intX, fracX, intY, fracY,
@@ -84,6 +140,18 @@ begin
   Result := Self.Interpolate(i1, i2, fracY, frequency);
 end;
 
+(*
+## HeightCalc.Calculate
+```pascal
+function THeightCalc.Calculate(x, y: Integer): Integer;
+```
+The procedural terrain height of a world tile, from `10` to `60`.
+
+Three layers of {ref}`THeightCalc.InterpolateNoise` are summed, each at half the weight and half
+the feature size of the one before: broad hills, then the shape within them, then tile-level
+roughness. This is what a tile with no stored height gets - see {ref}`TRegion.LoadTerrain` - and
+{ref}`THeightCalc.CalculateArea` computes a whole region's worth far more cheaply.
+*)
 function THeightCalc.Calculate(x, y: Integer): Integer;
 var
   n: Integer;

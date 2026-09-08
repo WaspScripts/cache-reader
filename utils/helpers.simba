@@ -124,6 +124,16 @@ begin
   Result := Read32Bits(data, offset) and $7FFFFFFF;
 end;
 
+(*
+## ReadBigSmart2
+```pascal
+function ReadBigSmart2(constref data: TByteArray; var offset: Integer): Integer;
+```
+{ref}`ReadBigSmart` for fields that are allowed to be absent.
+
+The 2 byte form reserves `32767` to mean "no id", which is returned as `-1`. The 4 byte form
+has no such reservation and is read exactly as `ReadBigSmart` reads it.
+*)
 function ReadBigSmart2(constref data: TByteArray; var offset: Integer): Integer;
 begin
   if data[offset] >= 128 then
@@ -158,6 +168,15 @@ begin
   Result := Read16Bits(data, offset) - $C000;
 end;
 
+(*
+## ReadUnsignedShortSmart
+```pascal
+function ReadUnsignedShortSmart(constref data: TByteArray; var offset: Integer): Integer;
+```
+{ref}`ReadShortSmart` without the bias, so the value is never negative.
+
+A single byte covers `0` to `127` and two bytes, with the top bit stripped, cover `0` to `32767`.
+*)
 function ReadUnsignedShortSmart(constref data: TByteArray; var offset: Integer): Integer;
 begin
   if data[offset] < 128 then
@@ -165,6 +184,16 @@ begin
   Result := Read16Bits(data, offset) - $8000;
 end;
 
+(*
+## ReadUnsignedIntSmartShortCompat
+```pascal
+function ReadUnsignedIntSmartShortCompat(constref data: TByteArray; var offset: Integer): Integer;
+```
+Reads a value that can exceed what {ref}`ReadUnsignedShortSmart` alone can express.
+
+`32767` is a continuation marker rather than a value: every one of them adds `32767` to the
+running total and another smart is read, until one comes back that is not the marker.
+*)
 function ReadUnsignedIntSmartShortCompat(constref data: TByteArray; var offset: Integer): Integer;
 var
   v: Integer;
@@ -180,6 +209,16 @@ begin
   Result += v;
 end;
 
+(*
+## TByteArray.ReadCString
+```pascal
+function TByteArray.ReadCString(var offset: Integer): String;
+```
+Reads the NUL terminated string starting at `offset`.
+
+`offset` is left on the byte after the terminator, so a following read continues with whatever
+comes next. Running off the end of the array ends the string as a terminator would.
+*)
 function TByteArray.ReadCString(var offset: Integer): String;
 var
   start, len, i: Integer;
@@ -199,6 +238,13 @@ begin
 end;
 
 
+(*
+## Char.ToHex
+```pascal
+function Char.ToHex(): Integer;
+```
+The value of a single hexadecimal digit, in either case. Anything else reads as `0`.
+*)
 function Char.ToHex(): Integer;
 begin
   case Self of
@@ -209,6 +255,16 @@ begin
   end;
 end;
 
+(*
+## CacheString2Hash
+```pascal
+function CacheString2Hash(const s: String): Integer;
+```
+The hash the cache stores in place of a name.
+
+Archives and files are named by this hash rather than by text, so looking one up by name means
+hashing the name and comparing - see {ref}`TReferenceTable.ArchiveID`.
+*)
 function CacheString2Hash(const s: String): Integer;
 var
   i: Integer;
@@ -223,6 +279,21 @@ type
     Saturation, Lightness: Integer;
   end;
 
+(*
+## TColor.ToHSLEx
+```pascal
+function TColor.ToHSLEx(): TColorHSLEx;
+```
+Splits a colour into hue, saturation and lightness.
+
+The result carries each component twice: as the `0.0` to `1.0` doubles the conversion works in,
+and as the `0` to `255` integers the cache's own colour packing expects. Ground colours need
+both - the doubles feed the hue multiplier that weights blending, the integers are packed
+straight into a palette index.
+
+The channels are read back to front on purpose: the cache stores its colours as RGB while
+{ref}`TColor` is BGR, so the blue channel holds what this conversion treats as red.
+*)
 function TColor.ToHSLEx(): TColorHSLEx;
 const
   INV_256: Double = 1.0 / 256.0;
@@ -268,6 +339,17 @@ begin
   Result.Lightness  := EnsureRange(Trunc(Result.L * 256.0), 0, 255);
 end;
 
+(*
+## ArithmeticShr
+```pascal
+function ArithmeticShr(value, bits: Integer): Integer;
+```
+Right shift that keeps the sign of `value`.
+
+Pascal's `shr` is a logical shift, so shifting a negative number turns it into a large positive
+one. Where a value's sign is meaningful - a surface normal pointing away from the light, say -
+this halves it the way the original client's `>>` does.
+*)
 function ArithmeticShr(value, bits: Integer): Integer;
 begin
   if value < 0 then

@@ -45,6 +45,20 @@ begin
   Self.OffsetY := 0;
 end;
 
+(*
+## SpriteDefinition.Create
+```pascal
+function TSpriteDefinition.Create(id: Integer; const data: TByteArray): TSpriteDefinitionArray; static;
+```
+Decodes a sprite archive into its frames. One archive holds several frames sharing a palette and
+a common canvas size, which is why this returns an array.
+
+The archive is read back to front: the frame count is the last two bytes, the frame headers sit
+above it and the palette above those, leaving the pixel data at the front. Each frame's pixels
+are palette indices, stored either row by row or column by column depending on its flags, and
+index `0` is transparent - so alpha is only read when a frame says it has any, and any pixel
+that is not index `0` is opaque regardless.
+*)
 function TSpriteDefinition.Create(id: Integer; const data: TByteArray): TSpriteDefinitionArray; static;
 var
   offset, spriteCount, width, height, paletteLength: Integer;

@@ -1,3 +1,11 @@
+(*
+# Color Utils
+The game's colour model.
+
+Colours are not stored as RGB but as a 16 bit hue, saturation and luminance index into a palette
+built once at startup - see {ref}`TColorUtils.PackHSL` and
+{ref}`TColorUtils.CreateHSVPalette`. The global `ColorUtils` holds those palettes.
+*)
 {$include_once ./helpers.simba}
 
 type
@@ -26,6 +34,17 @@ type
     CachedSpritePalettes: T2DIntegerArray;
   end;
 
+(*
+## ColorUtils.PackHSL
+```pascal
+function TColorUtils.PackHSL(hue, saturation, luminance: Integer): Integer; static;
+```
+Packs a colour into the 16 bit index the game's palettes are addressed by: 6 bits of hue, 3 of
+saturation and 7 of luminance.
+
+Saturation is halved at each of four luminance thresholds on the way up, because a colour that
+bright cannot carry much saturation without looking wrong - the same taper the client applies.
+*)
 function TColorUtils.PackHSL(hue, saturation, luminance: Integer): Integer; static;
 begin
   if luminance > 179 then saturation := saturation shr 1;
@@ -37,6 +56,19 @@ begin
 end;
 
 
+(*
+## ColorUtils.CreateHSVPalette
+```pascal
+function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TColorArray; static;
+```
+Builds the 65536 entry palette that a {ref}`TColorUtils.PackHSL` index looks up.
+
+Every index is unpacked back into hue, saturation and luminance, converted to RGB, and then bent
+by `brightness` - a gamma exponent, where a lower number means a brighter image. The client
+offers a few fixed brightness settings, which are the `BRIGHTNESS_` constants.
+
+`mn` and `mx` bound which entries are actually computed; the rest are left black.
+*)
 function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TColorArray; static;
 var
   i, rIdx, gIdx, bIdx: Integer;
@@ -106,6 +138,17 @@ begin
   end;
 end;
 
+(*
+## ColorUtils.SpritePalette
+```pascal
+function TColorUtils.SpritePalette(brightness: Double = TColorUtils.BRIGHTNESS_LOW): TIntegerArray;
+```
+The palette the sprite rasterizer draws through, with its channels in the BGR order Simba's
+images use rather than the RGB the game stores.
+
+Palettes are expensive to build and there are only a few brightness settings, so each one is
+built once and kept.
+*)
 function TColorUtils.SpritePalette(brightness: Double = TColorUtils.BRIGHTNESS_LOW): TIntegerArray;
 var
   i, count, color: Integer;
@@ -131,6 +174,14 @@ begin
   Result := palette;
 end;
 
+(*
+## ColorUtils.Setup
+```pascal
+procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
+```
+Builds the palettes everything else colours through. Called once at startup by `cache.simba`,
+and a no-op afterwards.
+*)
 procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
 begin
   if Self.IsSetup then
@@ -143,6 +194,16 @@ begin
 end;
 
 
+(*
+## ColorUtils.UnderlayColor
+```pascal
+function TColorUtils.UnderlayColor(hsl: Integer): Integer;
+```
+The colour a ground underlay is drawn as on the minimap.
+
+The minimap is lit flatter than the world is, so the luminance in the index is scaled towards a
+fixed level before the palette is looked up. An `hsl` of `-1` means the tile has no underlay.
+*)
 function TColorUtils.UnderlayColor(hsl: Integer): Integer;
 const
   TARGET_LUM: Integer = 96;
@@ -155,6 +216,14 @@ begin
   Result := Self.Palette[(hsl and 65408) + lum];
 end;
 
+(*
+## ColorUtils.OverlayColor
+```pascal
+function TColorUtils.OverlayColor(hsl: Integer): Integer;
+```
+{ref}`TColorUtils.UnderlayColor` for an overlay, which additionally distinguishes an overlay
+that is deliberately blank, `-2`, from one that is drawn at the flat minimap luminance, `-1`.
+*)
 function TColorUtils.OverlayColor(hsl: Integer): Integer;
 const
   TARGET_LUM: Integer = 96;
@@ -170,6 +239,14 @@ begin
   Result := Self.Palette[(hsl and 65408) + lum];
 end;
 
+(*
+## ColorUtils.Height2Color
+```pascal
+function TColorUtils.Height2Color(height: Integer): Integer; static;
+```
+A terrain height as a shade of grey, black at ground level and white at the highest terrain the
+game uses. Heights are negative upwards, which is why the sign is flipped.
+*)
 function TColorUtils.Height2Color(height: Integer): Integer; static;
 const
   MAX_HEIGHT: Integer = 6048;
@@ -180,6 +257,14 @@ begin
   Result := $FF000000 or (v shl 16) or (v shl 8) or v;
 end;
 
+(*
+## ColorUtils.Collision2Color
+```pascal
+function TColorUtils.Collision2Color(flag: Integer): Integer; static;
+```
+A collision flag as a colour: white for walkable, black for blocked, grey for a tile an object
+stands on.
+*)
 function TColorUtils.Collision2Color(flag: Integer): Integer; static;
 begin
   case flag of
