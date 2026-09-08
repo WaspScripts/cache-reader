@@ -53,30 +53,13 @@ begin
   Result.CompressionType := ECacheCompression.GZIP;
 end;
 
-function TArchive.Create(const other: TArchive): TArchive; static; overload;
-var
-  _file: TFile;
-begin
-  Result.ID := other.ID;
-  Result.HashName := other.HashName;
-  Result.Revision := other.Revision;
-  Result.CRC := other.CRC;
-  Result.Whirlpool := Copy(other.Whirlpool);
-  Result.XTEA := Copy(other.XTEA);
-
-  for _file in other.Files.Values do
-    Result.Files.Value[_file.ID] := TFile.Create(_file);
-end;
-
-function TArchive.ContainsData(): Boolean;
-var
-  _file: TFile;
-begin
-  for _file in Self.Files.Values do
-    if not _file.Data.IsEmpty then
-      Exit(True);
-end;
-
+(*
+## Archive.FileIds
+```pascal
+function TArchive.FileIds(): TIntegerArray;
+```
+The ids of this archive's files, in the order they are stored.
+*)
 function TArchive.FileIds(): TIntegerArray;
 var
   files: TFileArray;

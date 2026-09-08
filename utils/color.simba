@@ -73,8 +73,14 @@ function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TCol
 var
   i, rIdx, gIdx, bIdx: Integer;
   hue, sat, lum, r, g, b, p, q, t1, t2: Double;
+  gamma: array [0..256] of Integer;
 begin
   SetLength(Result, 65536);
+
+  //Each channel is quantised to 0..256 before the brightness curve is applied to it, so the
+  //curve is a 257 entry table rather than three Power() calls per palette entry.
+  for i := 0 to 256 do
+    gamma[i] := Trunc(Power(i / 256.0, brightness) * 256);
 
   for i := mn to mx - 1 do
   begin
@@ -127,9 +133,9 @@ begin
         b := p;
     end;
 
-    rIdx := Trunc(Power(Trunc(r * 256) / 256.0, brightness) * 256);
-    gIdx := Trunc(Power(Trunc(g * 256) / 256.0, brightness) * 256);
-    bIdx := Trunc(Power(Trunc(b * 256) / 256.0, brightness) * 256);
+    rIdx := gamma[Trunc(r * 256)];
+    gIdx := gamma[Trunc(g * 256)];
+    bIdx := gamma[Trunc(b * 256)];
 
     if (rIdx or gIdx or bIdx) = 0 then
       bIdx := 1;

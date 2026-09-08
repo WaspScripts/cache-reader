@@ -9,17 +9,6 @@ apart and decodes.
 {$include_once ../utils/helpers.simba}
 
 type
-  TVertexNormal = record
-    X, Y, Z, Magnitude: Integer;
-  end;
-
-  TFaceNormal = record
-    X, Y, Z: Integer;
-  end;
-
-  TVertexNormalArray = array of TVertexNormal;
-  TFaceNormalArray = array of TFaceNormal;
-
   TModelDefinition = record
     ID, VertexCount, FaceCount, NumTextureFaces, Priority: Integer;
 

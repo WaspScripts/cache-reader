@@ -128,7 +128,7 @@ begin
     ids[i] := id;
   end;
 
-  Self.Archives.Build(ids);
+  Self.Archives.Build(ids, count);
   archives := Self.Archives.Values;
 
   if named then
@@ -161,20 +161,27 @@ begin
     archives[i].Revision := Read32Bits(data, offset);
 
   SetLength(fileCounts, Self.Archives.Count);
+  count := 0;
   for i := 0 to High(archives) do
+  begin
     fileCounts[i] := _ReadFunc(data, offset);
+    if fileCounts[i] > count then
+      count := fileCounts[i];
+  end;
+
+  //one buffer big enough for the largest archive, reused for all of them
+  SetLength(ids, count);
 
   for i := 0 to High(archives) do
   begin
     id := 0;
-    SetLength(ids, fileCounts[i]);
     for j := 0 to fileCounts[i] - 1 do
     begin
       id += _ReadFunc(data, offset);
       ids[j] := id;
     end;
 
-    archives[i].Files.Build(ids);
+    archives[i].Files.Build(ids, fileCounts[i]);
   end;
 
   if not named then

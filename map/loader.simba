@@ -33,15 +33,15 @@ Loads every ground underlay definition. The config index has to be cached first.
 procedure TMapDataLoader.LoadUnderlays();
 var
   archive: TArchive;
-  ids: TIntegerArray;
+  files: TFileArray;
   i: Integer;
 begin
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.UNDERLAY];
 
-  ids := archive.FileIds();
-  SetLength(Self.Underlays, Length(ids));
-  for i := 0 to High(ids) do
-    Self.Underlays[i] := TUnderlayDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
+  files := archive.Files.Values;
+  SetLength(Self.Underlays, Length(files));
+  for i := 0 to High(files) do
+    Self.Underlays[i] := TUnderlayDefinition.Create(files[i].ID, files[i].Data);
 end;
 
 (*
@@ -54,15 +54,15 @@ Loads every ground overlay definition. The config index has to be cached first.
 procedure TMapDataLoader.LoadOverlays();
 var
   archive: TArchive;
-  ids: TIntegerArray;
+  files: TFileArray;
   i: Integer;
 begin
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.OVERLAY];
 
-  ids := archive.FileIds();
-  SetLength(Self.Overlays, Length(ids));
-  for i := 0 to High(ids) do
-    Self.Overlays[i] := TOverlayDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
+  files := archive.Files.Values;
+  SetLength(Self.Overlays, Length(files));
+  for i := 0 to High(files) do
+    Self.Overlays[i] := TOverlayDefinition.Create(files[i].ID, files[i].Data);
 end;
 
 (*
@@ -78,15 +78,15 @@ thousands of them, and the map renderer needs any of them to be reachable by id.
 procedure TMapDataLoader.LoadObjects();
 var
   archive: TArchive;
-  ids: TIntegerArray;
+  files: TFileArray;
   i: Integer;
 begin
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.OBJ];
 
-  ids := archive.FileIds();
-  SetLength(Self.Objects, Length(ids));
-  for i := 0 to High(ids) do
-    Self.Objects[i] := TObjectDefinition.Create(ids[i], archive.Revision, archive.Files.Value[ids[i]].Data);
+  files := archive.Files.Values;
+  SetLength(Self.Objects, Length(files));
+  for i := 0 to High(files) do
+    Self.Objects[i] := TObjectDefinition.Create(files[i].ID, archive.Revision, files[i].Data);
 end;
 
 (*
@@ -99,15 +99,15 @@ Loads every map area definition. The config index has to be cached first.
 procedure TMapDataLoader.LoadAreas();
 var
   archive: TArchive;
-  ids: TIntegerArray;
+  files: TFileArray;
   i: Integer;
 begin
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.AREA];
 
-  ids := archive.FileIds();
-  SetLength(Self.Areas, Length(ids));
-  for i := 0 to High(ids) do
-    Self.Areas[i] := TAreaDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
+  files := archive.Files.Values;
+  SetLength(Self.Areas, Length(files));
+  for i := 0 to High(files) do
+    Self.Areas[i] := TAreaDefinition.Create(files[i].ID, files[i].Data);
 end;
 
 (*
@@ -233,16 +233,16 @@ drawn as.
 procedure TMapDataLoader.LoadTextures();
 var
   archive: TArchive;
-  ids: TIntegerArray;
+  files: TFileArray;
   i: Integer;
 begin
   CacheReader.Indices[ECacheIndex.TEXTURES].Cache();
   archive := CacheReader.Indices[ECacheIndex.TEXTURES].ReferenceTable.Archives.Value[0];
 
-  ids := archive.FileIds();
-  SetLength(Self.Textures, Length(ids));
-  for i := 0 to High(ids) do
-    Self.Textures[i] := TTextureDefinition.Create(ids[i], archive.Files.Value[ids[i]].Data);
+  files := archive.Files.Values;
+  SetLength(Self.Textures, Length(files));
+  for i := 0 to High(files) do
+    Self.Textures[i] := TTextureDefinition.Create(files[i].ID, files[i].Data);
 end;
 
 

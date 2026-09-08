@@ -100,7 +100,7 @@ end;
   TItemSprite.Create — loads the item's inventory model and prepares it for lighting.
   Sets Valid to False if the model archive/data can't be loaded.
 *)
-function TItemSprite.Create(cacheReader: TCacheReader; const itemDef: TItemDefinition; brightness: Double = TColorUtils.BRIGHTNESS_MAX): TItemSprite; static;
+function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition; brightness: Double = TColorUtils.BRIGHTNESS_MAX): TItemSprite; static;
 var
   modelSector: TArchiveSector;
   modelData: TByteArray;
@@ -122,11 +122,9 @@ begin
 
   Result.ModelDef := TModelDefinition.Create(itemDef.InventoryModel, modelData);
 
-  // Apply resize (128 is "no resize" — OSRS's default scale factor)
   if (itemDef.ResizeX <> 128) or (itemDef.ResizeY <> 128) or (itemDef.ResizeZ <> 128) then
     Result.ModelDef.Resize(itemDef.ResizeX, itemDef.ResizeY, itemDef.ResizeZ);
 
-  // Apply the item's colour/texture substitutions, as ItemSpriteFactory.getModel does.
   for i := 0 to High(itemDef.ColorFind) do
     Result.ModelDef.Recolor(itemDef.ColorFind[i], itemDef.ColorReplace[i]);
 
@@ -154,27 +152,23 @@ const
 var
   attenuation,
   i, faceIdx, faceType, faceRenderType, r1, r2, r3,
-  dxAB, dyAB, dzAB, dxAC, dyAC, dzAC,
-  nx, ny, nz, len,
+  nx, ny, nz,
   faceTexId, faceAlphaVal: Integer;
-  vMag,
-  vNx, vNy, vNz,
-  fNx, fNy, fNz: array [0..6499] of Integer;
+  vMag, vNx, vNy, vNz,
+  fNx, fNy, fNz, dump: TIntegerArray;
   hasFaceNormals: Boolean;
-  dump: TIntegerArray;
 begin
-  // RuneLite allocates fresh VertexNormals per model; these are reused buffers
-  // that get accumulated into with `+=`, so they must be cleared per call.
-  // A vMag carried over from a previously rendered item would shrink
-  // dp div (atten * mag) toward zero, pulling every vertex to the ambient
-  // level and washing the shading out.
-  for i := 0 to Self.ModelDef.VertexCount - 1 do
-  begin
-    vNx[i] := 0;
-    vNy[i] := 0;
-    vNz[i] := 0;
-    vMag[i] := 0;
-  end;
+  // RuneLite allocates fresh VertexNormals per model. These are accumulated into with `+=`, so
+  // they have to start at zero, which is what SetLength hands back - a vMag carried over from a
+  // previously rendered item would shrink dp div (atten * mag) toward zero, pulling every vertex
+  // to the ambient level and washing the shading out.
+  SetLength(vNx, Self.ModelDef.VertexCount);
+  SetLength(vNy, Self.ModelDef.VertexCount);
+  SetLength(vNz, Self.ModelDef.VertexCount);
+  SetLength(vMag, Self.ModelDef.VertexCount);
+  SetLength(fNx, Self.ModelDef.FaceCount);
+  SetLength(fNy, Self.ModelDef.FaceCount);
+  SetLength(fNz, Self.ModelDef.FaceCount);
 
   hasFaceNormals := False;
 
@@ -183,25 +177,7 @@ begin
 
   for i := 0 to Self.ModelDef.FaceCount - 1 do
   begin
-    dxAB := Self.ModelDef.VertexX[Self.ModelDef.FaceIndices2[i]] - Self.ModelDef.VertexX[Self.ModelDef.FaceIndices1[i]];
-    dyAB := Self.ModelDef.VertexY[Self.ModelDef.FaceIndices2[i]] - Self.ModelDef.VertexY[Self.ModelDef.FaceIndices1[i]];
-    dzAB := Self.ModelDef.VertexZ[Self.ModelDef.FaceIndices2[i]] - Self.ModelDef.VertexZ[Self.ModelDef.FaceIndices1[i]];
-    dxAC := Self.ModelDef.VertexX[Self.ModelDef.FaceIndices3[i]] - Self.ModelDef.VertexX[Self.ModelDef.FaceIndices1[i]];
-    dyAC := Self.ModelDef.VertexY[Self.ModelDef.FaceIndices3[i]] - Self.ModelDef.VertexY[Self.ModelDef.FaceIndices1[i]];
-    dzAC := Self.ModelDef.VertexZ[Self.ModelDef.FaceIndices3[i]] - Self.ModelDef.VertexZ[Self.ModelDef.FaceIndices1[i]];
-    nx := dyAB * dzAC - dzAB * dyAC;
-    ny := dzAB * dxAC - dxAB * dzAC;
-    nz := dxAB * dyAC - dxAC * dyAB;
-    while (nx > 8192) or (ny > 8192) or (nz > 8192) or (nx < -8192) or (ny < -8192) or (nz < -8192) do
-    begin
-      nx := ArithmeticShr(nx, 1); ny := ArithmeticShr(ny, 1); nz := ArithmeticShr(nz, 1);
-    end;
-
-    len := Max(Trunc(Sqrt(nz * nz + nx * nx + ny * ny)), 1);
-
-    nx := nx * 256 div len;
-    ny := ny * 256 div len;
-    nz := nz * 256 div len;
+    Self.LitModel.FaceNormal(i, nx, ny, nz);
 
     if Length(Self.ModelDef.FaceRenderTypes) = 0 then
       faceRenderType := 0

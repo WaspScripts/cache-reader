@@ -42,15 +42,16 @@ The table is deliberately over-allocated - twice the expected count plus a margi
 probing stays short; {ref}`TFileMap._Grow` doubles it again if it ever fills past 60%.
 *)
 procedure TFileMap._Init(expectedCount: Integer);
-var
-  i: Integer;
 begin
+  Self.HashSize := expectedCount * 2 + 16;
+
+  //dropping the arrays before resizing them hands back freshly zeroed memory, so the slots
+  //do not have to be cleared by hand
   SetLength(Self.Keys, 0);
   SetLength(Self.Values, 0);
-  Self.HashSize := expectedCount * 2 + 16;
+  SetLength(Self.HashSlots, 0);
   SetLength(Self.HashSlots, Self.HashSize);
-  for i := 0 to Self.HashSize - 1 do
-    Self.HashSlots[i] := 0;
+
   Self.Count := 0;
   Self.IsSetup := True;
 end;
@@ -89,9 +90,10 @@ var
   i: Integer;
 begin
   Self.HashSize := Self.HashSize * 2;
+
+  SetLength(Self.HashSlots, 0);
   SetLength(Self.HashSlots, Self.HashSize);
-  for i := 0 to Self.HashSize - 1 do
-    Self.HashSlots[i] := 0;
+
   for i := 0 to High(Self.Keys) do
     Self.HashSlots[Self._FindSlot(Self.Keys[i])] := i + 1;
 end;
@@ -100,31 +102,41 @@ end;
 (*
 ## FileMap.Build
 ```pascal
-procedure TFileMap.Build(const keys: TIntegerArray);
+procedure TFileMap.Build(const keys: TIntegerArray; count: Integer);
 ```
 Fills the map in one pass with an empty {ref}`TFile` per key, sizing the key, value and hash
 arrays exactly once instead of regrowing them on every insert.
 
-`keys` must already be in ascending order, which is how reference tables store them.
+Only the first `count` entries of `keys` are used, so callers filling many maps in a row can
+reuse one buffer. They must be in ascending order, which is how reference tables store them.
 *)
-procedure TFileMap.Build(const keys: TIntegerArray);
+procedure TFileMap.Build(const keys: TIntegerArray; count: Integer);
 var
-  i, count: Integer;
+  i, slot: Integer;
 begin
-  count := Length(keys);
-  Self._Init(count);
+  Self.HashSize := count * 2 + 16;
+  Self.Count := count;
+  Self.IsSetup := True;
 
-  SetLength(Self.Keys, count);
+  //dropping the arrays before resizing them hands back freshly zeroed memory: empty slots, and
+  //values that already look like the ones a Create() would return
+  Self.Keys := Copy(keys, 0, count);
+  SetLength(Self.Values, 0);
   SetLength(Self.Values, count);
+  SetLength(Self.HashSlots, 0);
+  SetLength(Self.HashSlots, Self.HashSize);
 
+  //the keys are distinct, so a slot is claimed by the first empty one rather than by _FindSlot
   for i := 0 to count - 1 do
   begin
-    Self.Keys[i] := keys[i];
-    Self.Values[i] := TFile.Create(keys[i]);
-    Self.HashSlots[Self._FindSlot(keys[i])] := i + 1;
-  end;
+    Self.Values[i].ID := keys[i];
 
-  Self.Count := count;
+    slot := MapHash(keys[i], Self.HashSize);
+    while Self.HashSlots[slot] <> 0 do
+      slot := (slot + 1) mod Self.HashSize;
+
+    Self.HashSlots[slot] := i + 1;
+  end;
 end;
 
 

@@ -1,6 +1,8 @@
 (*
 # CacheReader Helpers
-Helper functions required for cache reading.
+The primitives every decoder in this library is built out of: big-endian integer reads that
+advance a shared offset, the cache's variable width number encodings, and the colour and shift
+conversions its formats rely on.
 *)
 
 (*
@@ -110,13 +112,16 @@ begin
   if Result > 127 then Result -= 256;
 end;
 
-function BigSmartSize(value: Integer): Integer;
-begin
-  if value < 127 then
-    Exit(1);
-  Result := 2;
-end;
+(*
+## ReadBigSmart
+```pascal
+function ReadBigSmart(constref data: TByteArray; var offset: Integer): Integer;
+```
+Reads an id that may or may not fit in 16 bits.
 
+The top bit of the first byte says which: clear means the id was written as 2 bytes, set means
+it was written as 4 with that flag bit masked back off. `offset` advances by whichever was read.
+*)
 function ReadBigSmart(constref data: TByteArray; var offset: Integer): Integer;
 begin
   if data[offset] < 128 then
@@ -144,23 +149,16 @@ begin
     Result := -1;
 end;
 
-procedure WriteBigSmart(var data: TByteArray; var offset: Integer; value: Integer);
-begin
-  if value < 32768 then
-  begin
-    data[offset] := value shr 8;
-    data[offset + 1] := value;
-    Inc(offset, 2);
-    Exit;
-  end;
+(*
+## ReadShortSmart
+```pascal
+function ReadShortSmart(constref data: TByteArray; var offset: Integer): Integer;
+```
+Reads a signed value written in as few bytes as it needed.
 
-  data[offset] := (value shr 24) or $80;
-  data[offset + 1] := value shr 16;
-  data[offset + 2] := value shr 8;
-  data[offset + 3] := value;
-  Inc(offset, 4);
-end;
-
+The top bit of the first byte picks the width: clear is a single byte biased by `-64`, covering
+`-64` to `63`; set is two bytes biased by `-$C000`, covering `-16384` to `16383`.
+*)
 function ReadShortSmart(constref data: TByteArray; var offset: Integer): Integer;
 begin
   if data[offset] < 128 then
@@ -221,7 +219,7 @@ comes next. Running off the end of the array ends the string as a terminator wou
 *)
 function TByteArray.ReadCString(var offset: Integer): String;
 var
-  start, len, i: Integer;
+  start, len: Integer;
 begin
   start := offset;
   while (offset <= High(Self)) and (Self[offset] <> 0) do

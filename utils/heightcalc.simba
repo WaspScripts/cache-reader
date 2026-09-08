@@ -168,5 +168,141 @@ begin
     Result := 60;
 end;
 
+(*
+## HeightCalc.SmoothedNoiseArea
+```pascal
+function THeightCalc.SmoothedNoiseArea(x, y, width, height: Integer): TIntegerMatrix;
+```
+{ref}`THeightCalc.SmoothedNoise` for every point of a `width` by `height` rectangle whose
+top-left corner is `x, y`, returned indexed `[x, y]`.
+
+Each point smooths the 3x3 block of raw noise around it, so neighbouring points overlap by two
+thirds. Laying the raw noise out once and reading it back nine times costs a ninth of the
+`Noise` calls that smoothing each point on its own would.
+*)
+function THeightCalc.SmoothedNoiseArea(x, y, width, height: Integer): TIntegerMatrix;
+var
+  i, j, corners, sides: Integer;
+  noise: TIntegerMatrix;
+  left, middle, right, row: TIntegerArray;
+begin
+  SetLength(noise, width + 2, height + 2);
+  for i := 0 to width + 1 do
+  begin
+    row := noise[i];
+    for j := 0 to height + 1 do
+      row[j] := Self.Noise(x - 1 + i, y - 1 + j);
+  end;
+
+  SetLength(Result, width, height);
+  for i := 0 to width - 1 do
+  begin
+    left   := noise[i];
+    middle := noise[i + 1];
+    right  := noise[i + 2];
+    row    := Result[i];
+
+    for j := 0 to height - 1 do
+    begin
+      corners := left[j] + right[j] + left[j + 2] + right[j + 2];
+      sides   := left[j + 1] + right[j + 1] + middle[j] + middle[j + 2];
+      row[j]  := (middle[j + 1] shr 2) + (sides shr 3) + (corners shr 4);
+    end;
+  end;
+end;
+
+(*
+## HeightCalc.CalculateArea
+```pascal
+function THeightCalc.CalculateArea(x, y, size: Integer): TIntegerMatrix;
+```
+{ref}`THeightCalc.Calculate` for every tile of a `size` by `size` square whose corner is `x, y`,
+returned indexed `[x, y]`.
+
+The result is identical to calling `Calculate` per tile, but the three noise layers it sums are
+built as grids first. The two coarse layers are sampled every 4 and every 2 tiles, so a whole
+square shares a handful of their points rather than re-deriving them for each tile.
+*)
+function THeightCalc.CalculateArea(x, y, size: Integer): TIntegerMatrix;
+var
+  coarseX, coarseY, midX, midY,
+  i, j, n, sample, interpolatedLow, interpolatedHigh: Integer;
+  coarse, mid, fine: TIntegerMatrix;
+  coarseIdxX, coarseIdxY, coarseFracX, coarseFracY, midIdxX, midIdxY: TIntegerArray;
+  row, fineRow: TIntegerArray;
+begin
+  coarseX := (x + 45365) div 4;
+  coarseY := (y + 91923) div 4;
+  coarse := Self.SmoothedNoiseArea(
+    coarseX, coarseY,
+    ((x + 45365 + size - 1) div 4) - coarseX + 2,
+    ((y + 91923 + size - 1) div 4) - coarseY + 2
+  );
+
+  midX := (x + 10294) div 2;
+  midY := (y + 37821) div 2;
+  mid := Self.SmoothedNoiseArea(
+    midX, midY,
+    ((x + 10294 + size - 1) div 2) - midX + 2,
+    ((y + 37821 + size - 1) div 2) - midY + 2
+  );
+
+  fine := Self.SmoothedNoiseArea(x, y, size, size);
+
+  SetLength(coarseIdxX, size);
+  SetLength(coarseIdxY, size);
+  SetLength(coarseFracX, size);
+  SetLength(coarseFracY, size);
+  SetLength(midIdxX, size);
+  SetLength(midIdxY, size);
+
+  for i := 0 to size - 1 do
+  begin
+    coarseIdxX[i]  := ((x + 45365 + i) div 4) - coarseX;
+    coarseFracX[i] := (x + 45365 + i) and 3;
+    coarseIdxY[i]  := ((y + 91923 + i) div 4) - coarseY;
+    coarseFracY[i] := (y + 91923 + i) and 3;
+    //at frequency 2 the client snaps to the nearer grid point instead of interpolating
+    midIdxX[i] := ((x + 10294 + i) div 2) + ((x + 10294 + i) and 1) - midX;
+    midIdxY[i] := ((y + 37821 + i) div 2) + ((y + 37821 + i) and 1) - midY;
+  end;
+
+  SetLength(Result, size, size);
+  for i := 0 to size - 1 do
+  begin
+    row     := Result[i];
+    fineRow := fine[i];
+
+    for j := 0 to size - 1 do
+    begin
+      interpolatedLow := Self.Interpolate(
+        coarse[coarseIdxX[i], coarseIdxY[j]],
+        coarse[coarseIdxX[i] + 1, coarseIdxY[j]],
+        coarseFracX[i], 4
+      );
+      interpolatedHigh := Self.Interpolate(
+        coarse[coarseIdxX[i], coarseIdxY[j] + 1],
+        coarse[coarseIdxX[i] + 1, coarseIdxY[j] + 1],
+        coarseFracX[i], 4
+      );
+
+      sample := Self.Interpolate(interpolatedLow, interpolatedHigh, coarseFracY[j], 4);
+
+      n := sample - 128 +
+           ((mid[midIdxX[i], midIdxY[j]] - 128) shr 1) +
+           ((fineRow[j] - 128) shr 2);
+
+      n := 35 + (n * 3) div 10;
+
+      if n < 10 then
+        n := 10
+      else if n > 60 then
+        n := 60;
+
+      row[j] := n;
+    end;
+  end;
+end;
+
 var
   HeightCalc: THeightCalc;

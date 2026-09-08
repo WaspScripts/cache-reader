@@ -187,34 +187,31 @@ world counts y upwards.
 *)
 procedure TMapChunkLoader.DrawObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
-  i, color, scale: Integer;
-  obj: TObjectDefinition;
+  i, objIdx, color, scale: Integer;
 begin
   // 0..3 normal walls/doors and 9 are diagonal walls/doors
   if (loc.LocType > 3) and not InRange(loc.LocType, 9, 11) and (loc.LocType <> 22) then
     Exit;
 
-  i := Self.MapData.Objects.IndexOf(loc.ID);
-  if i = -1 then
+  objIdx := Self.MapData.Objects.IndexOf(loc.ID);
+  if objIdx = -1 then
     Exit;
-
-  obj := Self.MapData.Objects[i];
 
   scale := TMapChunkLoader.SCALE;
 
   x := x * scale;
-  y := (TMapChunkLoader.REGION_SIZE - obj.SizeY - y) * scale;
+  y := (TMapChunkLoader.REGION_SIZE - Self.MapData.Objects[objIdx].SizeY - y) * scale;
 
-  if obj.MapSceneID > -1 then
+  if Self.MapData.Objects[objIdx].MapSceneID > -1 then
   begin
-    Self.BlitMapDecoration(pixels, x, y, obj);
+    Self.BlitMapDecoration(pixels, x, y, Self.MapData.Objects[objIdx]);
     Exit;
   end;
 
   if loc.LocType > 9 then
     Exit;
 
-  if obj.WallOrDoor <> 0 then
+  if Self.MapData.Objects[objIdx].WallOrDoor <> 0 then
     color := TColorUtils.DOOR_COLOR
   else
     color := TColorUtils.WALL_COLOR;
@@ -1037,27 +1034,24 @@ marked there.
 *)
 procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
-  i, color, drawX, drawY, xSize, ySize, sX, sY: Integer;
-  obj: TObjectDefinition;
+  i, objIdx, color, drawX, drawY, xSize, ySize, sX, sY: Integer;
 begin
   if InRange(loc.LocType, 4, 8) then
     Exit;
 
-  i := Self.MapData.Objects.IndexOf(loc.ID);
-  if i = -1 then
+  objIdx := Self.MapData.Objects.IndexOf(loc.ID);
+  if objIdx = -1 then
     Exit;
 
-  obj := Self.MapData.Objects[i];
-
-  if obj.InteractType = 0 then
+  if Self.MapData.Objects[objIdx].InteractType = 0 then
     Exit;
 
   if loc.LocType = 22 then
-    if obj.InteractType <> 1 then
+    if Self.MapData.Objects[objIdx].InteractType <> 1 then
       Exit;
 
   drawX := x * TMapChunkLoader.SCALE;
-  drawY := (TMapChunkLoader.REGION_SIZE - obj.SizeY - y) * TMapChunkLoader.SCALE;
+  drawY := (TMapChunkLoader.REGION_SIZE - Self.MapData.Objects[objIdx].SizeY - y) * TMapChunkLoader.SCALE;
 
   if drawY < 0 then
     Exit;
@@ -1068,16 +1062,16 @@ begin
     if loc.ID = 24720 then
       Exit;
 
-    if obj.WallOrDoor <> 0 then
+    if Self.MapData.Objects[objIdx].WallOrDoor <> 0 then
       color := TColorUtils.COLLISION_DOOR_COLOR
     else
       color := TColorUtils.COLLISION_WALL_COLOR;
 
     case loc.LocType of
-      0: TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(obj));
+      0: TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(Self.MapData.Objects[objIdx]));
       2:
       begin
-        TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(obj));
+        TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(Self.MapData.Objects[objIdx]));
         //corner walls occupy two edges, so the wall itself is drawn plus the edge next to it
         TMapChunkLoader.DrawCollisionEdge(pixels, drawX, drawY, (loc.Orientation + 1) and 3, color);
       end;
@@ -1096,7 +1090,7 @@ begin
   // Type 9: diagonal walls
   if loc.LocType = 9 then
   begin
-    if obj.WallOrDoor <> 0 then
+    if Self.MapData.Objects[objIdx].WallOrDoor <> 0 then
       color := TColorUtils.COLLISION_DOOR_COLOR
     else
       color := TColorUtils.COLLISION_WALL_COLOR;
@@ -1119,16 +1113,16 @@ begin
   // Types 10-22: collision objects
   if InRange(loc.LocType, 10, 22) then
   begin
-    if (obj.Name = 'null') or (obj.Name = '') then
+    if (Self.MapData.Objects[objIdx].Name = 'null') or (Self.MapData.Objects[objIdx].Name = '') then
       Exit;
-    if obj.ObjectModels.IsEmpty then
+    if Self.MapData.Objects[objIdx].ObjectModels.IsEmpty then
       Exit;
 
     if drawX < 0 then
       Exit;
 
-    xSize := obj.SizeX * TMapChunkLoader.SCALE;
-    ySize := obj.SizeY * TMapChunkLoader.SCALE;
+    xSize := Self.MapData.Objects[objIdx].SizeX * TMapChunkLoader.SCALE;
+    ySize := Self.MapData.Objects[objIdx].SizeY * TMapChunkLoader.SCALE;
 
     if (xSize = ySize) or (loc.Orientation = 0) or (loc.Orientation = 2) then
     begin

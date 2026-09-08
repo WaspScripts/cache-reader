@@ -76,21 +76,16 @@ begin
   end;
 end;
 
-function TTextureDefinition.GetAverageColor(): Integer;
-var
-  r, g, b: Integer;
-begin
-  r := (Self.AverageRGB shr 11) and $1F;
-  g := (Self.AverageRGB shr 5) and $3F;
-  b := Self.AverageRGB and $1F;
+(*
+## TTextureDefinitionArray.IndexOf
+```pascal
+function TTextureDefinitionArray.IndexOf(id: Integer): Integer;
+```
+The position of `id` in the array, or `-1` if there is no such texture.
 
-  r := (r shl 3) or (r shr 2);
-  g := (g shl 2) or (g shr 4);
-  b := (b shl 3) or (b shr 2);
-
-  Result := (b shl 16) or (g shl 8) or r;
-end;
-
+Texture definitions are stored one per id with no gaps, so an id is its own index; this exists to
+keep that assumption in one place.
+*)
 function TTextureDefinitionArray.IndexOf(id: Integer): Integer;
 begin
   if InRange(id, 0, High(Self)) then

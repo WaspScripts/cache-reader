@@ -32,8 +32,6 @@ type
     Radius, Diameter: Integer;
     Extremes: array [0..2] of Integer;
     ModelHeight: Integer;
-    VertexNormals: TVertexNormalArray;
-    FaceNormals: TFaceNormalArray;
   end;
 
 (*
@@ -92,7 +90,19 @@ begin
     Result.Extremes[i] := -1;
 end;
 
-procedure TLitModel._ComputeNormals(idx: Integer; out nX, nY, nZ: Integer);
+(*
+## LitModel.FaceNormal
+```pascal
+procedure TLitModel.FaceNormal(idx: Integer; out nX, nY, nZ: Integer);
+```
+The normal of face `idx`, as the cross product of the face's two edges scaled to a length of
+roughly 256.
+
+The cross product is halved until it fits in 13 bits so that the squares below cannot overflow,
+using an arithmetic shift - a logical one would turn a negative component into a large positive
+and flip the face's normal.
+*)
+procedure TLitModel.FaceNormal(idx: Integer; out nX, nY, nZ: Integer);
 var
   dxAB, dyAB, dzAB, dxAC, dyAC, dzAC,
   faceIdx1, faceIdx2, faceIdx3, len: Integer;
@@ -126,91 +136,17 @@ begin
   nZ := nZ * 256 div len;
 end;
 
-procedure TLitModel.ComputeNormals();
-var
-  nx, ny, nz, i,
-  faceIdx1, faceIdx2, faceIdx3: Integer;
-  vertex: TVertexNormal;
-begin
-  SetLength(Self.VertexNormals, Self.VerticesCount);
-  SetLength(Self.FaceNormals, 0);
+(*
+## LitModel.CalcBoundsCylinder
+```pascal
+procedure TLitModel.CalcBoundsCylinder();
+```
+Measures the cylinder the model fits inside: how far it reaches from the vertical axis, and how
+far it rises above and drops below its origin.
 
-  if Self.FaceRenderTypes.IsEmpty then
-  begin
-    for i := 0 to Self.IndicesCount - 1 do
-    begin
-      Self._ComputeNormals(i, nX, nY, nZ);
-
-      faceIdx1 := Self.FaceIndices1[i];
-      Self.VertexNormals[faceIdx1].X += nx;
-      Self.VertexNormals[faceIdx1].Y += ny;
-      Self.VertexNormals[faceIdx1].Z += nz;
-      Self.VertexNormals[faceIdx1].Magnitude += 1;
-
-      faceIdx2 := Self.FaceIndices2[i];
-      Self.VertexNormals[faceIdx2].X += nx;
-      Self.VertexNormals[faceIdx2].Y += ny;
-      Self.VertexNormals[faceIdx2].Z += nz;
-      Self.VertexNormals[faceIdx2].Magnitude += 1;
-
-      faceIdx3 := Self.FaceIndices3[i];
-      Self.VertexNormals[faceIdx3].X += nx;
-      Self.VertexNormals[faceIdx3].Y += ny;
-      Self.VertexNormals[faceIdx3].Z += nz;
-      Self.VertexNormals[faceIdx3].Magnitude += 1;
-    end;
-
-    Exit;
-  end;
-
-  SetLength(Self.FaceNormals, Self.IndicesCount);
-  for i := 0 to Self.IndicesCount - 1 do
-  begin
-    Self._ComputeNormals(i, nX, nY, nZ);
-    Self.FaceNormals[i] := [nx, ny, nz];
-  end;
-end;
-
-
-procedure TLitModel.Reset();
-begin
-  SetLength(Self.VertexNormals, 0);
-  SetLength(Self.FaceNormals, 0);
-end;
-
-procedure TLitModel.Resize(sx, sy, sz: Integer);
-var
-  i: Integer;
-begin
-  for i := 0 to Self.VerticesCount - 1 do
-  begin
-    Self.VertexX[i] := Self.VertexX[i] * sx div 128;
-    Self.VertexY[i] := sy * Self.VertexY[i] div 128;
-    Self.VertexZ[i] := sz * Self.VertexZ[i] div 128;
-  end;
-
-  Self.Reset();
-end;
-
-
-procedure TLitModel.Recolor(oldColor, newColor: Integer);
-var
-  i: Integer;
-begin
-  i := Self.FaceColors.IndexOf(oldColor);
-  if i > -1 then
-    Self.FaceColors[i] := newColor;
-end;
-
-procedure TLitModel.Retexture(oldTex, newTex: Integer);
-var
-  i: Integer;
-begin
-  i := Self.FaceTextures.IndexOf(oldTex);
-  if i > -1 then
-    Self.FaceTextures[i] := newTex;
-end;
-
+The height is what an item icon is centred on, and the radius is what face sorting offsets
+depths by so that they never go negative. It is computed once and remembered.
+*)
 procedure TLitModel.CalcBoundsCylinder();
 var
   i, value: Integer;
