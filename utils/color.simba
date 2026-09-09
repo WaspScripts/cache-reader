@@ -5,6 +5,11 @@ The game's colour model.
 Colours are not stored as RGB but as a 16 bit hue, saturation and luminance index into a palette
 built once at startup - see {ref}`TColorUtils.PackHSL` and
 {ref}`TColorUtils.CreateHSVPalette`. The global `ColorUtils` holds those palettes.
+
+There is one palette, and everything draws through it - the map renderer and the sprite
+rasterizer both read `ColorUtils.Palette` rather than carrying one of their own. It is built by
+{ref}`TColorUtils.Setup` at whatever brightness you ask for and stays put;
+{ref}`TColorUtils.SetBrightness` rebuilds it if you want a different look.
 *)
 {$include_once ./helpers.simba}
 
@@ -27,10 +32,8 @@ type
     const SATURATION_OFFSET: Double = 0.5 / 8.0;
 
     Palette, MinimapPalette: TIntegerArray;
-    IsSetup: Boolean;
-
-    CachedBrightnesses: TDoubleArray;
-    CachedSpritePalettes: T2DIntegerArray;
+    Brightness: Double;
+    Revision: Integer;
   end;
 
 (*
@@ -144,67 +147,44 @@ begin
 end;
 
 (*
-## ColorUtils.SpritePalette
+## ColorUtils.SetBrightness
 ```pascal
-function TColorUtils.SpritePalette(brightness: Double = TColorUtils.BRIGHTNESS_LOW): TIntegerArray;
+procedure TColorUtils.SetBrightness(brightness: Double);
 ```
-The palette the sprite rasterizer draws through, with its channels in the BGR order Simba's
-images use rather than the RGB the game stores.
+Rebuilds both palettes at a new brightness. Everything that draws - the map renderer and the
+sprite rasterizer alike - reads them, so this changes the whole library's colours at once.
 
-Palettes are expensive to build and there are only a few brightness settings, so each one is
-built once and kept.
+`Palette` is the plain lookup a packed HSL index goes through. `MinimapPalette` is that same
+lookup with the flatter minimap lighting already folded into it, so that
+{ref}`TColorUtils.UnderlayColor` and {ref}`TColorUtils.OverlayColor` are a single array read
+rather than a rescale and a clamp per tile.
+
+Entries are in the order {ref}`TColorUtils.CreateHSVPalette` produces, which is the order a
+`TColor` and `TImage.FromMatrix` use - red in the low byte. The sprite rasterizer's buffer goes
+out through `TImage.FromData` instead, which wants the opposite, so
+{ref}`TSpritePixels.ToImage` swaps as it copies rather than a second palette being kept for it.
+
+Rebuilding costs around 25ms, nearly all of it the brightness curve, so this is meant for
+setting a look up front rather than for switching back and forth. Setting the brightness it
+already has does nothing.
+
+Work already derived from the old palette is thrown away rather than left to go stale, but not
+from here - `ColorUtils` is defined long before anything that draws and there may be more than
+one map renderer. Instead `Revision` counts the changes, and
+{ref}`TMapChunkLoader.EnsureColorsCurrent` compares it against the revision its caches were
+built at and rebuilds them when they no longer match.
 *)
-function TColorUtils.SpritePalette(brightness: Double = TColorUtils.BRIGHTNESS_LOW): TIntegerArray;
-var
-  i, count, color: Integer;
-  palette: TIntegerArray;
-begin
-  for i := 0 to High(Self.CachedBrightnesses) do
-    if Self.CachedBrightnesses[i] = brightness then
-      Exit(Self.CachedSpritePalettes[i]);
-
-  palette := TColorUtils.CreateHSVPalette(brightness, 0, 65536);
-  for i := 0 to High(palette) do
-  begin
-    color := palette[i];
-    palette[i] := (color and $FF00) or ((color and $FF) shl 16) or ((color shr 16) and $FF);
-  end;
-
-  count := Length(Self.CachedBrightnesses);
-  SetLength(Self.CachedBrightnesses, count + 1);
-  SetLength(Self.CachedSpritePalettes, count + 1);
-  Self.CachedBrightnesses[count] := brightness;
-  Self.CachedSpritePalettes[count] := palette;
-
-  Result := palette;
-end;
-
-(*
-## ColorUtils.Setup
-```pascal
-procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
-```
-Builds the palettes the map renderer colours through. Called once at startup by `cache.simba`,
-and a no-op afterwards.
-
-Two palettes come out of this. `Palette` is the plain one a packed HSL index looks up.
-`MinimapPalette` is that same lookup with the flatter minimap lighting already folded into it,
-so that {ref}`TColorUtils.UnderlayColor` and {ref}`TColorUtils.OverlayColor` are a single array
-read rather than a rescale and a clamp per tile.
-
-The sprite rasterizer's palettes are not built here - {ref}`TColorUtils.SpritePalette` builds and
-keeps one the first time a given brightness is asked for, so a script that never renders a sprite
-never pays for one.
-*)
-procedure TColorUtils.Setup(brightness: Double = TColorUtils.BRIGHTNESS_MAX);
+procedure TColorUtils.SetBrightness(brightness: Double);
 const
   TARGET_LUM: Integer = 96;
 var
   i, lum: Integer;
 begin
-  if Self.IsSetup then
+  if Self.Brightness = brightness then
     Exit;
 
+  Self.Brightness := brightness;
+  Self.Revision += 1;
   Self.Palette := TColorUtils.CreateHSVPalette(brightness, 0, 65536);
 
   SetLength(Self.MinimapPalette, 65536);
@@ -213,8 +193,6 @@ begin
     lum := EnsureRange((i and 127) * TARGET_LUM div 128, 2, 126);
     Self.MinimapPalette[i] := Self.Palette[(i and 65408) + lum];
   end;
-
-  Self.IsSetup := True;
 end;
 
 

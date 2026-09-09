@@ -183,10 +183,16 @@ The buffer as an image with proper transparency.
 The rasterizer leaves the alpha byte at zero, so every pixel it touched has to be made opaque
 and every pixel it did not stays transparent - which is exactly how the original client turns
 its buffers into images.
+
+Red and blue are swapped on the way out. The buffer holds palette entries as
+{ref}`TColorUtils.CreateHSVPalette` produces them, red in the low byte, which is the order the
+map renderer's `TImage.FromMatrix` wants; `TImage.FromData` below wants the opposite. Doing it
+here costs one swap per pixel of a 36 by 32 icon, in a loop that already walks every pixel to
+set the alpha - far less than keeping a second 65536 entry palette in the other order.
 *)
 function TSpritePixels.ToImage(): TImage;
 var
-  i: Integer;
+  i, color: Integer;
   argb: TIntegerArray;
 begin
   // The rasterizer leaves the alpha byte at 0, so the buffer cannot be handed to
@@ -194,8 +200,12 @@ begin
   // opaque and leaves the untouched ones transparent.
   SetLength(argb, Length(Self.Pixels));
   for i := 0 to High(Self.Pixels) do
-    if Self.Pixels[i] <> 0 then
-      argb[i] := Self.Pixels[i] or ($FF shl 24);
+  begin
+    color := Self.Pixels[i];
+    if color = 0 then
+      Continue;
+    argb[i] := ($FF shl 24) or ((color and $FF) shl 16) or (color and $FF00) or ((color shr 16) and $FF);
+  end;
 
   Result := new TImage(Self.Width, Self.Height);
   Result.FromData(Self.Width, Self.Height, PColorBGRA(@argb[0]), Self.Width);

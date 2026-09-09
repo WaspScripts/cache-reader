@@ -1,0 +1,144 @@
+{$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+var
+  idSpinner, iterSpinner: TLazSpinEdit;
+  combobox: TLazComboBox;
+  archive: TArchive;
+
+procedure ShowImage(sender: TLazObject);
+var
+  itemDef: TItemDefinition;
+  sprite: TItemSprite;
+  img: TImage;
+  t: Double;
+  itemId, iterations: Integer;
+begin
+  itemId := idSpinner.Value;
+  iterations := iterSpinner.Value;
+
+  if not archive.Files.Exists(itemId) then
+  begin
+    WriteLn('Item #', itemId, ': skipped (no data)');
+    Exit;
+  end;
+
+  itemDef := TItemDefinition.Create(itemId, archive.Files.Value[itemId].Data);
+
+  //an item with no name and no noted variant is a gap in the id space rather than an item
+  if (itemDef.Name = 'null') and (itemDef.NotedTemplate = -1) then
+  begin
+    WriteLn('Item #', itemId, ': skipped (no data)');
+    Exit;
+  end;
+
+  sprite := TItemSprite.Create(CacheReader, itemDef);
+  if not sprite.Valid then
+  begin
+    WriteLn('Item #', itemId, ': failed to render (no model?). InventoryModel = ', itemDef.InventoryModel);
+    Exit;
+  end;
+
+  WriteLn('-- Item #', itemId, ': ', itemDef.Name, ' --');
+
+  //the model is loaded once and the icon rendered from it repeatedly, which is the part that
+  //runs again every time an icon is drawn
+  for 1 to iterations do img := sprite.ToImage();
+
+  t := PerformanceTime();
+  for 1 to iterations do
+    img := sprite.ToImage();
+  t := PerformanceTime() - t;
+  WriteLn('Took: ', t, 'ms to run ', iterations, ' times (', t / iterations, 'ms each).');
+  img.Show();
+end;
+
+procedure OnBrightnessChange(sender: TLazObject);
+const
+  LEVELS: TSingleArray = [0.9, 0.8, 0.7, 0.6, 0.5];
+var
+  i: Integer;
+begin
+  i := TLazComboBox(sender).ItemIndex;
+  ColorUtils.SetBrightness(LEVELS[i]);
+end;
+
+var
+  form: TLazForm;
+  lbl: TLazLabel;
+  btn: TLazButton;
+begin
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+
+  form := TLazForm.Create();
+  form.Height := 250;
+  form.Position := ELazFormPosition.DesktopCenter;
+
+  combobox := TLazComboBox.Create(form);
+  combobox.Parent := form;
+  combobox.Top := 50;
+  combobox.Left := 20;
+  combobox.Width := 80;
+  combobox.Items.AddStrings(['Min', 'Low', 'Med', 'High', 'Max']);
+  combobox.Style := ELazComboBoxStyle.DropDownList;
+  combobox.ItemIndex := 4;
+  combobox.OnChange := @OnBrightnessChange;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := 'Brightness:';
+  lbl.AnchorSideBottom.Control := combobox;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := combobox;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  iterSpinner := TLazSpinEdit.Create(form);
+  iterSpinner.Parent := form;
+  iterSpinner.Top := 50;
+  iterSpinner.Left := 120;
+  iterSpinner.MinValue := 1;
+  iterSpinner.MaxValue := 10000;
+  iterSpinner.Value := 100;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := 'Iterations:';
+  lbl.AnchorSideBottom.Control := iterSpinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := iterSpinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  idSpinner := TLazSpinEdit.Create(form);
+  idSpinner.Parent := form;
+  idSpinner.Top := 100;
+  idSpinner.Left := 20;
+  idSpinner.MinValue := 0;
+  //ids run to whatever the archive holds, and its keys are stored ascending
+  idSpinner.MaxValue := archive.Files.Keys[High(archive.Files.Keys)];
+  idSpinner.Value := 4151;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := 'Item ID:';
+  lbl.AnchorSideBottom.Control := idSpinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := idSpinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  btn := TLazButton.Create(form);
+  btn.Parent := form;
+  btn.Top := 150;
+  btn.Left := 20;
+  btn.Width := 200;
+  btn.Caption := 'Render and show';
+  btn.OnClick := @ShowImage;
+
+  form.Show();
+  while form.Showing do
+    Sleep(100);
+end.

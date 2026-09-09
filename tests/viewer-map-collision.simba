@@ -2,20 +2,24 @@
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
-  zSpinner, x1Spinner, y1Spinner, x2Spinner, y2Spinner: TLazSpinEdit;
+  zSpinner, x1Spinner, y1Spinner, x2Spinner, y2Spinner, iterSpinner: TLazSpinEdit;
   chunkLoader: TMapChunkLoader;
 
 procedure ShowImage(sender: TLazObject);
 var
   img: TImage;
   t: Double;
+  iterations: Integer;
 begin
-  for 1 to 100 do img := chunkLoader.GetChunksCollisionImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+  iterations := iterSpinner.Value;
+
+  for 1 to iterations do img := chunkLoader.GetChunksCollisionImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
 
   t := PerformanceTime();
-  for 1 to 100 do
+  for 1 to iterations do
     img := chunkLoader.GetChunksCollisionImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
-  WriteLn('Took: ', PerformanceTime()-t, 'ms to run.');
+  t := PerformanceTime() - t;
+  WriteLn('Took: ', t, 'ms to run ', iterations, ' times (', t / iterations, 'ms each).');
   img.Show();
 end;
 
@@ -31,6 +35,23 @@ begin
 
   form := TLazForm.Create();
   form.Position := ELazFormPosition.DesktopCenter;
+
+  iterSpinner := TLazSpinEdit.Create(form);
+  iterSpinner.Parent := form;
+  iterSpinner.Top := 50;
+  iterSpinner.Left := 120;
+  iterSpinner.MinValue := 1;
+  iterSpinner.MaxValue := 10000;
+  iterSpinner.Value := 100;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := 'Iterations:';
+  lbl.AnchorSideBottom.Control := iterSpinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := iterSpinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
 
   zSpinner := TLazSpinEdit.Create(form);
   zSpinner.Parent := form;

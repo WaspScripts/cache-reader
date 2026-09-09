@@ -31,7 +31,6 @@ type
     LitModel: TLitModel;
     Graphics: TGraphics3D;
     Pixels: TSpritePixels;
-    Brightness: Double;
     Valid: Boolean;
   end;
 
@@ -65,19 +64,18 @@ end;
 (*
 ## TItemSprite.Create
 ```pascal
-function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition; brightness: Double = TColorUtils.BRIGHTNESS_MAX): TItemSprite; static;
+function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition): TItemSprite; static;
 ```
 Loads the item's inventory model and prepares it for lighting.
 Sets `TItemSprite.Valid` to `False` if the model archive/data can't be loaded.
 *)
-function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition; brightness: Double = TColorUtils.BRIGHTNESS_MAX): TItemSprite; static;
+function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition): TItemSprite; static;
 var
   modelSector: TArchiveSector;
   modelData: TByteArray;
   i: Integer;
 begin
   Result.ItemDef := itemDef;
-  Result.Brightness := brightness;
   Result.Valid := False;
 
   modelSector := cacheReader.Indices[ECacheIndex.MODELS].ReadArchiveSector(
@@ -106,9 +104,9 @@ begin
 end;
 
 (*
-## TItemSprite.Create
+## TItemSprite.Light
 ```pascal
-function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition; brightness: Double = TColorUtils.BRIGHTNESS_MAX): TItemSprite; static;
+procedure TItemSprite.Light();
 ```
 Computes vertex/face normals and lights each face, writing the result into
 `TItemSprite.LitModel.FaceColors1/2/3`.
@@ -277,7 +275,6 @@ begin
 
   Self.Pixels := TSpritePixels.Create(36, 32);
   Self.Graphics.SetRasterBuffer(Self.Pixels.Pixels, 36, 32);
-  Self.Graphics.Palette := ColorUtils.SpritePalette(Self.Brightness);
   Self.Graphics.Reset();
   Self.Graphics.Zoom := 512;
   Self.Graphics.SetRasterClipping();
@@ -304,13 +301,18 @@ end;
 (*
   TItemSprite.ToImage — lights, projects and rasterizes the model, then
   returns the resulting 36x32 icon.
+
+  The border and shadow are written straight into the rasterizer's buffer, so they are given in
+  the palette's channel order - red in the low byte - and are swapped along with everything else
+  by TSpritePixels.ToImage. The border is the near-black the client uses: not quite zero, since
+  zero is what marks a pixel as untouched.
 *)
 function TItemSprite.ToImage(shadow: Boolean = True): TImage;
 begin
   Self.Light();
   Self.Project();
-  Self.Pixels.DrawBorder($1);
+  Self.Pixels.DrawBorder($10000);
   if shadow then
-    Self.Pixels.DrawShadow($302020);
+    Self.Pixels.DrawShadow($202030);
   Result := Self.Pixels.ToImage();
 end;

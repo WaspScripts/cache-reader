@@ -250,31 +250,24 @@ end;
 
 
 (*
-## MapDataLoader.PrepareForRendering
+## MapDataLoader.BuildOverlayColors
 ```pascal
-procedure TMapDataLoader.PrepareForRendering();
+procedure TMapDataLoader.BuildOverlayColors();
 ```
-Works out everything the map renderer would otherwise derive over and over from data that never
-changes once loaded. Run at the end of {ref}`TMapDataLoader.Load`, after every definition it
-reads is in place.
+Works out the colour each ground overlay is drawn as on the minimap.
 
-Three things are settled here:
+It depends only on the overlay - its secondary colour, its texture's average colour, or its own
+colour, in that order - so it is settled per overlay here instead of per tile of every plane of
+every region.
 
-- The colour each ground overlay is drawn as on the minimap. It depends only on the overlay -
-  its secondary colour, its texture's average colour, or its own colour, in that order - so it
-  is worked out per overlay here instead of per tile of every plane of every region.
-- The map scene sprites, converted from the RGB the cache stores to the BGR the pixel buffers
-  use, with a fully transparent pixel flattened to `0`. Drawing one is then a copy.
-- One {ref}`TImage` per area icon, so that drawing the same icon in a dozen regions does not
-  build a dozen images of it.
+This is the one part of {ref}`TMapDataLoader.PrepareForRendering` that reads the palette, which
+is why it is separate: {ref}`TMapChunkLoader.EnsureColorsCurrent` runs it again on its own when
+the brightness changes.
 *)
-procedure TMapDataLoader.PrepareForRendering();
+procedure TMapDataLoader.BuildOverlayColors();
 var
-  i, j, color: Integer;
-  pixels: TIntegerArray;
+  i, j: Integer;
 begin
-  ColorUtils.Setup();
-
   for i := 0 to High(Self.Overlays) do
     with Self.Overlays[i] do
     begin
@@ -295,6 +288,29 @@ begin
           ColorUtils.PackHSL(Hue, Saturation, Lightness)
         ) or $FF000000;
     end;
+end;
+
+(*
+## MapDataLoader.PrepareForRendering
+```pascal
+procedure TMapDataLoader.PrepareForRendering();
+```
+Works out everything the map renderer would otherwise derive over and over from data that never
+changes once loaded. Run at the end of {ref}`TMapDataLoader.Load`, after every definition it
+reads is in place.
+
+Three things are settled here: the overlay colours {ref}`TMapDataLoader.BuildOverlayColors`
+works out, the map scene sprites converted from the RGB the cache stores to the BGR the pixel
+buffers use with a fully transparent pixel flattened to `0` so that drawing one is a copy, and
+one {ref}`TImage` per area icon so that drawing the same icon in a dozen regions does not build
+a dozen images of it.
+*)
+procedure TMapDataLoader.PrepareForRendering();
+var
+  i, j, color: Integer;
+  pixels: TIntegerArray;
+begin
+  Self.BuildOverlayColors();
 
   SetLength(Self.MapScenePixels, Length(Self.MapScenes));
   for i := 0 to High(Self.MapScenes) do

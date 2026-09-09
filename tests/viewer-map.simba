@@ -1,22 +1,37 @@
-{.$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
+{$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
-  zSpinner, x1Spinner, y1Spinner, x2Spinner, y2Spinner: TLazSpinEdit;
+  zSpinner, x1Spinner, y1Spinner, x2Spinner, y2Spinner, iterSpinner: TLazSpinEdit;
+  combobox: TLazComboBox;
   chunkLoader: TMapChunkLoader;
 
 procedure ShowImage(sender: TLazObject);
 var
   img: TImage;
   t: Double;
+  iterations: Integer;
 begin
-  for 1 to 100 do img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
+  iterations := iterSpinner.Value;
+
+  for 1 to iterations do img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
 
   t := PerformanceTime();
-  for 1 to 100 do
+  for 1 to iterations do
     img := chunkLoader.GetChunksImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
-  WriteLn('Took: ', PerformanceTime()-t, 'ms to run.');
+  t := PerformanceTime() - t;
+  WriteLn('Took: ', t, 'ms to run ', iterations, ' times (', t / iterations, 'ms each).');
   img.Show();
+end;
+
+procedure OnBrightnessChange(sender: TLazObject);
+const
+  LEVELS: TSingleArray = [0.9, 0.8, 0.7, 0.6, 0.5];
+var
+  i: Integer;
+begin
+  i := TLazComboBox(sender).ItemIndex;
+  ColorUtils.SetBrightness(LEVELS[i]);
 end;
 
 var
@@ -30,11 +45,48 @@ begin
   chunkLoader.MapData.Load();
 
   form := TLazForm.Create();
+  form.Height := 300;
   form.Position := ELazFormPosition.DesktopCenter;
+
+  combobox := TLazComboBox.Create(form);
+  combobox.Parent := form;
+  combobox.Top := 50;
+  combobox.Left := 20;
+  combobox.Width := 80;
+  combobox.Items.AddStrings(['Min', 'Low', 'Med', 'High', 'Max']);
+  combobox.Style := ELazComboBoxStyle.DropDownList;
+  combobox.ItemIndex := 4;
+  combobox.OnChange := @OnBrightnessChange;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := 'Brightness:';
+  lbl.AnchorSideBottom.Control := combobox;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := combobox;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  iterSpinner := TLazSpinEdit.Create(form);
+  iterSpinner.Parent := form;
+  iterSpinner.Top := 50;
+  iterSpinner.Left := 120;
+  iterSpinner.MinValue := 1;
+  iterSpinner.MaxValue := 10000;
+  iterSpinner.Value := 100;
+
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := 'Iterations:';
+  lbl.AnchorSideBottom.Control := iterSpinner;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := iterSpinner;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
 
   zSpinner := TLazSpinEdit.Create(form);
   zSpinner.Parent := form;
-  zSpinner.Top := 50;
+  zSpinner.Top := 100;
   zSpinner.Left := 20;
   zSpinner.MinValue := 0;
   zSpinner.MaxValue := 3;
@@ -51,7 +103,7 @@ begin
 
   x1Spinner := TLazSpinEdit.Create(form);
   x1Spinner.Parent := form;
-  x1Spinner.Top := 100;
+  x1Spinner.Top := 150;
   x1Spinner.Left := 20;
   x1Spinner.MinValue := 0;
   x1Spinner.MaxValue := 99;
@@ -68,7 +120,7 @@ begin
 
   y1Spinner := TLazSpinEdit.Create(form);
   y1Spinner.Parent := form;
-  y1Spinner.Top := 150;
+  y1Spinner.Top := 200;
   y1Spinner.Left := 20;
   y1Spinner.MinValue := 0;
   y1Spinner.MaxValue := 199;
@@ -86,7 +138,7 @@ begin
 
   x2Spinner := TLazSpinEdit.Create(form);
   x2Spinner.Parent := form;
-  x2Spinner.Top := 100;
+  x2Spinner.Top := 150;
   x2Spinner.Left := 120;
   x2Spinner.MinValue := 0;
   x2Spinner.MaxValue := 99;
@@ -103,7 +155,7 @@ begin
 
   y2Spinner := TLazSpinEdit.Create(form);
   y2Spinner.Parent := form;
-  y2Spinner.Top := 150;
+  y2Spinner.Top := 200;
   y2Spinner.Left := 120;
   y2Spinner.MinValue := 0;
   y2Spinner.MaxValue := 199;
@@ -120,7 +172,7 @@ begin
 
   btn := TLazButton.Create(form);
   btn.Parent := form;
-  btn.Top := 200;
+  btn.Top := 250;
   btn.Left := 20;
   btn.Width := 200;
   btn.Caption := 'Render and show';

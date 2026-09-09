@@ -3,9 +3,13 @@
 Software 3D rasterizer.
 Renders Gouraud-shaded and flat-coloured triangles into an integer pixel buffer.
 
-The pixel format is ABGR (Alpha<<24 | Blue<<16 | Green<<8 | Red), matching
-Simba's TImage / PColorBGRA convention. Colour palette values come from the
-Palette field, which the caller points at a ColorUtils.SpritePalette result.
+The pixel format is Blue<<16 | Green<<8 | Red, which is what a `TColor` is and what
+{ref}`TColorUtils.CreateHSVPalette` produces. Colours are palette indices rather than colours,
+looked up in `ColorUtils.Palette` - the one palette the whole library draws through, so there
+is nothing to point this at and nothing to keep in step.
+
+Note that this is the opposite order to the `PColorBGRA` buffer `TImage.FromData` reads;
+{ref}`TSpritePixels.ToImage` swaps red and blue when it hands the buffer over.
 *)
 {$include_once ../utils/color.simba}
 {$include_once ./circularangle.simba}
@@ -13,7 +17,7 @@ Palette field, which the caller points at a ColorUtils.SpritePalette result.
 type
   TGraphics3D = record
     // Rasterizer2D fields
-    Pixels, Palette: TIntegerArray;
+    Pixels: TIntegerArray;
     PixelWidth, PixelHeight,
     DrawTop, DrawBottom, DrawLeft, DrawRight: Integer;
 
@@ -181,6 +185,7 @@ colour for speed (as the original client does on low-res mode).
 procedure TGraphics3D.GouraudRaster(baseIdx, leftX, rightX, startColor, colorStep: Integer);
 var
   span, i, pixelIdx, color, pal, blended, existing, alpha, invAlpha: Integer;
+  palette: TIntegerArray;
 begin
   if Self.RasterClipEnable then
   begin
@@ -193,6 +198,7 @@ begin
   if leftX >= rightX then
     Exit;
 
+  palette := ColorUtils.Palette;
   pixelIdx := baseIdx + leftX;
   color := startColor + leftX * colorStep;
 
@@ -203,7 +209,7 @@ begin
     begin
       for i := 0 to span - 1 do
       begin
-        Self.Pixels[pixelIdx] := Self.Palette[color shr 8];
+        Self.Pixels[pixelIdx] := palette[color shr 8];
         color += colorStep;
         Inc(pixelIdx);
       end;
@@ -214,7 +220,7 @@ begin
       invAlpha := 256 - alpha;
       for i := 0 to span - 1 do
       begin
-        pal := Self.Palette[color shr 8];
+        pal := palette[color shr 8];
         color += colorStep;
         blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) +
                    ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
@@ -235,7 +241,7 @@ begin
   begin
     for i := 0 to span - 1 do
     begin
-      pal := Self.Palette[color shr 8];
+      pal := palette[color shr 8];
       Self.Pixels[pixelIdx] := pal;
       Self.Pixels[pixelIdx + 1] := pal;
       Self.Pixels[pixelIdx + 2] := pal;
@@ -247,7 +253,7 @@ begin
     span := (rightX - leftX) and 3;
     if span > 0 then
     begin
-      pal := Self.Palette[color shr 8];
+      pal := palette[color shr 8];
       for i := 0 to span - 1 do
         Self.Pixels[pixelIdx + i] := pal;
     end;
@@ -259,7 +265,7 @@ begin
 
   for i := 0 to span - 1 do
   begin
-    pal := Self.Palette[color shr 8];
+    pal := palette[color shr 8];
     color += colorStep;
     blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) +
                ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
@@ -279,7 +285,7 @@ begin
   if span <= 0 then
     Exit;
 
-  pal := Self.Palette[color shr 8];
+  pal := palette[color shr 8];
   blended := ((invAlpha * (pal and $FF00) shr 8) and $FF00) + ((invAlpha * (pal and $FF00FF) shr 8) and $FF00FF);
   for i := 0 to span - 1 do
   begin

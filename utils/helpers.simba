@@ -332,6 +332,8 @@ begin
   end;
 
   Result.H := Result.H / 6.0;
+  if Result.H < 0.0 then
+    Result.H := Result.H + 1.0;
 
   Result.Saturation := EnsureRange(Trunc(Result.S * 256.0), 0, 255);
   Result.Lightness  := EnsureRange(Trunc(Result.L * 256.0), 0, 255);

@@ -30,7 +30,7 @@ type
     RegionTileCodes, RegionIconCodes: array of array of TIntegerArray;
     RegionIconsCached: array of TBooleanArray;
 
-    LastIndex: Integer;
+    LastIndex, PaletteRevision: Integer;
 
     const REGION_SIZE: Integer = 64;
     const REGION_Z: Integer = 4;
@@ -127,6 +127,46 @@ begin
     SetLength(Self.RegionIconsCached[i], TMapChunkLoader.REGION_Z);
     Inc(i);
   end;
+end;
+
+(*
+## MapChunkLoader.EnsureColorsCurrent
+```pascal
+procedure TMapChunkLoader.EnsureColorsCurrent();
+```
+Throws away everything that was coloured through the old palette, if
+{ref}`TColorUtils.SetBrightness` has been called since it was built.
+
+`ColorUtils` cannot reach in and do this itself - it is defined long before anything that draws,
+and there may be more than one chunk loader - so it counts its changes in `Revision` and this
+compares against the revision these caches were filled at.
+
+What goes is the rendered planes and the overlay colours, both of which are palette colours,
+and the tile classifications with them. The classifications do not depend on the palette, but
+{ref}`TMapChunkLoader.GetChunkImage` only rebuilds a missing plane while it is classifying the
+tiles that ask for it - so dropping planes and keeping classifications would leave it
+compositing planes that are no longer there. They are one pass over 4096 tiles to rebuild,
+against the plane renders being thrown away regardless.
+
+The icon lists and the loaded regions themselves are untouched: neither depends on the palette,
+and they are the expensive half.
+*)
+procedure TMapChunkLoader.EnsureColorsCurrent();
+var
+  i, z: Integer;
+begin
+  if Self.PaletteRevision = ColorUtils.Revision then
+    Exit;
+
+  Self.PaletteRevision := ColorUtils.Revision;
+  Self.MapData.BuildOverlayColors();
+
+  for i := 0 to High(Self.RegionPlaneCache) do
+    for z := 0 to High(Self.RegionPlaneCache[i]) do
+    begin
+      SetLength(Self.RegionPlaneCache[i, z], 0);
+      SetLength(Self.RegionTileCodes[i, z], 0);
+    end;
 end;
 
 (*
@@ -780,6 +820,7 @@ begin
   Result := new TImage(TMapChunkLoader.IMAGE_SIZE, TMapChunkLoader.IMAGE_SIZE);
 
   Self.LastIndex := -1;
+  Self.EnsureColorsCurrent();
 
   if not Self.RegionLoader.LoadRegionAndNeighbors(regionX, regionY) then
     Exit;
