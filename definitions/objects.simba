@@ -340,6 +340,13 @@ begin
     else
       Result.SupportsItems := 0;
   end;
+
+  if (Result.WallOrDoor <> 0) and (Pos('urtain', Result.Name) = 0) then
+    for i := 0 to High(Result.Ops.Ops) do
+      if Result.Ops.Ops[i].Text = 'Close' then
+      begin
+        Result.OpenableDoor := True;
+        Break;
       end;
 end;
 
