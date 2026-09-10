@@ -62,6 +62,26 @@ begin
   Result := Self.Glyphs[charCode].ToImage();
 end;
 
+function TFontDefinition.GetGlyphShadowImage(charCode: Integer): TImage;
+var
+  sprite: TSpriteDefinition;
+  white: TPointArray;
+  pt: TPoint;
+begin
+  if (charCode < 0) or (charCode > High(Self.Glyphs)) then
+    raise 'Invalid character code: ' + ToStr(charCode);
+
+  sprite := Self.Glyphs[charCode];
+
+  Result := new TImage(sprite.Width, sprite.Height);
+  Result.FromData(sprite.Width, sprite.Height, PColorBGRA(@sprite.Pixels[0]), sprite.Width);
+
+  white := Result.FindColor($FFFFFF, 0).Offset([1,1]);
+  for pt in white do
+    if Result.Pixel[pt.X, pt.Y] <> $FFFFFF then
+      Result.Pixel[pt.X, pt.Y] := $0000FF;
+end;
+
 function TFontDefinition.GetGlyphImages(): TImageArray;
 var
   i: Integer;
@@ -75,5 +95,28 @@ begin
       Continue;
 
     Result[i] := Self.Glyphs[i].ToImage();
+  end;
+end;
+
+function TFontDefinition.GetGlyphShadowImages(): TImageArray;
+var
+  i: Integer;
+  img: TImage;
+  white: TPointArray;
+  pt: TPoint;
+begin
+  Result := Self.GetGlyphImages();
+
+  for i := 32 to 126 do //0..31 and 127..255 should be white spaces
+  begin
+    img := Result[i];
+    if img = nil then
+      Continue;
+
+    white := img.FindColor($FFFFFF, 0).Offset([1,1]);
+
+    for pt in white do
+    if img.Pixel[pt.X, pt.Y] <> $FFFFFF then
+      img.Pixel[pt.X, pt.Y] := $0000FF;
   end;
 end;

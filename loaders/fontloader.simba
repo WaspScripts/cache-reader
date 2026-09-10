@@ -12,7 +12,8 @@ type
     Fonts: TFontDefinitionArray;
     const
     NAMES: TStringArray = [
-      'p11_full', 'p12_full', 'b12_full',
+      'p11_full', 'p12_full',
+      'b12_full',
       'verdana_11pt_regular', 'verdana_13pt_regular', 'verdana_15pt_regular'
     ];
   end;
