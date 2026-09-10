@@ -65,8 +65,7 @@ end;
 function TFontDefinition.GetGlyphShadowImage(charCode: Integer): TImage;
 var
   sprite: TSpriteDefinition;
-  white: TPointArray;
-  pt: TPoint;
+  tpa: TPointArray;
 begin
   if (charCode < 0) or (charCode > High(Self.Glyphs)) then
     raise 'Invalid character code: ' + ToStr(charCode);
@@ -76,11 +75,9 @@ begin
   Result := new TImage(sprite.Width, sprite.Height);
   Result.FromData(sprite.Width, sprite.Height, PColorBGRA(@sprite.Pixels[0]), sprite.Width);
 
-  white := Result.FindColor($FFFFFF, 0).Offset([1,1]);
-  for pt in white do
-    if Result.InImage(pt.X, pt.Y) then
-      if Result.Pixel[pt.X, pt.Y] <> $FFFFFF then
-        Result.Pixel[pt.X, pt.Y] := $0000FF;
+  tpa := Result.FindColor($FFFFFF, 0);
+  Result.DrawColor := $0000FF;
+  Result.DrawTPA(tpa.Offset([1,1]).Difference(tpa));
 end;
 
 function TFontDefinition.GetGlyphImages(): TImageArray;
@@ -103,8 +100,7 @@ function TFontDefinition.GetGlyphShadowImages(): TImageArray;
 var
   i: Integer;
   img: TImage;
-  white: TPointArray;
-  pt: TPoint;
+  tpa: TPointArray;
 begin
   Result := Self.GetGlyphImages();
 
@@ -114,11 +110,8 @@ begin
     if img = nil then
       Continue;
 
-    white := img.FindColor($FFFFFF, 0).Offset([1,1]);
-
-    for pt in white do
-      if img.InImage(pt.X, pt.Y) then
-        if img.Pixel[pt.X, pt.Y] <> $FFFFFF then
-          img.Pixel[pt.X, pt.Y] := $0000FF;
+    tpa := img.FindColor($FFFFFF, 0);
+    img.DrawColor := $0000FF;
+    img.DrawTPA(tpa.Offset([1,1]).Difference(tpa));
   end;
 end;
