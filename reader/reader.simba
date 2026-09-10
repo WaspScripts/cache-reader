@@ -6,9 +6,10 @@ The entry point to a cache: {ref}`TCacheReader.Create` opens one, and its `Indic
 The global `CacheReader` is what the rest of this library reads from, so assign to it rather
 than keeping your own.
 *)
-{$include_once ./index.simba}
 
-//Type defined in index.simba
+{$DEFINE WL_CACHE_READER_INCLUDED}
+{$IFNDEF WL_CACHE_INDEX_INCLUDED}  {$INCLUDE_ONCE index.simba}  {$ENDIF}
+
 (*
 ## CacheReader.Load
 ```pascal

@@ -5,7 +5,9 @@ An id-keyed container for the {ref}`TFile` records of one archive.
 `Values` is kept sorted by id and `HashSlots` is an open-addressed table pointing into it, so
 lookups are constant time while iteration still comes out in id order.
 *)
-{$include_once ../file.simba}
+
+{$DEFINE WL_CACHE_FILEMAP_INCLUDED}
+{$IFNDEF WL_CACHE_FILE_INCLUDED}    {$INCLUDE_ONCE ../file.simba}  {$ENDIF}
 
 type
   TFileMap = record

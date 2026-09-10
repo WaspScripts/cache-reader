@@ -3,6 +3,9 @@
 A single file inside an archive. Its `Data` stays empty until the archive it belongs to is
 decompressed by {ref}`TCacheIndex.Cache`.
 *)
+
+{$DEFINE WL_CACHE_FILE_INCLUDED}
+
 type
   TFile = record
     ID, HashName: Integer;

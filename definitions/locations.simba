@@ -5,7 +5,12 @@ placed at.
 
 This is only the placement. What is being placed is a {ref}`TObjectDefinition`.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_LOCATIONS_INCLUDED}
+
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}
+  {$INCLUDE_ONCE ../utils/helpers.simba}
+{$ENDIF}
 
 type
   TLocation = record

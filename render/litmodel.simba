@@ -6,8 +6,10 @@ into it and the routines that project and rasterize it.
 The geometry is copied rather than shared because lighting is destructive and the same model
 definition is drawn for more than one item.
 *)
-{$include_once ../utils/graphics3d.simba}
-{$include_once ../definitions/models.simba}
+
+{$DEFINE WL_CACHE_LITMODEL_INCLUDED}
+{$IFNDEF WL_CACHE_GRAPHICS3D_INCLUDED}   {$INCLUDE_ONCE ../utils/graphics3d.simba}    {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_MODELS_INCLUDED}  {$INCLUDE_ONCE ../definitions/models.simba}  {$ENDIF}
 
 type
   TLitModel = record

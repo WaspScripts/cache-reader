@@ -2,7 +2,9 @@
 # Area Definition
 Map areas: the named places the world map labels and the icons the minimap draws for them.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_AREA_INCLUDED}
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}         {$INCLUDE_ONCE ../utils/helpers.simba}  {$ENDIF}
 
 type
   TAreaDefinition = record

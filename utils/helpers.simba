@@ -5,6 +5,8 @@ advance a shared offset, the cache's variable width number encodings, and the co
 conversions its formats rely on.
 *)
 
+{$DEFINE WL_CACHE_HELPERS_INCLUDED}
+
 (*
 ## Read N Bits
 ```pascal
@@ -149,7 +151,7 @@ begin
     Result := -1;
 end;
 
-function ReadSignedShort(const data: TByteArray; var offset: Integer): Integer;
+function ReadSignedShort(constref data: TByteArray; var offset: Integer): Integer;
 begin
   Result := Read16Bits(data, offset);
   if Result > 32767 then
@@ -305,9 +307,9 @@ const
 var
   r, g, b, mn, mx, delta, invDelta: Double;
 begin
-  r := Self.B * INV_256;
-  g := Self.G * INV_256;
-  b := Self.R * INV_256;
+  r := Self.B() * INV_256;
+  g := Self.G() * INV_256;
+  b := Self.R() * INV_256;
 
   mn := r;
   if g < mn then mn := g;

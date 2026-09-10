@@ -5,8 +5,10 @@ Loads regions on demand and keeps track of which ones are in memory.
 Ground colours blend across region boundaries, so a region is never useful on its own - see
 {ref}`TRegionLoader.LoadRegionAndNeighbors`.
 *)
-{$include_once ../../reader/reader.simba}
-{$include_once region.simba}
+
+{$DEFINE WL_CACHE_LOADER_REGION_INCLUDED}
+{$IFNDEF WL_CACHE_READER_INCLUDED}        {$INCLUDE_ONCE ../../reader/reader.simba}  {$ENDIF}
+{$IFNDEF WL_CACHE_REGION_INCLUDED}        {$INCLUDE_ONCE region.simba}               {$ENDIF}
 
 type
   TRegionLoader = record

@@ -2,7 +2,12 @@
 # Overlay Definition
 Ground overlays: the paths, water and floors drawn on top of the terrain's base colour.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_OVERLAY_INCLUDED}
+
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}
+  {$INCLUDE_ONCE ../utils/helpers.simba}
+{$ENDIF}
 
 type
   TOverlayDefinition = record

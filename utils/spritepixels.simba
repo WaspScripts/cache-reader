@@ -1,6 +1,3 @@
-{$include_once ../utils/helpers.simba}
-{$include_once graphics3d.simba}
-
 (*
 # SpritePixels
 A 2D pixel buffer used as the output of the software 3D rasterizer.
@@ -12,6 +9,11 @@ Methods:
   DrawShadow(color) — draws a drop shadow behind non-transparent pixels.
   ToImage()           — converts the buffer to a Simba TImage with full alpha.
 *)
+
+{$DEFINE WL_CACHE_SPRITE_PIXELS_INCLUDED}
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}        {$INCLUDE_ONCE ../utils/helpers.simba} {$ENDIF}
+{$IFNDEF WL_CACHE_GRAPHICS3D_INCLUDED}     {$INCLUDE_ONCE graphics3d.simba}       {$ENDIF}
+
 type
   TSpritePixels = record
     Pixels: TIntegerArray;

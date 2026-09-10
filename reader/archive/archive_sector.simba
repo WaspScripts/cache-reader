@@ -6,7 +6,9 @@ compressed.
 {ref}`TCacheIndex.ReadArchiveSector` walks that chain and hands back the bytes;
 {ref}`TArchiveSector.Decompress` turns them into the archive's contents.
 *)
-{$include_once ../../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_ARCHIVESECTOR_INCLUDED}
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}  {$INCLUDE_ONCE ../../utils/helpers.simba}  {$ENDIF}
 
 type
   ECacheCompression = enum(NONE, BZIP2, GZIP, LZMA);

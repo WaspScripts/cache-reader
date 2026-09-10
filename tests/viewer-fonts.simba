@@ -6,49 +6,25 @@ const
   PADDING = 2;
 
 var
-  fontArchiveId, spriteArchiveId: Integer;
-  fontArchive: TArchive;
-  spriteSector: TArchiveSector;
-  spriteData: TByteArray;
   fontDef: TFontDefinition;
   i, idx, row, col: Integer;
   maxW, maxH, cellW, cellH: Integer;
   glyphImg, img: TImage;
 begin
   CacheReader := TCacheReader.Create();
-  CacheReader.Indices[ECacheIndex.FONTS].Cache();
+  FontLoader.Load();
 
   while True do
   begin
-    i := ShowComboDialog('Font viewer', 'Pick a font:', TFontDefinition.NAMES);
+    i := ShowComboDialog('Font viewer', 'Pick a font:', TFontLoader.NAMES);
     if i < 0 then
       Break;
 
-    fontArchiveId := CacheReader.Indices[ECacheIndex.FONTS].ReferenceTable.ArchiveID(TFontDefinition.NAMES[i]);
-    if fontArchiveId = -1 then
-    begin
-      WriteLn('Font archive not found: ', TFontDefinition.NAMES[i]);
-      Continue;
-    end;
-
-    spriteArchiveId := CacheReader.Indices[ECacheIndex.SPRITES].ReferenceTable.ArchiveID(TFontDefinition.NAMES[i]);
-    if spriteArchiveId = -1 then
-    begin
-      WriteLn('Sprite archive not found: ', TFontDefinition.NAMES[i]);
-      Continue;
-    end;
-
-    fontArchive := CacheReader.Indices[ECacheIndex.FONTS].ReferenceTable.Archives.Value[fontArchiveId];
-
-    spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
-      spriteArchiveId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
-    );
-    spriteData := spriteSector.Decompress();
-
-    fontDef := TFontDefinition.Create(fontArchive.HashName, fontArchive.Files.Value[0].Data, spriteData);
-
     maxW := 0;
     maxH := 0;
+
+    fontDef := FontLoader.Fonts[i];
+
     for idx := 0 to 255 do
     begin
       if fontDef.Glyphs[idx].Width > maxW then

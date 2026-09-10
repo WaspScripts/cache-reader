@@ -2,7 +2,12 @@
 # Enum Definition
 The cache's own lookup tables, mapping one id to another value - a spellbook to its spells, say.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_ENUMS_INCLUDED}
+
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}
+  {$INCLUDE_ONCE ../utils/helpers.simba}
+{$ENDIF}
 
 type
   TEnumDefinition = record

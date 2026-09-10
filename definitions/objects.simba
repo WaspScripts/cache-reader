@@ -4,7 +4,12 @@ World objects: everything that stands in the world rather than being carried. Th
 menu operations, the ground they cover, the models they are drawn from, and how the map should
 represent them.
 *)
-{$include_once ./entityops.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_OBJECTS_INCLUDED}
+
+{$IFNDEF WL_CACHE_DEFINITION_ENTITYOPS_INCLUDED}
+  {$INCLUDE_ONCE entityops.simba}
+{$ENDIF}
 
 type
   TObjectDefinition = record

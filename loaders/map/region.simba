@@ -3,9 +3,12 @@
 One 64 by 64 tile square of the world, expanded from the cache into the per-plane arrays the map
 renderer walks: heights, settings, ground overlays and underlays, and the objects standing on it.
 *)
-{$include_once ../../definitions/map.simba}
-{$include_once ../../definitions/locations.simba}
-{$include_once ../../utils/heightcalc.simba}
+
+{$DEFINE WL_CACHE_REGION_INCLUDED}
+
+{$IFNDEF WL_CACHE_DEFINITION_MAP_INCLUDED}       {$INCLUDE_ONCE ../../definitions/map.simba}       {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_LOCATIONS_INCLUDED} {$INCLUDE_ONCE ../../definitions/locations.simba} {$ENDIF}
+{$IFNDEF WL_CACHE_HEIGHTCALC_INCLUDED}           {$INCLUDE_ONCE ../../utils/heightcalc.simba}      {$ENDIF}
 
 type
   TWorldLocation = record

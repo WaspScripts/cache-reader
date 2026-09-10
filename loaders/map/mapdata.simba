@@ -5,14 +5,16 @@ definitions, and the sprites for map scenes and area icons.
 
 Load it once - see {ref}`TMapDataLoader.Load` - not per chunk.
 *)
-{$include_once ../../reader/reader.simba}
-{$include_once ../../utils/color.simba}
-{$include_once ../../definitions/objects.simba}
-{$include_once ../../definitions/underlay.simba}
-{$include_once ../../definitions/overlay.simba}
-{$include_once ../../definitions/sprites.simba}
-{$include_once ../../definitions/area.simba}
-{$include_once ../../definitions/texture.simba}
+
+{$DEFINE WL_CACHE_LOADER_MAPDATA_INCLUDED}
+{$IFNDEF WL_CACHEREADER_READER_INCLUDED}        {$INCLUDE_ONCE ../../reader/reader.simba}        {$ENDIF}
+{$IFNDEF WL_CACHE_COLOR_INCLUDED}               {$INCLUDE_ONCE ../../utils/color.simba}          {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_OBJECTS_INCLUDED}  {$INCLUDE_ONCE ../../definitions/objects.simba}  {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_UNDERLAY_INCLUDED} {$INCLUDE_ONCE ../../definitions/underlay.simba} {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_OVERLAY_INCLUDED}  {$INCLUDE_ONCE ../../definitions/overlay.simba}  {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_SPRITES_INCLUDED}  {$INCLUDE_ONCE ../../definitions/sprites.simba}  {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_AREA_INCLUDED}     {$INCLUDE_ONCE ../../definitions/area.simba}     {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_TEXTURE_INCLUDED}  {$INCLUDE_ONCE ../../definitions/texture.simba}  {$ENDIF}
 
 type
   TMapDataLoader = record

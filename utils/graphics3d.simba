@@ -11,8 +11,10 @@ is nothing to point this at and nothing to keep in step.
 Note that this is the opposite order to the `PColorBGRA` buffer `TImage.FromData` reads;
 {ref}`TSpritePixels.ToImage` swaps red and blue when it hands the buffer over.
 *)
-{$include_once ../utils/color.simba}
-{$include_once circularangle.simba}
+
+{$DEFINE WL_CACHE_GRAPHICS3D_INCLUDED}
+{$IFNDEF WL_CACHE_COLOR_INCLUDED}        {$INCLUDE_ONCE ../utils/color.simba}  {$ENDIF}
+{$IFNDEF WL_CACHE_CIRCULARANGLE_INCLUDED}      {$INCLUDE_ONCE circularangle.simba}   {$ENDIF}
 
 type
   TGraphics3D = record

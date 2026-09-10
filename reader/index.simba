@@ -7,7 +7,9 @@ a `main_file_cache.idxN` file that says where each of its archives lives inside 
 {ref}`ECacheIndex` names the ones worth knowing about. {ref}`TCacheIndex` opens one and reads
 its reference table; {ref}`TCacheIndex.Cache` unpacks its archives.
 *)
-{$include_once ./reference_table.simba}
+
+{$DEFINE WL_CACHE_INDEX_INCLUDED}
+{$IFNDEF WL_CACHE_REFTABLE_INCLUDED}  {$INCLUDE_ONCE reference_table.simba}  {$ENDIF}
 
 type
   ECacheIndex = enum(

@@ -6,7 +6,9 @@ Beyond the five plain operations an entity can have submenus, and operations tha
 while a varp or varbit sits inside a given range - which is how a door offers `Open` or `Close`
 but never both.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_ENTITYOPS_INCLUDED}
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}  {$INCLUDE_ONCE ../utils/helpers.simba}  {$ENDIF}
 
 type
   TEntityOpsDefinition = record

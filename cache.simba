@@ -20,6 +20,8 @@ begin
 end.
 ```
 *)
+
+{$DEFINE WL_CACHEREADER_INCLUDED}
 {$IFNDEF ENABLE_CACHEREADER_RANGE_CHECKS}
 {$R-}
 {$ELSE}
@@ -28,13 +30,16 @@ begin
 end;
 {$ENDIF}
 
-{$include_once ./reader/reader.simba}
-{$include_once ./definitions/items.simba}
-{$include_once ./definitions/fonts.simba}   
-{$include_once ./definitions/enums.simba}
-{$include_once ./definitions/interfaces.simba}
-{$include_once ./render/itemsprite.simba}
-{$include_once ./loaders/map/mapchunk.simba}
+{$IFNDEF WL_CACHE_READER_INCLUDED}          {$INCLUDE_ONCE reader/reader.simba}
+{$IFNDEF WL_CACHE_DEFINITION_ITEMS_INCLUDED}      {$INCLUDE_ONCE definitions/items.simba}
+{$IFNDEF WL_CACHE_DEFINITION_FONTS_INCLUDED}      {$INCLUDE_ONCE definitions/fonts.simba}
+{$IFNDEF WL_CACHE_DEFINITION_ENUMS_INCLUDED}      {$INCLUDE_ONCE definitions/enums.simba}
+{$IFNDEF WL_CACHE_DEFINITION_INTERFACES_INCLUDED} {$INCLUDE_ONCE definitions/interfaces.simba}
+{$IFNDEF WL_ITEM_SPRITE_INCLUDED}           {$INCLUDE_ONCE render/itemsprite.simba}
+{$IFNDEF WL_CACHE_LOADER_FONTS_INCLUDED}          {$INCLUDE_ONCE loaders/fontloader.simba}
+{$IFNDEF WL_CACHE_LOADER_MAPCHUNK_INCLUDED}       {$INCLUDE_ONCE loaders/map/mapchunk.simba}
+
+{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}
 
 begin
   ColorUtils.SetBrightness(TColorUtils.BRIGHTNESS_MAX);   

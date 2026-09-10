@@ -6,8 +6,10 @@ An archive is one addressable unit of an index, and holds one or more {ref}`TFil
 npc definitions live.
 *)
 
-{$include_once ./maps/filemap.simba}
-{$include_once ./archive_sector.simba}
+{$DEFINE WL_CACHE_ARCHIVE_INCLUDED}
+
+{$IFNDEF WL_CACHE_FILEMAP_INCLUDED}       {$INCLUDE_ONCE maps/filemap.simba}    {$ENDIF}
+{$IFNDEF WL_CACHE_ARCHIVESECTOR_INCLUDED} {$INCLUDE_ONCE archive_sector.simba}  {$ENDIF}
 
 type
   EConfigArchive = enum(

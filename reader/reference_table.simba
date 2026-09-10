@@ -6,7 +6,9 @@ revisions and checksums of both.
 It is read when the cache is opened, so what exists is known long before anything is
 decompressed.
 *)
-{$include_once ./archive/maps/archivemap.simba}
+
+{$DEFINE WL_CACHE_REFTABLE_INCLUDED}
+{$IFNDEF WL_CACHE_ARCHIVEMAP_INCLUDED}  {$INCLUDE_ONCE archive/maps/archivemap.simba}  {$ENDIF}
 
 type
   TReferenceTable = record

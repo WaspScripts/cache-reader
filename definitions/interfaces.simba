@@ -2,7 +2,12 @@
 # Interface Definition
 Components of the game's interfaces - one widget each.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_INTERFACES_INCLUDED}
+
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}
+  {$INCLUDE_ONCE ../utils/helpers.simba}
+{$ENDIF}
 
 type
   TInterfaceDefinition = record

@@ -11,7 +11,9 @@ rasterizer both read `ColorUtils.Palette` rather than carrying one of their own.
 {ref}`TColorUtils.Setup` at whatever brightness you ask for and stays put;
 {ref}`TColorUtils.SetBrightness` rebuilds it if you want a different look.
 *)
-{$include_once ./helpers.simba}
+
+{$DEFINE WL_CACHE_COLOR_INCLUDED}
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}  {$INCLUDE_ONCE helpers.simba}  {$ENDIF}
 
 type
   TColorUtils = record

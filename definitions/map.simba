@@ -3,7 +3,12 @@
 A region's terrain: four planes of 64 by 64 tiles, each with a height, a ground overlay and
 underlay, and its settings flags.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_MAP_INCLUDED}
+
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}
+  {$INCLUDE_ONCE ../utils/helpers.simba}
+{$ENDIF}
 
 type
   TMapTile = record

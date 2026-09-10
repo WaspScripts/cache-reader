@@ -3,7 +3,12 @@
 Texture metadata: which sprites a texture is built from, and the average colour it is drawn as
 when it is too small on screen to be worth sampling.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_TEXTURE_INCLUDED}
+
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}
+  {$INCLUDE_ONCE ../utils/helpers.simba}
+{$ENDIF}
 
 type
   TTextureDefinition = record

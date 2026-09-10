@@ -11,10 +11,12 @@ if sprite.Valid then
   sprite.ToImage().Show();
 ```
 *)
-{$include_once ../utils/spritepixels.simba}
-{$include_once litmodel.simba}
-{$include_once ../reader/index.simba}
-{$include_once ../definitions/items.simba}
+
+{$DEFINE WL_CACHE_ITEM_SPRITE_INCLUDED}
+{$IFNDEF WL_CACHE_SPRITE_PIXELS_INCLUDED}  {$INCLUDE_ONCE ../utils/spritepixels.simba}  {$ENDIF}
+{$IFNDEF WL_CACHE_LITMODEL_INCLUDED}       {$INCLUDE_ONCE litmodel.simba}               {$ENDIF}
+{$IFNDEF WL_CACHE_INDEX_INCLUDED}          {$INCLUDE_ONCE ../reader/index.simba}        {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_ITEMS_INCLUDED}     {$INCLUDE_ONCE ../definitions/items.simba}   {$ENDIF}
 
 (*
 ## TItemSprite

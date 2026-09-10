@@ -3,7 +3,10 @@
 Items: their names, menu operations, values, equipment models, and the camera angles their
 inventory icons are rendered from.
 *)
-{$include_once ./entityops.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_ITEMS_INCLUDED}
+{$IFNDEF WL_CACHE_DEFINITION_ENTITYOPS_INCLUDED}  {$INCLUDE_ONCE entityops.simba}  {$ENDIF}
+
 
 type
   TItemDefinition = record

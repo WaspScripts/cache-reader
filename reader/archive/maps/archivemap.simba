@@ -5,7 +5,9 @@ An id-keyed container for the {ref}`TArchive` records of one index, laid out the
 
 Config archives can also be addressed by their {ref}`EConfigArchive` name.
 *)
-{$include_once ../archive.simba}
+
+{$DEFINE WL_CACHE_ARCHIVEMAP_INCLUDED}
+{$IFNDEF WL_CACHE_ARCHIVE_INCLUDED}    {$INCLUDE_ONCE ../archive.simba}  {$ENDIF}
 
 type
   TArchiveMap = record

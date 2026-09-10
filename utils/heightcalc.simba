@@ -7,7 +7,8 @@ that depends only on the tile's world position - so it can be reproduced exactly
 {ref}`THeightCalc.Calculate` for one tile and {ref}`THeightCalc.CalculateArea` for a region.
 *)
 
-{$include_once circularangle.simba}
+{$DEFINE WL_CACHE_HEIGHTCALC_INCLUDED}
+{$IFNDEF WL_CACHE_CIRCULARANGLE_INCLUDED}  {$INCLUDE_ONCE circularangle.simba}  {$ENDIF}
 
 type
   THeightCalc = record

@@ -3,7 +3,12 @@
 2D images. One sprite archive holds several frames that share a palette and a canvas size, so
 decoding one gives an array.
 *)
-{$include_once ../utils/helpers.simba}
+
+{$DEFINE WL_CACHE_DEFINITION_SPRITES_INCLUDED}
+
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}
+  {$INCLUDE_ONCE ../utils/helpers.simba}
+{$ENDIF}
 
 type
   TSpriteDefinition = record
