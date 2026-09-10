@@ -78,8 +78,9 @@ begin
 
   white := Result.FindColor($FFFFFF, 0).Offset([1,1]);
   for pt in white do
-    if Result.Pixel[pt.X, pt.Y] <> $FFFFFF then
-      Result.Pixel[pt.X, pt.Y] := $0000FF;
+    if Result.InImage(pt.X, pt.Y) then
+      if Result.Pixel[pt.X, pt.Y] <> $FFFFFF then
+        Result.Pixel[pt.X, pt.Y] := $0000FF;
 end;
 
 function TFontDefinition.GetGlyphImages(): TImageArray;
@@ -116,7 +117,8 @@ begin
     white := img.FindColor($FFFFFF, 0).Offset([1,1]);
 
     for pt in white do
-    if img.Pixel[pt.X, pt.Y] <> $FFFFFF then
-      img.Pixel[pt.X, pt.Y] := $0000FF;
+      if img.InImage(pt.X, pt.Y) then
+        if img.Pixel[pt.X, pt.Y] <> $FFFFFF then
+          img.Pixel[pt.X, pt.Y] := $0000FF;
   end;
 end;
