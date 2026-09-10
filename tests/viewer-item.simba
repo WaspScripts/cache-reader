@@ -101,7 +101,7 @@ begin
   iterSpinner.Left := 120;
   iterSpinner.MinValue := 1;
   iterSpinner.MaxValue := 10000;
-  iterSpinner.Value := 100;
+  iterSpinner.Value := 1;
 
   lbl := TLazLabel.Create(form);
   lbl.Parent := form;

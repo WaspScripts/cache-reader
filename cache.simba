@@ -37,9 +37,9 @@ end;
 {$include_once ./loaders/map/mapchunk.simba}
 
 begin
-  ColorUtils.SetBrightness(TColorUtils.BRIGHTNESS_MAX);
-  HeightCalc.Setup();
+  ColorUtils.SetBrightness(TColorUtils.BRIGHTNESS_MAX);   
   CircularAngle.Setup();
+  HeightCalc.Setup();
   TileShapes.Setup();
 end;
 {$R+}

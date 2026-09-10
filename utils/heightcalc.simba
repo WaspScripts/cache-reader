@@ -6,9 +6,11 @@ Most tiles carry their own height, but the ones that do not fall back to layered
 that depends only on the tile's world position - so it can be reproduced exactly here. See
 {ref}`THeightCalc.Calculate` for one tile and {ref}`THeightCalc.CalculateArea` for a region.
 *)
+
+{$include_once circularangle.simba}
+
 type
   THeightCalc = record
-    CosTable: array [0..1023] of Integer;
     CoarseWeights: array [0..3] of Integer;
   end;
 
@@ -27,15 +29,9 @@ going back to the cosine table per row and column.
 procedure THeightCalc.Setup();
 var
   i: Integer;
-  rads: Double;
 begin
-  rads := PI / 1024;
-
-  for i := 0 to 1023 do
-    Self.CosTable[i] := Trunc(65536 * Cos(i * rads));
-
   for i := 0 to 3 do
-    Self.CoarseWeights[i] := (65536 - Self.CosTable[256 * i]) shr 1;
+    Self.CoarseWeights[i] := (65536 - CircularAngle.COSINE[256 * i]) shr 1;
 end;
 
 (*
@@ -61,27 +57,6 @@ begin
   Result := ((n * hash) and $7FFFFFFF) shr 19 and $FF;
 end;
 
-(*
-## HeightCalc.SmoothedNoise
-```pascal
-function THeightCalc.SmoothedNoise(x, y: Integer): Integer;
-```
-{ref}`THeightCalc.Noise` averaged with the eight points around it, weighted so the centre counts
-most, its edge neighbours next, and its corners least. Raw noise on its own is far too jagged to
-be terrain.
-*)
-function THeightCalc.SmoothedNoise(x, y: Integer): Integer;
-var
-  corners, sides: Integer;
-begin
-  corners := Self.Noise(x - 1, y - 1) + Self.Noise(x + 1, y - 1) +
-             Self.Noise(x - 1, y + 1) + Self.Noise(x + 1, y + 1);
-
-  sides := Self.Noise(x - 1, y) + Self.Noise(x + 1, y) +
-           Self.Noise(x, y - 1) + Self.Noise(x, y + 1);
-
-  Result := (Self.Noise(x, y) shr 2) + (sides shr 3) + (corners shr 4);
-end;
 
 (*
 ## HeightCalc.Interpolate
@@ -97,85 +72,10 @@ function THeightCalc.Interpolate(a, b, x, frequency: Integer): Integer;
 var
   f: Integer;
 begin
-  f := (65536 - Self.CosTable[1024 * x div frequency]) shr 1;
+  f := (65536 - CircularAngle.COSINE[1024 * x div frequency]) shr 1;
   Result := ((f * b) shr 16) + ((a * (65536 - f)) shr 16);
 end;
 
-(*
-## HeightCalc.InterpolateNoise
-```pascal
-function THeightCalc.InterpolateNoise(x, y, frequency: Integer): Integer;
-```
-Smoothed noise sampled on a grid of `frequency` tiles and interpolated between those samples, so
-that a larger frequency gives broader, gentler features.
-
-At frequency 1 every tile is its own sample and there is nothing to interpolate; at frequency 2
-the client snaps to the nearer sample rather than blending, which is reproduced here.
-*)
-function THeightCalc.InterpolateNoise(x, y, frequency: Integer): Integer;
-var
-  intX, fracX, intY, fracY,
-  v1, v2, v3, v4, i1, i2: Integer;
-begin
-  if frequency = 1 then
-  begin
-    Result := Self.SmoothedNoise(x, y);
-    Exit;
-  end;
-
-  intX := x div frequency;
-  fracX := x and (frequency - 1);
-  intY := y div frequency;
-  fracY := y and (frequency - 1);
-
-  if frequency = 2 then
-  begin
-    case (fracX or (fracY shl 1)) of
-      0: Exit(Self.SmoothedNoise(intX, intY));
-      1: Exit(Self.SmoothedNoise(intX + 1, intY));
-      2: Exit(Self.SmoothedNoise(intX, intY + 1));
-      3: Exit(Self.SmoothedNoise(intX + 1, intY + 1));
-    end;
-  end;
-
-  v1 := Self.SmoothedNoise(intX, intY);
-  v2 := Self.SmoothedNoise(intX + 1, intY);
-  v3 := Self.SmoothedNoise(intX, intY + 1);
-  v4 := Self.SmoothedNoise(intX + 1, intY + 1);
-
-  i1 := Self.Interpolate(v1, v2, fracX, frequency);
-  i2 := Self.Interpolate(v3, v4, fracX, frequency);
-
-  Result := Self.Interpolate(i1, i2, fracY, frequency);
-end;
-
-(*
-## HeightCalc.Calculate
-```pascal
-function THeightCalc.Calculate(x, y: Integer): Integer;
-```
-The procedural terrain height of a world tile, from `10` to `60`.
-
-Three layers of {ref}`THeightCalc.InterpolateNoise` are summed, each at half the weight and half
-the feature size of the one before: broad hills, then the shape within them, then tile-level
-roughness. This is what a tile with no stored height gets - see {ref}`TRegion.LoadTerrain` - and
-{ref}`THeightCalc.CalculateArea` computes a whole region's worth far more cheaply.
-*)
-function THeightCalc.Calculate(x, y: Integer): Integer;
-var
-  n: Integer;
-begin
-  n := Self.InterpolateNoise(x + 45365, y + 91923, 4) - 128 +
-       ((Self.InterpolateNoise(10294 + x, y + 37821, 2) - 128) shr 1) +
-       ((Self.InterpolateNoise(x, y, 1) - 128) shr 2);
-
-  Result := 35 + (n * 3) div 10;
-
-  if Result < 10 then
-    Result := 10
-  else if Result > 60 then
-    Result := 60;
-end;
 
 (*
 ## HeightCalc.SmoothedNoiseArea
