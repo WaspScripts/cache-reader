@@ -12,7 +12,7 @@ Note that this is the opposite order to the `PColorBGRA` buffer `TImage.FromData
 {ref}`TSpritePixels.ToImage` swaps red and blue when it hands the buffer over.
 *)
 {$include_once ../utils/color.simba}
-{$include_once ./circularangle.simba}
+{$include_once circularangle.simba}
 
 type
   TGraphics3D = record

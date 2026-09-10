@@ -11,17 +11,13 @@ if sprite.Valid then
   sprite.ToImage().Show();
 ```
 *)
-{$include_once ../utils/color.simba}
-{$include_once ./circularangle.simba}
-{$include_once ./graphics3d.simba}
-{$include_once ./spritepixels.simba}
-{$include_once ./litmodel.simba}
+{$include_once ../utils/spritepixels.simba}
+{$include_once litmodel.simba}
 {$include_once ../reader/index.simba}
 {$include_once ../definitions/items.simba}
-{$include_once ../definitions/models.simba}
 
 (*
-# ItemSprite
+## TItemSprite
 Renders item inventory icons from 3D models.
 *)
 type

@@ -6,9 +6,7 @@ into it and the routines that project and rasterize it.
 The geometry is copied rather than shared because lighting is destructive and the same model
 definition is drawn for more than one item.
 *)
-{$include_once ../utils/helpers.simba}
-{$include_once ./circularangle.simba}
-{$include_once ./graphics3d.simba}
+{$include_once ../utils/graphics3d.simba}
 {$include_once ../definitions/models.simba}
 
 type

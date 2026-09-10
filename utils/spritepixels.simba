@@ -1,5 +1,5 @@
 {$include_once ../utils/helpers.simba}
-{$include_once ./graphics3d.simba}
+{$include_once graphics3d.simba}
 
 (*
 # SpritePixels
