@@ -20,12 +20,6 @@ function ReadSignedShort(const data: TByteArray; var offset: Integer): Integer;
 ```
 {ref}`Read16Bits` reinterpreted as signed, for the interface fields that can be negative.
 *)
-function ReadSignedShort(const data: TByteArray; var offset: Integer): Integer;
-begin
-  Result := Read16Bits(data, offset);
-  if Result > 32767 then
-    Result := Result - 65536;
-end;
 
 (*
 ## InterfaceDefinition.Create

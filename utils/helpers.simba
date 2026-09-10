@@ -149,6 +149,13 @@ begin
     Result := -1;
 end;
 
+function ReadSignedShort(const data: TByteArray; var offset: Integer): Integer;
+begin
+  Result := Read16Bits(data, offset);
+  if Result > 32767 then
+    Result := Result - 65536;
+end;
+
 (*
 ## ReadShortSmart
 ```pascal

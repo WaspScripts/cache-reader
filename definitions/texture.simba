@@ -4,7 +4,6 @@ Texture metadata: which sprites a texture is built from, and the average colour 
 when it is too small on screen to be worth sampling.
 *)
 {$include_once ../utils/helpers.simba}
-{$IFNDEF DISABLE_CACHEREADER_RANGE_CHECKS}{$R-}{$ENDIF}
 
 type
   TTextureDefinition = record

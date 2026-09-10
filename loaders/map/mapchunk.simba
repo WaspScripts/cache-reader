@@ -17,9 +17,8 @@ chunkLoader.MapData.Load();
 chunkLoader.GetChunksImage([48, 48, 52, 52], 0).Show();
 ```
 *)
-{$include_once ./loader.simba}
-{$include_once ../utils/color.simba}
-{$include_once ../region/regionloader.simba}
+{$include_once ./mapdata.simba}
+{$include_once regionloader.simba}
 
 type
   TMapChunkLoader = record

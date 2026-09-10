@@ -5,14 +5,14 @@ definitions, and the sprites for map scenes and area icons.
 
 Load it once - see {ref}`TMapDataLoader.Load` - not per chunk.
 *)
-{$include_once ../reader/reader.simba}
-{$include_once ../utils/color.simba}
-{$include_once ../definitions/objects.simba}
-{$include_once ../definitions/underlay.simba}
-{$include_once ../definitions/overlay.simba}
-{$include_once ../definitions/sprites.simba}
-{$include_once ../definitions/area.simba}
-{$include_once ../definitions/texture.simba}
+{$include_once ../../reader/reader.simba}
+{$include_once ../../utils/color.simba}
+{$include_once ../../definitions/objects.simba}
+{$include_once ../../definitions/underlay.simba}
+{$include_once ../../definitions/overlay.simba}
+{$include_once ../../definitions/sprites.simba}
+{$include_once ../../definitions/area.simba}
+{$include_once ../../definitions/texture.simba}
 
 type
   TMapDataLoader = record

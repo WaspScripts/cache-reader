@@ -4,7 +4,6 @@ World objects: everything that stands in the world rather than being carried. Th
 menu operations, the ground they cover, the models they are drawn from, and how the map should
 represent them.
 *)
-{$include_once ../reader/reader.simba}
 {$include_once ./entityops.simba}
 
 type

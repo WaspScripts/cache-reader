@@ -3,7 +3,6 @@
 Items: their names, menu operations, values, equipment models, and the camera angles their
 inventory icons are rendered from.
 *)
-{$include_once ../utils/helpers.simba}
 {$include_once ./entityops.simba}
 
 type
