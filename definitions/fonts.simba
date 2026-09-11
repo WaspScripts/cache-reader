@@ -4,16 +4,13 @@ The game's fonts: one advance width per character code, and a sprite per glyph.
 *)
 
 {$DEFINE WL_CACHE_DEFINITION_FONTS_INCLUDED}
-
-{$IFNDEF WL_CACHE_DEFINITION_SPRITES_INCLUDED}
-  {$INCLUDE_ONCE sprites.simba}
-{$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_SPRITES_INCLUDED}  {$INCLUDE_ONCE sprites.simba}  {$ENDIF}
 
 type
   TFontDefinition = record
     HashName: Integer;
     Advances: array [0..255] of Integer;
-    Ascent: Integer;
+    Ascent, SpaceW, SpaceH: Integer;
     Glyphs: TSpriteDefinitionArray;
   end;
 
@@ -82,18 +79,17 @@ end;
 
 function TFontDefinition.GetGlyphImages(): TImageArray;
 var
-  i: Integer;
+  i, n: Integer;
 begin
   SetLength(Result, 256);
-  for i := 32 to 126 do //0..31 and 127..255 should be white spaces
-  begin
-    if Self.Glyphs[i].Width = 0 then
-      Continue;
-    if Self.Glyphs[i].Height = 0 then
-      Continue;
 
+  Result[32] := new TImage(Self.SpaceW, Self.SpaceH);
+  for i := 33 to 95 do //0..31 are spaces and/or duplicated symbols
     Result[i] := Self.Glyphs[i].ToImage();
-  end;
+
+  //we skip 96 cuz it's a duplicate backtick.
+  for i := 97 to 127 do
+    Result[i] := Self.Glyphs[i].ToImage();
 end;
 
 function TFontDefinition.GetGlyphShadowImages(): TImageArray;
@@ -104,12 +100,17 @@ var
 begin
   Result := Self.GetGlyphImages();
 
-  for i := 32 to 126 do //0..31 and 127..255 should be white spaces
+  for i := 33 to 95 do
   begin
     img := Result[i];
-    if img = nil then
-      Continue;
+    tpa := img.FindColor($FFFFFF, 0);
+    img.DrawColor := $0000FF;
+    img.DrawTPA(tpa.Offset([1,1]).Difference(tpa));
+  end;
 
+  for i := 97 to 126 do
+  begin
+    img := Result[i];
     tpa := img.FindColor($FFFFFF, 0);
     img.DrawColor := $0000FF;
     img.DrawTPA(tpa.Offset([1,1]).Difference(tpa));
