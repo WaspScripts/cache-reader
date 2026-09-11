@@ -10,7 +10,7 @@ type
   TFontDefinition = record
     HashName: Integer;
     Advances: array [0..255] of Integer;
-    Ascent, SpaceW, SpaceH: Integer;
+    Ascent: Integer;
     Glyphs: TSpriteDefinitionArray;
   end;
 
@@ -50,15 +50,33 @@ end;
 function TFontDefinition.GetGlyphImage(charCode: Integer): TImage;
 ```
 The glyph drawn for `charCode` as an image. A code the font has no glyph for raises.
+
+Every glyph comes back on the font's full `MaxWidth` x `MaxHeight` canvas, placed at its
+`OffsetX`, `OffsetY`, so all glyphs of a font are the same size and share a baseline.
 *)
 function TFontDefinition.GetGlyphImage(charCode: Integer): TImage;
+var
+  sprite: TSpriteDefinition;
 begin
   if (charCode < 0) or (charCode > High(Self.Glyphs)) then
     raise 'Invalid character code: ' + ToStr(charCode);
 
-  Result := Self.Glyphs[charCode].ToImage();
+  sprite := Self.Glyphs[charCode];
+
+  Result := new TImage(sprite.OffsetX+sprite.Width, sprite.MaxHeight);
+  if (sprite.Width > 0) and (sprite.Height > 0) then
+    Result.DrawImage(sprite.ToImage(), [sprite.OffsetX, sprite.OffsetY]);
 end;
 
+(*
+## FontDefinition.GetGlyphShadowImage
+```pascal
+function TFontDefinition.GetGlyphShadowImage(charCode: Integer): TImage;
+```
+Like {ref}`TFontDefinition.GetGlyphImage` but with the game's drop shadow drawn one pixel down and
+to the right of the glyph. The canvas is one pixel wider and taller than the font's so the shadow
+is never clipped.
+*)
 function TFontDefinition.GetGlyphShadowImage(charCode: Integer): TImage;
 var
   sprite: TSpriteDefinition;
@@ -69,50 +87,49 @@ begin
 
   sprite := Self.Glyphs[charCode];
 
-  Result := new TImage(sprite.Width, sprite.Height);
-  Result.FromData(sprite.Width, sprite.Height, PColorBGRA(@sprite.Pixels[0]), sprite.Width);
+  Result := new TImage(sprite.OffsetX + sprite.Width + 1, sprite.MaxHeight + 1);
+  Result.DrawImage(Self.GetGlyphImage(charCode), [0, 0]);
 
   tpa := Result.FindColor($FFFFFF, 0);
   Result.DrawColor := $0000FF;
   Result.DrawTPA(tpa.Offset([1,1]).Difference(tpa));
 end;
 
+(*
+## FontDefinition.GetGlyphImages
+```pascal
+function TFontDefinition.GetGlyphImages(): TImageArray;
+function TFontDefinition.GetGlyphShadowImages(): TImageArray;
+```
+The printable glyphs indexed by character code, from {ref}`TFontDefinition.GetGlyphImage` or
+{ref}`TFontDefinition.GetGlyphShadowImage`. Space is a blank image the same size as the rest.
+Codes `0..31` and `96` are left empty.
+*)
 function TFontDefinition.GetGlyphImages(): TImageArray;
 var
-  i, n: Integer;
+  i: Integer;
 begin
   SetLength(Result, 256);
 
-  Result[32] := new TImage(Self.SpaceW, Self.SpaceH);
+  Result[32] := new TImage(Self.Glyphs[32].MaxWidth, Self.Glyphs[32].MaxHeight);
   for i := 33 to 95 do //0..31 are spaces and/or duplicated symbols
-    Result[i] := Self.Glyphs[i].ToImage();
+    Result[i] := Self.GetGlyphImage(i);
 
   //we skip 96 cuz it's a duplicate backtick.
   for i := 97 to 127 do
-    Result[i] := Self.Glyphs[i].ToImage();
+    Result[i] := Self.GetGlyphImage(i);
 end;
 
 function TFontDefinition.GetGlyphShadowImages(): TImageArray;
 var
   i: Integer;
-  img: TImage;
-  tpa: TPointArray;
 begin
-  Result := Self.GetGlyphImages();
+  SetLength(Result, 256);
 
+  Result[32] := new TImage(Self.Glyphs[32].MaxWidth + 1, Self.Glyphs[32].MaxHeight + 1);
   for i := 33 to 95 do
-  begin
-    img := Result[i];
-    tpa := img.FindColor($FFFFFF, 0);
-    img.DrawColor := $0000FF;
-    img.DrawTPA(tpa.Offset([1,1]).Difference(tpa));
-  end;
+    Result[i] := Self.GetGlyphShadowImage(i);
 
-  for i := 97 to 126 do
-  begin
-    img := Result[i];
-    tpa := img.FindColor($FFFFFF, 0);
-    img.DrawColor := $0000FF;
-    img.DrawTPA(tpa.Offset([1,1]).Difference(tpa));
-  end;
+  for i := 97 to 127 do
+    Result[i] := Self.GetGlyphShadowImage(i);
 end;

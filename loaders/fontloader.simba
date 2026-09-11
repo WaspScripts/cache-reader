@@ -16,8 +16,6 @@ type
       'verdana_11pt_regular', 'verdana_13pt_regular', 'verdana_15pt_regular',
       'q8_full', 'quill_caps_large'
     ];
-    const SPACE_W: TIntegerArray = [ 3,  3,  4,  1,  2,  3, 7,  10];
-    const SPACE_H: TIntegerArray = [12, 16, 16, 15, 15, 15, 20, 31];
   end;
 
 procedure TFontLoader.Load();
@@ -50,8 +48,6 @@ begin
     data := sector.Decompress();
 
     Self.Fonts[i] := TFontDefinition.Create(archive.HashName, archive.Files.Value[0].Data, data);
-    Self.Fonts[i].SpaceW := TFontLoader.SPACE_W[i];
-    Self.Fonts[i].SpaceH := TFontLoader.SPACE_H[i];
   end;
 end;
 
