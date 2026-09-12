@@ -87,7 +87,7 @@ begin
       end;
 
       pixels[i] := Self.Pixels[i];
-      border[i] := 0;
+      border[i] := Self.Border[i];
     end;
 
   Self.Pixels := pixels;
@@ -199,32 +199,15 @@ function TSpritePixels.ToImage(): TImage;
 ```
 The buffer as an image with proper transparency.
 
-The rasterizer leaves the alpha byte at zero, so every pixel it touched has to be made opaque
-and every pixel it did not stays transparent - which is exactly how the original client turns
-its buffers into images.
-
-Red and blue are swapped on the way out. The buffer holds palette entries as
-{ref}`TColorUtils.CreateHSVPalette` produces them, red in the low byte, which is the order the
-map renderer's `TImage.FromMatrix` wants; `TImage.FromData` below wants the opposite. Doing it
-here costs one swap per pixel of a 36 by 32 icon, in a loop that already walks every pixel to
-set the alpha - far less than keeping a second 65536 entry palette in the other order.
+Nothing has to be converted here. The rasterizer draws through `ColorUtils.SpritePalette`,
+whose entries are already in the order `TImage.FromData` reads and already carry a full alpha
+byte, so a pixel that was drawn is opaque and a pixel that was never touched is still zero -
+transparent, which is exactly how the original client turns its buffers into images.
 *)
 function TSpritePixels.ToImage(): TImage;
-var
-  i, color: Integer;
-  argb: TIntegerArray;
 begin
-  SetLength(argb, Length(Self.Pixels));
-  for i := 0 to High(Self.Pixels) do
-  begin
-    color := Self.Pixels[i];
-    if color = 0 then
-      Continue;
-    argb[i] := ($FF shl 24) or ((color and $FF) shl 16) or (color and $FF00) or ((color shr 16) and $FF);
-  end;
-
   Result := new TImage(Self.Width, Self.Height);
-  Result.FromData(Self.Width, Self.Height, PColorBGRA(@argb[0]), Self.Width);
+  Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);
 end;
 
 (*
@@ -233,21 +216,12 @@ end;
 function TSpritePixels.BorderImage(): TImage;
 ```
 Get an image of the sprite border.
+
+Only the outline pixels {ref}`TSpritePixels.DrawBorder` laid down are in it - the item itself
+and the shadow are not - so everything else is left at zero and comes out transparent.
 *)
 function TSpritePixels.BorderImage(): TImage;
-var
-  i, color: Integer;
-  argb: TIntegerArray;
 begin
-  SetLength(argb, Length(Self.Border));
-  for i := 0 to High(Self.Pixels) do
-  begin
-    color := Self.Pixels[i];
-    if color = 0 then
-      Continue;
-    argb[i] := ($FF shl 24) or ((color and $FF) shl 16) or (color and $FF00) or ((color shr 16) and $FF);
-  end;
-
   Result := new TImage(Self.Width, Self.Height);
-  Result.FromData(Self.Width, Self.Height, PColorBGRA(@argb[0]), Self.Width);
+  Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Border[0]), Self.Width);
 end;

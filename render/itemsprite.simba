@@ -309,13 +309,17 @@ end;
 (*
 ## TItemSprite.ToImage
 ```pascal
-function TItemSprite.ToImage(outline: Integer = 1; shadowColor: Integer = $202030): TImage;
+function TItemSprite.ToImage(selected: Boolean = False; shadowColor: Integer = 0): TImage;
 ```
 Lights, projects and rasterizes the model and returns the resulting 36x32 icon.
 
-`shadowColor` can be set by the user, items use `$333333` most of the time except when the bank
-is open, in which case `$202030` is used instead.
+`shadowColor` can be set by the user, items use `$FF333333` most of the time except when the
+bank is open, in which case `$FF302020` is used instead.
 `0` which is the default means no shadow will be drawn.
+
+Colours are given the way `ColorUtils.SpritePalette` writes one - alpha, red, green and blue -
+because they go straight into the rasterizer's buffer. The near-black outline is not quite
+zero, since zero is what marks a pixel as untouched.
 
 ```pascal
 img := sprite.ToImage();
@@ -331,9 +335,9 @@ begin
   Self.Project(selected);
 
   if selected then
-    Self.Pixels.DrawBorder($FFFFFF)
+    Self.Pixels.DrawBorder($FFFFFFFF)
   else
-    Self.Pixels.DrawBorder($010000);
+    Self.Pixels.DrawBorder($FF000001);
 
   if shadowColor <> 0 then
     Self.Pixels.DrawShadow(shadowColor);
@@ -342,21 +346,18 @@ begin
 end;
 
 (*
-## TItemSprite.ToImage
+## TItemSprite.BorderImage
 ```pascal
-function TItemSprite.ToImage(outline: Integer = 1; shadowColor: Integer = $202030): TImage;
+function TItemSprite.BorderImage(selected: Boolean = False): TImage;
 ```
-Lights, projects and rasterizes the model and returns the resulting 36x32 icon.
+The item's outline on its own, without the item or a shadow behind it.
 
-`shadowColor` can be set by the user, items use `$333333` most of the time except when the bank
-is open, in which case `$202030` is used instead.
-`0` which is the default means no shadow will be drawn.
+Renders the icon exactly as {ref}`TItemSprite.ToImage` does and then returns only the pixels
+{ref}`TSpritePixels.DrawBorder` laid down, so the outline sits at the same place in the 36x32
+canvas as it does in the full icon.
 
 ```pascal
-img := sprite.ToImage();
-img.Show();
-Sleep(3000);
-img := sprite.ToImage(True, 0);
+img := sprite.BorderImage();
 img.Show();
 ```
 *)
@@ -366,12 +367,9 @@ begin
   Self.Project(selected);
 
   if selected then
-    Self.Pixels.DrawBorder($FFFFFF)
+    Self.Pixels.DrawBorder($FFFFFFFF)
   else
-    Self.Pixels.DrawBorder($010000);
+    Self.Pixels.DrawBorder($FF000001);
 
-  if shadowColor <> 0 then
-    Self.Pixels.DrawShadow(shadowColor);
-
-  Result := Self.Pixels.ToImage();
+  Result := Self.Pixels.BorderImage();
 end;

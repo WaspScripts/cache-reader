@@ -215,12 +215,12 @@ begin
   if Self.HasTextures and (Self.FaceTextures[faceIdx] <> -1) then
   begin
     // Textured face. We do not sample textures yet, so approximate with a flat fill.
-    pal := ColorUtils.Palette[Self.FaceColors1[faceIdx]];
+    pal := ColorUtils.SpritePalette[Self.FaceColors1[faceIdx]];
     graphics.RasterFlat(Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3], Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3], pal);
   end
   else if Self.FaceColors3[faceIdx] = -1 then
   begin
-    pal := ColorUtils.Palette[Self.FaceColors1[faceIdx]];
+    pal := ColorUtils.SpritePalette[Self.FaceColors1[faceIdx]];
     graphics.RasterFlat(Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3], Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3], pal);
   end
   else
