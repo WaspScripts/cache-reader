@@ -257,16 +257,26 @@ begin
 end;
 
 (*
-  TItemSprite.Project — sets up the 36x32 rasterizer and projects + draws
-  the model using the item's calibrated 2D camera parameters.
+## TItemSprite.Project
+```pascal
+procedure TItemSprite.Project(selected: Boolean = False);
+```
+Sets up the 36x32 rasterizer and projects and draws the model through the item's calibrated 2D
+camera parameters.
+
+`selected` pushes the camera back to 1.04 times the item's `Zoom2D`, which is what the game does
+for the item you currently have selected so its thicker outline still fits inside the icon.
 *)
-procedure TItemSprite.Project();
+procedure TItemSprite.Project(selected: Boolean = False);
 var
   zoom2d, xOffset, yOffset: Integer;
   xanSin, pitchOffsetY, pitchOffsetZ, i: Integer;
   dump: TIntegerArray;
 begin
   zoom2d := Self.ItemDef.Zoom2D;
+  if selected then
+    zoom2d := Trunc(1.04 * zoom2d);
+
   xanSin := Self.ItemDef.Xan2D;
   xOffset := Self.ItemDef.XOffset2D;
   yOffset := Self.ItemDef.YOffset2D;
@@ -297,20 +307,71 @@ begin
 end;
 
 (*
-  TItemSprite.ToImage — lights, projects and rasterizes the model, then
-  returns the resulting 36x32 icon.
+## TItemSprite.ToImage
+```pascal
+function TItemSprite.ToImage(outline: Integer = 1; shadowColor: Integer = $202030): TImage;
+```
+Lights, projects and rasterizes the model and returns the resulting 36x32 icon.
 
-  The border and shadow are written straight into the rasterizer's buffer, so they are given in
-  the palette's channel order - red in the low byte - and are swapped along with everything else
-  by TSpritePixels.ToImage. The border is the near-black the client uses: not quite zero, since
-  zero is what marks a pixel as untouched.
+`shadowColor` can be set by the user, items use `$333333` most of the time except when the bank
+is open, in which case `$202030` is used instead.
+`0` which is the default means no shadow will be drawn.
+
+```pascal
+img := sprite.ToImage();
+img.Show();
+Sleep(3000);
+img := sprite.ToImage(True, 0);
+img.Show();
+```
 *)
-function TItemSprite.ToImage(shadow: Boolean = True): TImage;
+function TItemSprite.ToImage(selected: Boolean = False; shadowColor: Integer = 0): TImage;
 begin
   Self.Light();
-  Self.Project();
-  Self.Pixels.DrawBorder($10000);
-  if shadow then
-    Self.Pixels.DrawShadow($202030);
+  Self.Project(selected);
+
+  if selected then
+    Self.Pixels.DrawBorder($FFFFFF)
+  else
+    Self.Pixels.DrawBorder($010000);
+
+  if shadowColor <> 0 then
+    Self.Pixels.DrawShadow(shadowColor);
+
+  Result := Self.Pixels.ToImage();
+end;
+
+(*
+## TItemSprite.ToImage
+```pascal
+function TItemSprite.ToImage(outline: Integer = 1; shadowColor: Integer = $202030): TImage;
+```
+Lights, projects and rasterizes the model and returns the resulting 36x32 icon.
+
+`shadowColor` can be set by the user, items use `$333333` most of the time except when the bank
+is open, in which case `$202030` is used instead.
+`0` which is the default means no shadow will be drawn.
+
+```pascal
+img := sprite.ToImage();
+img.Show();
+Sleep(3000);
+img := sprite.ToImage(True, 0);
+img.Show();
+```
+*)
+function TItemSprite.BorderImage(selected: Boolean = False): TImage;
+begin
+  Self.Light();
+  Self.Project(selected);
+
+  if selected then
+    Self.Pixels.DrawBorder($FFFFFF)
+  else
+    Self.Pixels.DrawBorder($010000);
+
+  if shadowColor <> 0 then
+    Self.Pixels.DrawShadow(shadowColor);
+
   Result := Self.Pixels.ToImage();
 end;

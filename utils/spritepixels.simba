@@ -16,22 +16,23 @@ Methods:
 
 type
   TSpritePixels = record
-    Pixels: TIntegerArray;
+    Pixels, Border: TIntegerArray;
     Width, Height, OffsetX, OffsetY: Integer;
   end;
 
 (*
 ## SpritePixels.Create
 ```pascal
-function TSpritePixels.Create(width, height: Integer): TSpritePixels; static;
+function TSpritePixels.Create(w, h: Integer): TSpritePixels; static;
 ```
 An empty, fully transparent pixel buffer.
 *)
-function TSpritePixels.Create(width, height: Integer): TSpritePixels; static;
+function TSpritePixels.Create(w, h: Integer): TSpritePixels; static;
 begin
-  Result.Width := width;
-  Result.Height := height;
-  SetLength(Result.Pixels, width * height);
+  Result.Width := w;
+  Result.Height := h;
+  SetLength(Result.Pixels, w * h);
+  SetLength(Result.Border, w * h);
 end;
 
 (*
@@ -48,33 +49,49 @@ not itself count as a neighbour and grow outwards.
 procedure TSpritePixels.DrawBorder(color: Integer);
 var
   x, y, i: Integer;
-  newPixels: TIntegerArray;
+  pixels, border: TIntegerArray;
 begin
-  SetLength(newPixels, Self.Width * Self.Height);
-  i := 0;
+  SetLength(pixels, Self.Width * Self.Height);
+  SetLength(border, Self.Width * Self.Height);
+  i := -1;
 
   for y := 0 to Self.Height - 1 do
     for x := 0 to Self.Width - 1 do
     begin
+      Inc(i);
+
       if Self.Pixels[i] = 0 then
       begin
         // Check N, S, E, W neighbors for non-zero
         if (x > 0) and (Self.Pixels[i - 1] <> 0) then
-          newPixels[i] := color
+        begin
+          pixels[i] := color;
+          border[i] := color;
+        end
         else if (y > 0) and (Self.Pixels[i - Self.Width] <> 0) then
-          newPixels[i] := color
+        begin
+          pixels[i] := color;
+          border[i] := color;
+        end
         else if (x < Self.Width - 1) and (Self.Pixels[i + 1] <> 0) then
-          newPixels[i] := color
+        begin
+          pixels[i] := color;
+          border[i] := color;
+        end
         else if (y < Self.Height - 1) and (Self.Pixels[i + Self.Width] <> 0) then
-          newPixels[i] := color;
-      end
-      else
-        newPixels[i] := Self.Pixels[i];
+        begin
+          pixels[i] := color;
+          border[i] := color;
+        end;
+        Continue;
+      end;
 
-      Inc(i);
+      pixels[i] := Self.Pixels[i];
+      border[i] := 0;
     end;
 
-  Self.Pixels := newPixels;
+  Self.Pixels := pixels;
+  Self.Border := border;
 end;
 
 (*
@@ -197,10 +214,32 @@ var
   i, color: Integer;
   argb: TIntegerArray;
 begin
-  // The rasterizer leaves the alpha byte at 0, so the buffer cannot be handed to
-  // TImage as-is. RuneLite's toBufferedImage() makes every non-zero pixel fully
-  // opaque and leaves the untouched ones transparent.
   SetLength(argb, Length(Self.Pixels));
+  for i := 0 to High(Self.Pixels) do
+  begin
+    color := Self.Pixels[i];
+    if color = 0 then
+      Continue;
+    argb[i] := ($FF shl 24) or ((color and $FF) shl 16) or (color and $FF00) or ((color shr 16) and $FF);
+  end;
+
+  Result := new TImage(Self.Width, Self.Height);
+  Result.FromData(Self.Width, Self.Height, PColorBGRA(@argb[0]), Self.Width);
+end;
+
+(*
+## SpritePixels.BorderImage
+```pascal
+function TSpritePixels.BorderImage(): TImage;
+```
+Get an image of the sprite border.
+*)
+function TSpritePixels.BorderImage(): TImage;
+var
+  i, color: Integer;
+  argb: TIntegerArray;
+begin
+  SetLength(argb, Length(Self.Border));
   for i := 0 to High(Self.Pixels) do
   begin
     color := Self.Pixels[i];

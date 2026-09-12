@@ -4,6 +4,7 @@
 var
   idSpinner, iterSpinner: TLazSpinEdit;
   combobox: TLazComboBox;
+  selectedCheckBox: TLazCheckBox;
   archive: TArchive;
 
 procedure ShowImage(sender: TLazObject);
@@ -12,7 +13,7 @@ var
   sprite: TItemSprite;
   img: TImage;
   t: Double;
-  itemId, iterations: Integer;
+  itemId, iterations, shadowColor: Integer;
 begin
   itemId := idSpinner.Value;
   iterations := iterSpinner.Value;
@@ -43,11 +44,11 @@ begin
 
   //the model is loaded once and the icon rendered from it repeatedly, which is the part that
   //runs again every time an icon is drawn
-  for 1 to iterations do img := sprite.ToImage();
+  for 1 to iterations do img := sprite.ToImage(selectedCheckBox.Checked);
 
   t := PerformanceTime();
   for 1 to iterations do
-    img := sprite.ToImage();
+    img := sprite.ToImage(selectedCheckBox.Checked);
   t := PerformanceTime() - t;
   WriteLn('Took: ', t, 'ms to run ', iterations, ' times (', t / iterations, 'ms each).');
   img.Show();
@@ -129,6 +130,13 @@ begin
   lbl.AnchorSideLeft.Control := idSpinner;
   lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
   lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+
+  selectedCheckBox := TLazCheckBox.Create(form);
+  selectedCheckBox.Parent := form;
+  selectedCheckBox.Top := 100;
+  selectedCheckBox.Left := 120;
+  selectedCheckBox.Caption := 'Selected';
+  selectedCheckBox.Checked := False;
 
   btn := TLazButton.Create(form);
   btn.Parent := form;
