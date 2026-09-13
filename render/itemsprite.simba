@@ -317,7 +317,7 @@ Lights, projects and rasterizes the model and returns the resulting 36x32 icon.
 bank is open, in which case `$FF302020` is used instead.
 `0` which is the default means no shadow will be drawn.
 
-Colours are given the way `ColorUtils.SpritePalette` writes one - alpha, red, green and blue -
+Colours are given the way `ColorUtils.Palette` writes one - alpha, red, green and blue -
 because they go straight into the rasterizer's buffer. The near-black outline is not quite
 zero, since zero is what marks a pixel as untouched.
 

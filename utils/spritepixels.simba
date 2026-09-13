@@ -199,7 +199,7 @@ function TSpritePixels.ToImage(): TImage;
 ```
 The buffer as an image with proper transparency.
 
-Nothing has to be converted here. The rasterizer draws through `ColorUtils.SpritePalette`,
+Nothing has to be converted here. The rasterizer draws through `ColorUtils.Palette`,
 whose entries are already in the order `TImage.FromData` reads and already carry a full alpha
 byte, so a pixel that was drawn is opaque and a pixel that was never touched is still zero -
 transparent, which is exactly how the original client turns its buffers into images.

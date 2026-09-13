@@ -6,11 +6,12 @@ Colours are not stored as RGB but as a 16 bit hue, saturation and luminance inde
 built once at startup - see {ref}`TColorUtils.PackHSL` and
 {ref}`TColorUtils.CreateHSVPalette`. The global `ColorUtils` holds those palettes.
 
-There is one set of colours, and everything draws through it - the map renderer reads
-`ColorUtils.Palette` and the sprite rasterizer `ColorUtils.SpritePalette`, which is the same
-lookup in the pixel order `TImage.FromData` reads, rather than either carrying one of its own.
-They are built by {ref}`TColorUtils.Setup` at whatever brightness you ask for and stay put;
-{ref}`TColorUtils.SetBrightness` rebuilds them if you want a different look.
+There is one palette, and everything draws through it - the map renderer and the sprite
+rasterizer both read `ColorUtils.Palette` rather than carrying one of their own. Its entries are
+already in the order the `PColorBGRA` buffer `TImage.FromData` reads, with the alpha byte full,
+so neither has to convert a pixel on the way out. It is built by {ref}`TColorUtils.Setup` at
+whatever brightness you ask for and stays put; {ref}`TColorUtils.SetBrightness` rebuilds it if
+you want a different look.
 *)
 
 {$DEFINE WL_CACHE_COLOR_INCLUDED}
@@ -18,13 +19,15 @@ They are built by {ref}`TColorUtils.Setup` at whatever brightness you ask for an
 
 type
   TColorUtils = record
-    const WALL_COLOR: TColor = $FFEEEEEE;
-    const DOOR_COLOR: TColor = $FF0000EE;
+    const WALL_COLOR: Integer = $FFEEEEEE;
+    const DOOR_COLOR: Integer = $FFEE0000;
 
-    const COLLISION_COLOR: Integer = $333333;
-    const COLLISION_WALL_COLOR: Integer = $000000;
-    const COLLISION_DOOR_COLOR: Integer = $0000FF;
-    const COLLISION_WALKABLE_COLOR: Integer = $FFFFFF;
+    const COLLISION_COLOR: Integer = $FF333333;
+    const COLLISION_WALL_COLOR: Integer = $FF000000;
+    const COLLISION_DOOR_COLOR: Integer = $FFFF0000;
+    const COLLISION_WALKABLE_COLOR: Integer = $FFFFFFFF;
+
+    const MAX_HEIGHT: Integer = 6048;
 
     const BRIGHTNESS_MAX: Double = 0.5;
     const BRIGHTNESS_HIGH: Double = 0.7;
@@ -34,7 +37,7 @@ type
     const HUE_OFFSET: Double = 0.5 / 64.0;
     const SATURATION_OFFSET: Double = 0.5 / 8.0;
 
-    Palette, MinimapPalette, SpritePalette: TIntegerArray;
+    Palette, MinimapPalette, HeightColors: TIntegerArray;
     Brightness: Double;
     Revision: Integer;
   end;
@@ -64,7 +67,7 @@ end;
 (*
 ## ColorUtils.CreateHSVPalette
 ```pascal
-function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TColorArray; static;
+function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TIntegerArray; static;
 ```
 Builds the 65536 entry palette that a {ref}`TColorUtils.PackHSL` index looks up.
 
@@ -72,9 +75,12 @@ Every index is unpacked back into hue, saturation and luminance, converted to RG
 by `brightness` - a gamma exponent, where a lower number means a brighter image. The client
 offers a few fixed brightness settings, which are the `BRIGHTNESS_` constants.
 
-`mn` and `mx` bound which entries are actually computed; the rest are left black.
+Entries are alpha, red, green and blue from the top byte down, which is what the `PColorBGRA`
+buffer `TImage.FromData` reads - not a `TColor`, which has red and blue the other way round.
+
+`mn` and `mx` bound which entries are actually computed; the rest are left at `0`.
 *)
-function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TColorArray; static;
+function TColorUtils.CreateHSVPalette(brightness: Double; mn, mx: Integer): TIntegerArray; static;
 var
   i, rIdx, gIdx, bIdx: Integer;
   hue, sat, lum, r, g, b, p, q, t1, t2: Double;
@@ -145,7 +151,7 @@ begin
     if (rIdx or gIdx or bIdx) = 0 then
       bIdx := 1;
 
-    Result[i] := rIdx + (bIdx shl 16) + (gIdx shl 8);
+    Result[i] := $FF000000 or (rIdx shl 16) or (gIdx shl 8) or bIdx;
   end;
 end;
 
@@ -162,12 +168,9 @@ lookup with the flatter minimap lighting already folded into it, so that
 {ref}`TColorUtils.UnderlayColor` and {ref}`TColorUtils.OverlayColor` are a single array read
 rather than a rescale and a clamp per tile.
 
-Both of those are in the order {ref}`TColorUtils.CreateHSVPalette` produces, which is the order
-a `TColor` and `TImage.FromMatrix` use - red in the low byte. `SpritePalette` is the same
-entries with red and blue swapped and the alpha byte already full, which is the order the
-`PColorBGRA` buffer `TImage.FromData` reads. The sprite rasterizer draws through that one, so
-{ref}`TSpritePixels.ToImage` hands its buffer straight over instead of converting every pixel
-on the way out.
+Both are in the order {ref}`TColorUtils.CreateHSVPalette` produces - alpha, red, green, blue -
+which is what the `PColorBGRA` buffer `TImage.FromData` reads, so whatever is drawn through them
+is handed to an image as it is.
 
 Rebuilding costs around 25ms, nearly all of it the brightness curve, so this is meant for
 setting a look up front rather than for switching back and forth. Setting the brightness it
@@ -183,7 +186,7 @@ procedure TColorUtils.SetBrightness(brightness: Double);
 const
   TARGET_LUM: Integer = 96;
 var
-  i, lum, color: Integer;
+  i, lum: Integer;
 begin
   if Self.Brightness = brightness then
     Exit;
@@ -193,14 +196,10 @@ begin
   Self.Palette := TColorUtils.CreateHSVPalette(brightness, 0, 65536);
 
   SetLength(Self.MinimapPalette, 65536);
-  SetLength(Self.SpritePalette, 65536);
   for i := 0 to 65535 do
   begin
     lum := EnsureRange((i and 127) * TARGET_LUM div 128, 2, 126);
     Self.MinimapPalette[i] := Self.Palette[(i and 65408) + lum];
-
-    color := Self.Palette[i];
-    Self.SpritePalette[i] := $FF000000 or ((color and $FF) shl 16) or (color and $FF00) or ((color shr 16) and $FF);
   end;
 end;
 
@@ -253,13 +252,31 @@ A terrain height as a shade of grey, black at ground level and white at the high
 game uses. Heights are negative upwards, which is why the sign is flipped.
 *)
 function TColorUtils.Height2Color(height: Integer): Integer; static;
-const
-  MAX_HEIGHT: Integer = 6048;
 var
   v: Integer;
 begin
-  v := EnsureRange(Round((-height / MAX_HEIGHT) * 255), 0, 255);
+  v := EnsureRange(Round((-height / TColorUtils.MAX_HEIGHT) * 255), 0, 255);
   Result := $FF000000 or (v shl 16) or (v shl 8) or v;
+end;
+
+(*
+## ColorUtils.SetupHeightColors
+```pascal
+procedure TColorUtils.SetupHeightColors();
+```
+Fills `HeightColors` with {ref}`TColorUtils.Height2Color` for every height from ground level,
+index `0`, up to `MAX_HEIGHT`. A height is negative upwards, so height `h` is at index `-h`.
+
+Everything past either end is the same colour as that end, so a lookup only has to clamp the
+index rather than redo the division and rounding for every tile.
+*)
+procedure TColorUtils.SetupHeightColors();
+var
+  i: Integer;
+begin
+  SetLength(Self.HeightColors, TColorUtils.MAX_HEIGHT + 1);
+  for i := 0 to TColorUtils.MAX_HEIGHT do
+    Self.HeightColors[i] := TColorUtils.Height2Color(-i);
 end;
 
 (*

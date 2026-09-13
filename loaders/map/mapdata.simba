@@ -302,8 +302,8 @@ changes once loaded. Run at the end of {ref}`TMapDataLoader.Load`, after every d
 reads is in place.
 
 Three things are settled here: the overlay colours {ref}`TMapDataLoader.BuildOverlayColors`
-works out, the map scene sprites converted from the RGB the cache stores to the BGR the pixel
-buffers use with a fully transparent pixel flattened to `0` so that drawing one is a copy, and
+works out, the map scene sprites made fully opaque with a fully transparent pixel flattened to
+`0` so that drawing one is a copy, and
 one {ref}`TImage` per area icon so that drawing the same icon in a dozen regions does not build
 a dozen images of it.
 *)
@@ -327,7 +327,7 @@ begin
       color := Self.MapScenes[i].Pixels[j] and $00FFFFFF;
       if color = 0 then
         Continue;
-      pixels[j] := $FF000000 or ((color and $0000FF) shl 16) or (color and $00FF00) or ((color shr 16) and $0000FF);
+      pixels[j] := $FF000000 or color;
     end;
 
     Self.MapScenePixels[i] := pixels;

@@ -5,11 +5,9 @@ Renders Gouraud-shaded and flat-coloured triangles into an integer pixel buffer.
 
 The pixel format is Alpha<<24 | Red<<16 | Green<<8 | Blue, which is what the `PColorBGRA` buffer
 `TImage.FromData` reads, so a finished buffer becomes an image without being walked again.
-Colours are palette indices rather than colours, looked up in `ColorUtils.SpritePalette` - the
-one palette in that order, so there is nothing to point this at and nothing to keep in step.
-
-Note that this is the opposite order to `ColorUtils.Palette`, which the map renderer draws
-through and which `TImage.FromMatrix` wants - red in the low byte.
+Colours are palette indices rather than colours, looked up in `ColorUtils.Palette` - the one
+palette the whole library draws through, so there is nothing to point this at and nothing to
+keep in step.
 *)
 
 {$DEFINE WL_CACHE_GRAPHICS3D_INCLUDED}
@@ -200,7 +198,7 @@ begin
   if leftX >= rightX then
     Exit;
 
-  palette := ColorUtils.SpritePalette;
+  palette := ColorUtils.Palette;
   pixelIdx := baseIdx + leftX;
   color := startColor + leftX * colorStep;
 

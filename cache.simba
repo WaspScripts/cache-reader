@@ -43,6 +43,7 @@ end;
 
 begin
   ColorUtils.SetBrightness(TColorUtils.BRIGHTNESS_MAX);   
+  ColorUtils.SetupHeightColors();
   CircularAngle.Setup();
   HeightCalc.Setup();
   TileShapes.Setup();
