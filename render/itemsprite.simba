@@ -28,7 +28,7 @@ type
     ModelDef: TModelDefinition;
     LitModel: TLitModel;
     Graphics: TGraphics3D;
-    Pixels: TSpritePixels;
+    Sprite: TSpritePixels;
     Valid: Boolean;
   end;
 
@@ -315,8 +315,8 @@ begin
   xOffset := Self.ItemDef.XOffset2D;
   yOffset := Self.ItemDef.YOffset2D;
 
-  Self.Pixels := TSpritePixels.Create(36, 32);
-  Self.Graphics.SetRasterBuffer(Self.Pixels.Pixels, 36, 32);
+  Self.Sprite := TSpritePixels.Create(36, 32);
+  Self.Graphics.SetRasterBuffer(Self.Sprite.Pixels, 36, 32);
   Self.Graphics.Reset();
   Self.Graphics.Zoom := 512;
   Self.Graphics.SetRasterClipping();
@@ -368,14 +368,14 @@ function TItemSprite.ToImage(selected: Boolean = False; shadowColor: Integer = 0
 begin
   Self.Project(selected);
 
-  Self.Pixels.DrawBorder($FF000001);
+  Self.Sprite.DrawBorder($FF000001);
   if selected then
-    Self.Pixels.DrawBorder($FFFFFFFF);
+    Self.Sprite.DrawBorder($FFFFFFFF);
 
   if shadowColor <> 0 then
-    Self.Pixels.DrawShadow(shadowColor);
+    Self.Sprite.DrawShadow(shadowColor);
 
-  Result := Self.Pixels.ToImage();
+  Result := Self.Sprite.ToImage();
 end;
 
 (*
@@ -394,13 +394,13 @@ img := sprite.BorderImage();
 img.Show();
 ```
 *)
-function TItemSprite.BorderImage(selected: Boolean = False): TImage;
+function TItemSprite.MaskImage(selected: Boolean = False): TImage;
 begin
   Self.Project(selected);
 
-  Self.Pixels.DrawBorder($FF000001);
+  Self.Sprite.DrawBorder($FF000001);
   if selected then
-    Self.Pixels.DrawBorder($FFFFFFFF);
+    Self.Sprite.DrawBorder($FFFFFFFF);
 
-  Result := Self.Pixels.BorderImage();
+  Result := Self.Sprite.MaskImage();
 end;
