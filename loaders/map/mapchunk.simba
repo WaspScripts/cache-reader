@@ -403,10 +403,13 @@ end;
 (*
 ## MapChunkLoader.DrawMapIcons
 ```pascal
-procedure TMapChunkLoader.DrawMapIcons(img: TImage; constref region: TRegion; z, offsetX, offsetY: Integer);
+procedure TMapChunkLoader.DrawMapIcons(img: TImage; regionIdx, z, offsetX, offsetY: Integer);
 ```
-Draws the area icons of a region on top of an already rendered map, offset by `offsetX, offsetY`
-within `img`.
+Draws the area icons of the region at `regionIdx` in `RegionLoader.Regions` on top of an already
+rendered map, offset by `offsetX, offsetY` within `img`.
+
+The region's render caches have to exist already, which {ref}`TMapChunkLoader.GetChunkImage`
+sees to.
 
 Icons go on last, and onto the whole image rather than a single chunk, so that one sitting on a
 chunk boundary is not cut in half - which is why {ref}`TMapChunkLoader.GetChunksImage` renders
@@ -417,23 +420,19 @@ are is worked out once per region and plane and kept - packed one integer per ic
 in the low twelve bits and the area's index above them. Panning back over a region then costs
 the drawing alone rather than another walk of every location on it.
 *)
-procedure TMapChunkLoader.DrawMapIcons(img: TImage; constref region: TRegion; z, offsetX, offsetY: Integer);
+procedure TMapChunkLoader.DrawMapIcons(img: TImage; regionIdx, z, offsetX, offsetY: Integer);
 var
-  x, y, isBridge, i, count, regionIdx, code,
+  x, y, isBridge, i, count, code,
   objIdx, areaIdx, drawX, drawY: Integer;
+  region: TRegion;
   bridgePlane: TIntegerMatrix;
   sprite: TSpriteDefinition;
   objs: TObjectDefinitionArray;
   icons: TIntegerArray;
 begin
-  regionIdx := Self.RegionLoader.RegionCoordinateIndex(region.X, region.Y);
-  if regionIdx = -1 then
-    Exit;
-
-  Self.EnsurePlaneCache(regionIdx);
-
   if not Self.RegionIconsCached[regionIdx, z] then
   begin
+    region := Self.RegionLoader.Regions[regionIdx];
     bridgePlane := region.TileSettings[1];
     objs := Self.MapData.Objects;
 
@@ -551,25 +550,25 @@ begin
   SetLength(rowBuckets, i);
 
   //hasLeft
-  if Self.RegionLoader.WorldCoordinateIndex(region.BaseX - 1, region.BaseY) <> -1 then
+  if Self.RegionLoader.RegionCoordinateIndex(region.X - 1, region.Y) <> -1 then
     bounds.X1 := -TMapChunkLoader.BLEND
   else
     bounds.X1 := 0;
 
   //hasRight
-  if Self.RegionLoader.WorldCoordinateIndex(region.BaseX + TMapChunkLoader.REGION_SIZE, region.BaseY) <> -1 then
+  if Self.RegionLoader.RegionCoordinateIndex(region.X + 1, region.Y) <> -1 then
     bounds.X2 := TMapChunkLoader.REGION_SIZE + TMapChunkLoader.BLEND - 1
   else
     bounds.X2 := TMapChunkLoader.REGION_SIZE - 1;
 
   //hasDown
-  if Self.RegionLoader.WorldCoordinateIndex(region.BaseX, region.BaseY - 1) <> -1 then
+  if Self.RegionLoader.RegionCoordinateIndex(region.X, region.Y - 1) <> -1 then
     bounds.Y1 := -TMapChunkLoader.BLEND
   else
     bounds.Y1 := 0;
 
   //hasUp
-  if Self.RegionLoader.WorldCoordinateIndex(region.BaseX, region.BaseY + TMapChunkLoader.REGION_SIZE) <> -1 then
+  if Self.RegionLoader.RegionCoordinateIndex(region.X, region.Y + 1) <> -1 then
     bounds.Y2 := TMapChunkLoader.REGION_SIZE + TMapChunkLoader.BLEND - 1
   else
     bounds.Y2 := TMapChunkLoader.REGION_SIZE - 1;
@@ -908,7 +907,7 @@ begin
   Result.FillWithAlpha(255);
 
   if drawIcons then
-    Self.DrawMapIcons(Result, region, z, 0, 0);
+    Self.DrawMapIcons(Result, regionIdx, z, 0, 0);
 end;
 
 
@@ -1047,7 +1046,7 @@ begin
 
   //icons and sprites drawn separately so they are not cut-off every time they are in-between chunks
   for i := 0 to High(idx) do
-    Self.DrawMapIcons(Result, Self.RegionLoader.Regions[idx[i]], z, offX[i], offY[i]);
+    Self.DrawMapIcons(Result, idx[i], z, offX[i], offY[i]);
 end;
 
 (*
@@ -1130,26 +1129,6 @@ begin
 end;
 
 (*
-## MapChunkLoader.HasDoorOps
-```pascal
-function TMapChunkLoader.HasDoorOps(constref obj: TObjectDefinition): Boolean;
-```
-Whether this object is a door that can actually be opened, which decides which tile its
-collision belongs to - a closed door blocks the tile it opens into rather than the one it stands
-on.
-
-An object qualifies if it is wall shaped and offers a `Close` operation. Curtains are excluded
-by name: they have the operations of a door but do not block anything.
-
-The answer is settled once when the object is decoded - see {ref}`TObjectDefinition.Create` -
-rather than searched for again on every placement of it.
-*)
-function TMapChunkLoader.HasDoorOps(constref obj: TObjectDefinition): Boolean;
-begin
-  Result := obj.OpenableDoor;
-end;
-
-(*
 ## MapChunkLoader.DrawCollisionEdge
 ```pascal
 procedure TMapChunkLoader.DrawCollisionEdge(var pixels: TIntegerMatrix; drawX, drawY, edge, color: Integer); static;
@@ -1209,10 +1188,10 @@ procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; 
 ```
 Marks the tiles one object blocks on a collision map.
 
-Walls and corners block the edge they sit on - or the next edge round, if
-{ref}`TMapChunkLoader.HasDoorOps` says the object is an openable door. Everything larger blocks
-its whole footprint, rotated with the object, and does not paint over a wall that was already
-marked there.
+Walls and corners block the edge they sit on - or the next edge round, if the object is an
+openable door, since a closed door blocks the tile it opens into rather than the one it stands
+on. Everything larger blocks its whole footprint, rotated with the object, and does not paint
+over a wall that was already marked there.
 *)
 procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
@@ -1253,10 +1232,10 @@ begin
       Exit;
 
     case loc.LocType of
-      0: TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(objs[objIdx]));
+      0: TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, objs[objIdx].OpenableDoor);
       2:
       begin
-        TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, Self.HasDoorOps(objs[objIdx]));
+        TMapChunkLoader.DrawCollisionWall(pixels, drawX, drawY, loc.Orientation, color, objs[objIdx].OpenableDoor);
         //corner walls occupy two edges, so the wall itself is drawn plus the edge next to it
         TMapChunkLoader.DrawCollisionEdge(pixels, drawX, drawY, (loc.Orientation + 1) and 3, color);
       end;
@@ -1291,41 +1270,35 @@ begin
   end;
 
   // Types 10-22: collision objects
-  if InRange(loc.LocType, 10, 22) then
+  if (objs[objIdx].Name = 'null') or (objs[objIdx].Name = '') then
+    Exit;
+  if objs[objIdx].ObjectModels.IsEmpty then
+    Exit;
+
+  xSize := objs[objIdx].SizeX * TMapChunkLoader.SCALE;
+  ySize := objs[objIdx].SizeY * TMapChunkLoader.SCALE;
+
+  if (xSize = ySize) or (loc.Orientation = 0) or (loc.Orientation = 2) then
   begin
-    if (objs[objIdx].Name = 'null') or (objs[objIdx].Name = '') then
-      Exit;
-    if objs[objIdx].ObjectModels.IsEmpty then
+    if (drawX + xSize >= TMapChunkLoader.IMAGE_SIZE) or (drawY + ySize >= TMapChunkLoader.IMAGE_SIZE) then
       Exit;
 
-    if drawX < 0 then
+    for sX := 0 to xSize - 1 do
+      for sY := 0 to ySize - 1 do
+        if pixels[drawY + sY, drawX + sX] <> TColorUtils.COLLISION_WALL_COLOR then
+          pixels[drawY + sY, drawX + sX] := TColorUtils.COLLISION_COLOR;
+  end;
+
+  if (xSize <> ySize) and ((loc.Orientation = 1) or (loc.Orientation = 3)) then
+  begin
+    drawY := drawY + ySize - 1;
+    if (drawY >= TMapChunkLoader.IMAGE_SIZE) or (drawY - xSize < 0) or (drawX + ySize >= TMapChunkLoader.IMAGE_SIZE) then
       Exit;
 
-    xSize := objs[objIdx].SizeX * TMapChunkLoader.SCALE;
-    ySize := objs[objIdx].SizeY * TMapChunkLoader.SCALE;
-
-    if (xSize = ySize) or (loc.Orientation = 0) or (loc.Orientation = 2) then
-    begin
-      if (drawX + xSize >= TMapChunkLoader.IMAGE_SIZE) or (drawY + ySize >= TMapChunkLoader.IMAGE_SIZE) then
-        Exit;
-
-      for sX := 0 to xSize - 1 do
-        for sY := 0 to ySize - 1 do
-          if pixels[drawY + sY, drawX + sX] <> TColorUtils.COLLISION_WALL_COLOR then
-            pixels[drawY + sY, drawX + sX] := TColorUtils.COLLISION_COLOR;
-    end;
-
-    if (xSize <> ySize) and ((loc.Orientation = 1) or (loc.Orientation = 3)) then
-    begin
-      drawY := drawY + ySize - 1;
-      if (drawY >= TMapChunkLoader.IMAGE_SIZE) or (drawY - xSize < 0) or (drawX + ySize >= TMapChunkLoader.IMAGE_SIZE) then
-        Exit;
-
-      for sX := 0 to xSize - 1 do
-        for sY := 0 to ySize - 1 do
-          if pixels[drawY - sX, drawX + sY] <> TColorUtils.COLLISION_WALL_COLOR then
-            pixels[drawY - sX, drawX + sY] := TColorUtils.COLLISION_COLOR;
-    end;
+    for sX := 0 to xSize - 1 do
+      for sY := 0 to ySize - 1 do
+        if pixels[drawY - sX, drawX + sY] <> TColorUtils.COLLISION_WALL_COLOR then
+          pixels[drawY - sX, drawX + sY] := TColorUtils.COLLISION_COLOR;
   end;
 end;
 
@@ -1344,17 +1317,35 @@ var
   loc: TWorldLocation;
   localX, localY, tileZ: Integer;
 begin
+  if z = 0 then
+  begin
+    for loc in region.Locations do
+    begin
+      localX := loc.X - region.BaseX;
+      localY := loc.Y - region.BaseY;
+
+      if (region.TileSettings[0, localX, localY] and 24) <> 0 then
+        Continue;
+
+      tileZ := 0;
+      if (region.TileSettings[1, localX, localY] and 2) <> 0 then
+        tileZ := 1;
+
+      if loc.Z <> tileZ then
+        Continue;
+
+      Self.DrawCollisionObjectAtTile(pixels, loc, localX, localY);
+    end;
+    Exit;
+  end;
+
   for loc in region.Locations do
   begin
+    if loc.Z <> z then
+      Continue;
+
     localX := loc.X - region.BaseX;
     localY := loc.Y - region.BaseY;
-
-    tileZ := z;
-    if (z = 0) and ((region.TileSettings[1, localX, localY] and 2) <> 0) then
-      tileZ := 1;
-
-    if loc.Z <> tileZ then
-      Continue;
 
     if (region.TileSettings[z, localX, localY] and 24) <> 0 then
       Continue;

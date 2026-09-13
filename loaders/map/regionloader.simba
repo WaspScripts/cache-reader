@@ -30,22 +30,12 @@ left alone; {ref}`TRegionLoader.LoadRegionAndNeighbors` keeps it up to date as i
 procedure TRegionLoader.BuildLookup();
 const
   LOOKUP_SIZE: Integer = 256*256;
-var
-  i, rx, ry: Integer;
 begin
   if Length(Self.Lookup) = LOOKUP_SIZE then
     Exit;
 
   SetLength(Self.Lookup, LOOKUP_SIZE);
   FillMem(Self.Lookup[0], LOOKUP_SIZE * SizeOf(Integer), $FF); // -1 everywhere
-
-  for i := 0 to High(Self.Regions) do
-  begin
-    rx := Self.Regions[i].X;
-    ry := Self.Regions[i].Y;
-    if InRange(rx, 0, 255) and InRange(ry, 0, 255) then
-      Self.Lookup[(rx shl 8) or ry] := i;
-  end;
 end;
 
 (*
@@ -60,19 +50,6 @@ begin
   if not InRange(x, 0, 255) or not InRange(y, 0, 255) then
     Exit(-1);
   Result := Self.Lookup[(x shl 8) or y];
-end;
-
-(*
-## RegionLoader.WorldCoordinateIndex
-```pascal
-function TRegionLoader.WorldCoordinateIndex(x, y: Integer): Integer;
-```
-{ref}`TRegionLoader.RegionCoordinateIndex` for a world tile rather than a region, so it is the
-region that tile falls in.
-*)
-function TRegionLoader.WorldCoordinateIndex(x, y: Integer): Integer;
-begin
-  Result := Self.RegionCoordinateIndex(x shr 6, y shr 6);
 end;
 
 
@@ -254,9 +231,7 @@ begin
     if Self.LoadRegion(i, region) then
     begin
       Self.Regions[count] := region;
-
-       if InRange(region.X, 0, 255) and InRange(region.Y, 0, 255) then
-        Self.Lookup[(region.X shl 8) or region.Y] := count;
+      Self.Lookup[i] := count;
       Inc(count);
     end;
 
