@@ -64,8 +64,11 @@ end;
 ```pascal
 function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition): TItemSprite; static;
 ```
-Loads the item's inventory model and prepares it for lighting.
+Loads the item's inventory model and lights it.
 Sets `TItemSprite.Valid` to `False` if the model archive/data can't be loaded.
+
+Lighting depends only on the model and the item, not on how the icon is drawn, so it is done
+once here rather than again by every {ref}`TItemSprite.ToImage` or {ref}`TItemSprite.BorderImage`.
 *)
 function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition): TItemSprite; static;
 var
@@ -98,6 +101,7 @@ begin
     Result.ModelDef.Retexture(itemDef.TextureFind[i], itemDef.TextureReplace[i]);
 
   Result.LitModel := TLitModel.Create(Result.ModelDef);
+  Result.Light();
   Result.Valid := True;
 end;
 
@@ -311,7 +315,8 @@ end;
 ```pascal
 function TItemSprite.ToImage(selected: Boolean = False; shadowColor: Integer = 0): TImage;
 ```
-Lights, projects and rasterizes the model and returns the resulting 36x32 icon.
+Projects and rasterizes the model lit by {ref}`TItemSprite.Create` and returns the resulting
+36x32 icon.
 
 `shadowColor` can be set by the user, items use `$FF333333` most of the time except when the
 bank is open, in which case `$FF302020` is used instead.
@@ -331,7 +336,6 @@ img.Show();
 *)
 function TItemSprite.ToImage(selected: Boolean = False; shadowColor: Integer = 0): TImage;
 begin
-  Self.Light();
   Self.Project(selected);
 
   if selected then
@@ -363,7 +367,6 @@ img.Show();
 *)
 function TItemSprite.BorderImage(selected: Boolean = False): TImage;
 begin
-  Self.Light();
   Self.Project(selected);
 
   if selected then
