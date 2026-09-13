@@ -12,10 +12,10 @@ if sprite.Valid then
 ```
 *)
 
-{$DEFINE WL_CACHE_ITEM_SPRITE_INCLUDED}
-{$IFNDEF WL_CACHE_SPRITE_PIXELS_INCLUDED}  {$INCLUDE_ONCE ../utils/spritepixels.simba}  {$ENDIF}
-{$IFNDEF WL_CACHE_LITMODEL_INCLUDED}       {$INCLUDE_ONCE litmodel.simba}               {$ENDIF}
-{$IFNDEF WL_CACHE_INDEX_INCLUDED}          {$INCLUDE_ONCE ../reader/index.simba}        {$ENDIF}
+{$DEFINE WL_CACHE_ITEM_SPRITE_INCLUDED} 
+{$IFNDEF WL_CACHE_READER_INCLUDED}               {$INCLUDE_ONCE ../reader/reader.simba}        {$ENDIF}
+{$IFNDEF WL_CACHE_SPRITE_PIXELS_INCLUDED}        {$INCLUDE_ONCE ../utils/spritepixels.simba}  {$ENDIF}
+{$IFNDEF WL_CACHE_LITMODEL_INCLUDED}             {$INCLUDE_ONCE litmodel.simba}               {$ENDIF}
 {$IFNDEF WL_CACHE_DEFINITION_ITEMS_INCLUDED}     {$INCLUDE_ONCE ../definitions/items.simba}   {$ENDIF}
 
 (*
@@ -70,26 +70,26 @@ Sets `TItemSprite.Valid` to `False` if the model archive/data can't be loaded.
 Lighting depends only on the model and the item, not on how the icon is drawn, so it is done
 once here rather than again by every {ref}`TItemSprite.ToImage` or {ref}`TItemSprite.BorderImage`.
 *)
-function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition): TItemSprite; static;
+function TItemSprite.Create(const itemDef: TItemDefinition): TItemSprite; static;
 var
-  modelSector: TArchiveSector;
-  modelData: TByteArray;
+  idx: TCacheIndex;
+  sector: TArchiveSector;
+  data: TByteArray;
   i: Integer;
 begin
   Result.ItemDef := itemDef;
   Result.Valid := False;
 
-  modelSector := cacheReader.Indices[ECacheIndex.MODELS].ReadArchiveSector(
-    itemDef.InventoryModel, cacheReader.Indices[ECacheIndex.MODELS].ID, cacheReader.Indices[ECacheIndex.MODELS].IndexData
-  );
-  if Length(modelSector.Data) = 0 then
+  idx := CacheReader.Indices[ECacheIndex.MODELS];
+  sector := idx.ReadArchiveSector(itemDef.InventoryModel, idx.ID, idx.IndexData);
+  if sector.Data.IsEmpty then
     Exit;
 
-  modelData := modelSector.Decompress();
-  if Length(modelData) = 0 then
+  data := sector.Decompress();
+  if data.IsEmpty then
     Exit;
 
-  Result.ModelDef := TModelDefinition.Create(itemDef.InventoryModel, modelData);
+  Result.ModelDef := TModelDefinition.Create(itemDef.InventoryModel, data);
 
   if (itemDef.ResizeX <> 128) or (itemDef.ResizeY <> 128) or (itemDef.ResizeZ <> 128) then
     Result.ModelDef.Resize(itemDef.ResizeX, itemDef.ResizeY, itemDef.ResizeZ);
@@ -104,6 +104,36 @@ begin
   Result.Light();
   Result.Valid := True;
 end;
+
+function TItemSprite.Create(const archive: TArchive; id: Integer): TItemSprite; static; overload;
+var
+  itemDef: TItemDefinition;
+  tmp: TItemSprite;
+begin
+  if not archive.Files.Exists(id) then
+    Exit;
+
+  itemDef := TItemDefinition.Create(id, archive.Files.Value[id].Data);
+
+  //an item with no name and no noted variant is a gap in the id space rather than an item
+  if (itemDef.Name = 'null') and (itemDef.NotedTemplate = -1) then
+    Exit;
+
+  tmp := TItemSprite.Create(itemDef);
+  if not tmp.Valid then
+    Exit;
+
+  Result := tmp;
+end;
+
+function TItemSprite.Create(id: Integer): TItemSprite; static; overload;
+var
+  archive: TArchive;
+begin
+  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+  Result := TItemSprite.Create(archive, id);
+end;
+
 
 (*
 ## TItemSprite.Light

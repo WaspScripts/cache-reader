@@ -33,7 +33,7 @@ begin
     Exit;
   end;
 
-  sprite := TItemSprite.Create(CacheReader, itemDef);
+  sprite := TItemSprite.Create(itemDef);
   if not sprite.Valid then
   begin
     WriteLn('Item #', itemId, ': failed to render (no model?). InventoryModel = ', itemDef.InventoryModel);
