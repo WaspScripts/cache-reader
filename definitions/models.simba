@@ -219,10 +219,14 @@ begin
   usesFaceRenderTypes := False;
   usesFaceTextures := False;
 
+  if (faceRenderPriority = 255) and (faceCount > 0) then
+    Move(data[offsetOfFaceRenderPriorities], Result.FaceRenderPriorities[0], faceCount);
+
+  if (hasFaceTransparencies = 1) and (faceCount > 0) then
+    Move(data[offsetOfFaceTransparencies], Result.FaceTransparencies[0], faceCount);
+
   c1 := offsetOfFaceColorsOrFaceTextures;
   c2 := offsetOfFaceTextureFlags;
-  c3 := offsetOfFaceRenderPriorities;
-  c4 := offsetOfFaceTransparencies;
   c5 := offsetOfPackedTransparencyVertexGroups;
 
   for i := 0 to faceCount - 1 do
@@ -255,11 +259,6 @@ begin
         Result.FaceTextures[i] := -1;
       end;
     end;
-
-    if faceRenderPriority = 255 then
-      Result.FaceRenderPriorities[i] := Read8Bits(data, c3);
-    if hasFaceTransparencies = 1 then
-      Result.FaceTransparencies[i] := Read8Bits(data, c4);
 
     if hasPackedTransparencyVertexGroups = 1 then
       Result.PackedTransparencyVertexGroups[i] := Read8Bits(data, c5);
@@ -525,10 +524,14 @@ begin
   usesFaceRenderTypes := False;
   usesFaceTextures := False;
 
+  if (faceRenderPriorityFlag = 255) and (faceCount > 0) then
+    Move(data[offsetOfFaceRenderPriorities], Result.FaceRenderPriorities[0], faceCount);
+
+  if (faceTransparenciesFlag = 1) and (faceCount > 0) then
+    Move(data[offsetOfFaceTransparencies], Result.FaceTransparencies[0], faceCount);
+
   c1 := offsetOfFaceColorsOrFaceTextures;
   c2 := offsetOfFaceTexturedFlags;
-  c3 := offsetOfFaceRenderPriorities;
-  c4 := offsetOfFaceTransparencies;
   c5 := offsetOfPackedTransparencyVertexGroups;
 
   for i := 0 to faceCount - 1 do
@@ -561,12 +564,6 @@ begin
         Result.FaceTextures[i] := -1;
       end;
     end;
-
-    if faceRenderPriorityFlag = 255 then
-      Result.FaceRenderPriorities[i] := Read8Bits(data, c3);
-
-    if faceTransparenciesFlag = 1 then
-      Result.FaceTransparencies[i] := Read8Bits(data, c4);
 
     if packedTransparencyVertexGroupsFlag = 1 then
       Result.PackedTransparencyVertexGroups[i] := Read8Bits(data, c5);
@@ -623,11 +620,10 @@ begin
   // optional per-face Z offsets
   c1 := totalOffset;
   hasOffsets := Read8Bits(data, c1) = 1;
-  if hasOffsets then
+  if hasOffsets and (faceCount > 0) then
   begin
     SetLength(Result.FaceZOffsets, faceCount);
-    for i := 0 to faceCount - 1 do
-      Result.FaceZOffsets[i] := Read8Bits(data, c1);
+    Move(data[c1], Result.FaceZOffsets[0], faceCount);
   end;
 
   // Post-processing
@@ -879,10 +875,14 @@ begin
   usesFaceRenderTypes := False;
   usesFaceTextures := False;
 
+  if (faceRenderPriorityFlag = 255) and (faceCount > 0) then
+    Move(data[offsetOfFaceRenderPriorities], Result.FaceRenderPriorities[0], faceCount);
+
+  if (faceTransparenciesFlag = 1) and (faceCount > 0) then
+    Move(data[offsetOfFaceTransparencies], Result.FaceTransparencies[0], faceCount);
+
   c1 := offsetOfFaceColorsOrFaceTextures;
   c2 := offsetOfFaceRenderTypes;
-  c3 := offsetOfFaceRenderPriorities;
-  c4 := offsetOfFaceTransparencies;
   c5 := offsetOfPackedTransparencyVertexGroups;
   c6 := offsetOfFaceTextures;
   c7 := offsetOfTextureCoords;
@@ -897,12 +897,6 @@ begin
       if Result.FaceRenderTypes[i] <> 0 then
         usesFaceRenderTypes := True;
     end;
-
-    if faceRenderPriorityFlag = 255 then
-      Result.FaceRenderPriorities[i] := Read8Bits(data, c3);
-
-    if faceTransparenciesFlag = 1 then
-      Result.FaceTransparencies[i] := Read8Bits(data, c4);
 
     if packedTransparencyVertexGroupsFlag = 1 then
       Result.PackedTransparencyVertexGroups[i] := Read8Bits(data, c5);
@@ -978,11 +972,10 @@ begin
   end;
 
   hasOffsets := Read8Bits(data, c1) = 1;
-  if hasOffsets then
+  if hasOffsets and (faceCount > 0) then
   begin
     SetLength(Result.FaceZOffsets, faceCount);
-    for i := 0 to faceCount - 1 do
-      Result.FaceZOffsets[i] := Read8Bits(data, c1);
+    Move(data[c1], Result.FaceZOffsets[0], faceCount);
   end;
 
   // Post-processing

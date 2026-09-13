@@ -102,14 +102,18 @@ begin
 
     if (flags and TSpriteDefinition.FLAG_VERTICAL) = 0 then
     begin
-      for j := 0 to dimension - 1 do
-        pixelIdx[j] := Read8Bits(data, offset);
+      if dimension > 0 then
+        Move(data[offset], pixelIdx[0], dimension);
+      Inc(offset, dimension);
     end
     else
     begin
       for j := 0 to frameWidth - 1 do
         for k := 0 to frameHeight - 1 do
-          pixelIdx[frameWidth * k + j] := Read8Bits(data, offset);
+        begin
+          pixelIdx[frameWidth * k + j] := data[offset];
+          Inc(offset);
+        end;
     end;
 
     if frameHasAlpha then
@@ -121,14 +125,18 @@ begin
 
       if (flags and TSpriteDefinition.FLAG_VERTICAL) = 0 then
       begin
-        for j := 0 to dimension - 1 do
-          pixelAlphas[j] := Read8Bits(data, offset);
+        if dimension > 0 then
+          Move(data[offset], pixelAlphas[0], dimension);
+        Inc(offset, dimension);
       end
       else
       begin
         for j := 0 to frameWidth - 1 do
           for k := 0 to frameHeight - 1 do
-            pixelAlphas[frameWidth * k + j] := Read8Bits(data, offset);
+          begin
+            pixelAlphas[frameWidth * k + j] := data[offset];
+            Inc(offset);
+          end;
       end;
     end;
 
