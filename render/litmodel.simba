@@ -1,10 +1,10 @@
 (*
 # Lit Model
-A model prepared for drawing: a copy of the geometry, plus the per face colours lighting writes
-into it and the routines that project and rasterize it.
+A model prepared for drawing: the geometry of a model definition, plus the per face colours
+lighting writes and the routines that project and rasterize it.
 
-The geometry is copied rather than shared because lighting is destructive and the same model
-definition is drawn for more than one item.
+The geometry is shared with the definition rather than copied - nothing here writes to it, and
+lighting keeps its colours in arrays of its own.
 *)
 
 {$DEFINE WL_CACHE_LITMODEL_INCLUDED}
@@ -40,11 +40,11 @@ type
 ```pascal
 function TLitModel.Create(const src: TModelDefinition): TLitModel; static;
 ```
-Takes a copy of a decoded model to light and draw.
+A decoded model, ready to light and draw.
 
-The geometry is copied rather than shared because lighting writes per face colours back into it,
-and the same model definition is used by more than one item. Apply any recolouring, retexturing
-or resizing to the definition first - by the time it reaches here the geometry is fixed.
+The geometry arrays are shared with `src` rather than copied, since lighting writes its per face
+colours into arrays of its own. Apply any recolouring, retexturing or resizing to the definition
+first, and leave it alone afterwards - changing `src` later changes this model with it.
 *)
 function TLitModel.Create(const src: TModelDefinition): TLitModel; static;
 var
@@ -52,32 +52,32 @@ var
 begin
   Result.VerticesCount := src.VertexCount;
 
-  Result.VertexX := Copy(src.VertexX);
-  Result.VertexY := Copy(src.VertexY);
-  Result.VertexZ := Copy(src.VertexZ);
+  Result.VertexX := src.VertexX;
+  Result.VertexY := src.VertexY;
+  Result.VertexZ := src.VertexZ;
 
   Result.IndicesCount := src.FaceCount;
 
-  Result.FaceIndices1 := Copy(src.FaceIndices1);
-  Result.FaceIndices2 := Copy(src.FaceIndices2);
-  Result.FaceIndices3 := Copy(src.FaceIndices3);
+  Result.FaceIndices1 := src.FaceIndices1;
+  Result.FaceIndices2 := src.FaceIndices2;
+  Result.FaceIndices3 := src.FaceIndices3;
 
   SetLength(Result.FaceColors1, src.FaceCount);
   SetLength(Result.FaceColors2, src.FaceCount);
   SetLength(Result.FaceColors3, src.FaceCount);
 
-  Result.FacePriorities := Copy(src.FaceRenderPriorities);
-  Result.FaceTransparencies := Copy(src.FaceTransparencies);
-  Result.TextureCoords := Copy(src.TextureCoords);
-  Result.FaceTextures := Copy(src.FaceTextures);
-  Result.FaceRenderTypes := Copy(src.FaceRenderTypes);
-  Result.FaceColors := Copy(src.FaceColors);
+  Result.FacePriorities := src.FaceRenderPriorities;
+  Result.FaceTransparencies := src.FaceTransparencies;
+  Result.TextureCoords := src.TextureCoords;
+  Result.FaceTextures := src.FaceTextures;
+  Result.FaceRenderTypes := src.FaceRenderTypes;
+  Result.FaceColors := src.FaceColors;
 
   Result.NumTextureFaces := src.NumTextureFaces;
 
-  Result.TexIndices1 := Copy(src.TexIndices1);
-  Result.TexIndices2 := Copy(src.TexIndices2);
-  Result.TexIndices3 := Copy(src.TexIndices3);
+  Result.TexIndices1 := src.TexIndices1;
+  Result.TexIndices2 := src.TexIndices2;
+  Result.TexIndices3 := src.TexIndices3;
 
   Result.HasTransparencies := Length(Result.FaceTransparencies) > 0;
   Result.HasTextures := Length(Result.FaceTextures) > 0;
