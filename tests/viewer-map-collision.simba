@@ -9,7 +9,8 @@ procedure ShowImage(sender: TLazObject);
 var
   img: TImage;
   t: Double;
-  iterations: Integer;
+  bounds: TBox;
+  iterations, x, y, chunks: Integer;
 begin
   iterations := iterSpinner.Value;
 
@@ -19,7 +20,12 @@ begin
   for 1 to iterations do
     img := chunkLoader.GetChunksCollisionImage([x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value], zSpinner.Value);
   t := PerformanceTime() - t;
-  WriteLn('Took: ', t, 'ms to run ', iterations, ' times (', t / iterations, 'ms each).');
+  WriteLn('Took: ', Round(t, 3), 'ms to run ', iterations, ' times (', Round(t / iterations, 3), 'ms each).');
+
+  bounds := [x1Spinner.Value, y1Spinner.Value, x2Spinner.Value, y2Spinner.Value];
+  bounds := bounds.Normalize();
+  chunks := bounds.Width * bounds.Height;
+  WriteLn('Loaded ', chunks, ' chunks (', Round(t / iterations / chunks, 3), 'ms per chunk).');
   img.Show();
 end;
 
