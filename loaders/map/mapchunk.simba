@@ -521,16 +521,18 @@ function TMapChunkLoader.BuildRegionPlane(constref region: TRegion; z: Integer):
 const
   DIRS: TIntegerArray = [1, -1];
 var
-  x, y, i, j, dir, idx, neighbor, neighborRegionX, localX, localY,
+  x, y, i, j, dir, idx, bucket, neighbor, neighborRegionX, localX, localY,
   underlayID, overlayID,
   runHue, runSat, runLight, runMul, runNum,
+  hue, saturation, luminance,
   underlayBGR, overlayBGR, shape, rotation, drawX, drawY: Integer;
 
   rowRegions: array [0..2] of Integer;
+  rowUnderlays: array [0..2] of TIntegerArray;
   bounds, outterBounds: TBox;
   hues, sats, light, mul, num,
   localYs, rowBuckets,
-  shapes, row,
+  shapes, row, minimapPalette,
   underlayRow, overlayRow, pathRow, rotationRow: TIntegerArray;
   underlays: TUnderlayDefinitionArray;
   overlays: TOverlayDefinitionArray;
@@ -539,6 +541,7 @@ begin
 
   underlays := Self.MapData.Underlays;
   overlays  := Self.MapData.Overlays;
+  minimapPalette := ColorUtils.MinimapPalette;
 
   i := TMapChunkLoader.REGION_SIZE + TMapChunkLoader.BLEND * 2;
   SetLength(hues, i);
@@ -596,7 +599,7 @@ begin
     for dir in DIRS do
     begin
       neighbor := x + TMapChunkLoader.BLEND * dir;
-      if not InRange(neighbor, bounds.X1, bounds.X2) then
+      if (neighbor < bounds.X1) or (neighbor > bounds.X2) then
         Continue;
 
       localX := TMapChunkLoader.ConvertLocal(neighbor);
@@ -606,15 +609,19 @@ begin
       rowRegions[1] := Self.RegionLoader.RegionCoordinateIndex(neighborRegionX, region.Y);
       rowRegions[2] := Self.RegionLoader.RegionCoordinateIndex(neighborRegionX, region.Y + 1);
 
+      for bucket := 0 to 2 do
+        if rowRegions[bucket] <> -1 then
+          rowUnderlays[bucket] := Self.RegionLoader.Regions[rowRegions[bucket]].UnderlayIds[z, localX];
+
       for y := bounds.Y1 to bounds.Y2 do
       begin
         idx := y + TMapChunkLoader.BLEND;
 
-        i := rowRegions[rowBuckets[idx]];
-        if i = -1 then
+        bucket := rowBuckets[idx];
+        if rowRegions[bucket] = -1 then
           Continue;
 
-        underlayID := Self.RegionLoader.Regions[i].GetUnderlayID(z, localX, localYs[idx]);
+        underlayID := rowUnderlays[bucket][localYs[idx]] and $7FFF;
         if underlayID <= 0 then
           Continue;
 
@@ -652,18 +659,26 @@ begin
 
     for y := outterBounds.Y1 to outterBounds.Y2 do
     begin
-      for dir in DIRS do
+      neighbor := y + TMapChunkLoader.BLEND;
+      if neighbor <= bounds.Y2 then
       begin
-        neighbor := y + TMapChunkLoader.BLEND * dir;
-        if not InRange(neighbor, bounds.Y1, bounds.Y2) then
-          Continue;
-
         idx := neighbor + TMapChunkLoader.BLEND;
-        runHue   += dir * hues[idx];
-        runSat   += dir * sats[idx];
-        runLight += dir * light[idx];
-        runMul   += dir * mul[idx];
-        runNum   += dir * num[idx];
+        runHue   += hues[idx];
+        runSat   += sats[idx];
+        runLight += light[idx];
+        runMul   += mul[idx];
+        runNum   += num[idx];
+      end;
+
+      neighbor := y - TMapChunkLoader.BLEND;
+      if neighbor >= bounds.Y1 then
+      begin
+        idx := neighbor + TMapChunkLoader.BLEND;
+        runHue   -= hues[idx];
+        runSat   -= sats[idx];
+        runLight -= light[idx];
+        runMul   -= mul[idx];
+        runNum   -= num[idx];
       end;
 
       if (y < 0) or (y >= TMapChunkLoader.REGION_SIZE) then
@@ -678,11 +693,20 @@ begin
       underlayBGR := 0;
       if underlayID > 0 then
       begin
-        underlayBGR := ColorUtils.UnderlayColor(
-          ColorUtils.PackHSL(
-            runHue * 256 div runMul, runSat div runNum, EnsureRange(runLight div runNum, 0, 255)
-          )
-        ) or $FF000000;
+        hue        := runHue * 256 div runMul;
+        saturation := runSat div runNum;
+        luminance  := runLight div runNum;
+        if luminance < 0 then
+          luminance := 0
+        else if luminance > 255 then
+          luminance := 255;
+
+        if luminance > 179 then saturation := saturation shr 1;
+        if luminance > 192 then saturation := saturation shr 1;
+        if luminance > 217 then saturation := saturation shr 1;
+        if luminance > 243 then saturation := saturation shr 1;
+
+        underlayBGR := minimapPalette[((saturation shr 5) shl 7) + ((hue shr 2) shl 10) + (luminance shr 1)] or $FF000000;
       end;
 
       overlayBGR := 0;
@@ -694,9 +718,8 @@ begin
         shape    := pathRow[localY] + 1;
         rotation := rotationRow[localY];
 
-        i := overlays.IndexOf(overlayID-1);
-        if i > -1 then
-          overlayBGR := overlays[i].MinimapColor;
+        if overlayID <= Length(overlays) then
+          overlayBGR := overlays[overlayID - 1].MinimapColor;
       end;
 
       case shape of
@@ -745,20 +768,23 @@ Flattens the planes a chunk uses into `pixels`, following the per-tile plan in `
 `pixels` is one row-major `IMAGE_SIZE * IMAGE_SIZE` buffer rather than a matrix, so it is a
 single block of memory that `TImage.FromData` can read as it is.
 
-It walks whole pixel rows and copies runs of tiles that share a plan in one go, because
-aliasing a row out of a plane costs far more than the handful of pixel copies it saves.
+It copies runs of tiles that share a plan in one go, because aliasing a row out of a plane costs
+far more than the handful of pixel copies it saves. The runs are found once per tile row and
+reused for each of the `SCALE` pixel rows that tile row covers, since those rows all share it.
 Within a run the topmost plane is copied over with a single `Move` and the ones below it only
 fill in whatever the topmost left clear.
 *)
 procedure TMapChunkLoader.CompositePlanes(var pixels: TIntegerArray; constref planes: array of TIntegerMatrix; constref tileCodes: TIntegerArray); static;
 var
-  drawY, rowStart, tileRow, x, runEnd, code, n, k, px, drawX, runStop: Integer;
+  tileY, tileRow, pixelRow, drawY, rowStart, x, runEnd, runCount, run,
+  code, n, k, px, drawX, runStop: Integer;
+  runCodes, runStarts, runStops: array [0..63] of Integer;
   src: TIntegerArray;
 begin
-  for drawY := 0 to TMapChunkLoader.IMAGE_SIZE - 1 do
+  for tileY := 0 to TMapChunkLoader.REGION_SIZE - 1 do
   begin
-    rowStart := drawY * TMapChunkLoader.IMAGE_SIZE;
-    tileRow := (drawY div TMapChunkLoader.SCALE) * TMapChunkLoader.REGION_SIZE;
+    tileRow := tileY * TMapChunkLoader.REGION_SIZE;
+    runCount := 0;
 
     x := 0;
     while x < TMapChunkLoader.REGION_SIZE do
@@ -773,11 +799,31 @@ begin
         Inc(runEnd);
       end;
 
-      n := code and $F;
-      if n > 0 then
+      if (code and $F) > 0 then
       begin
-        drawX   := x * TMapChunkLoader.SCALE;
-        runStop := runEnd * TMapChunkLoader.SCALE - 1;
+        runCodes[runCount]  := code;
+        runStarts[runCount] := x * TMapChunkLoader.SCALE;
+        runStops[runCount]  := runEnd * TMapChunkLoader.SCALE - 1;
+        Inc(runCount);
+      end;
+
+      x := runEnd;
+    end;
+
+    if runCount = 0 then
+      Continue;
+
+    for pixelRow := 0 to TMapChunkLoader.SCALE - 1 do
+    begin
+      drawY := tileY * TMapChunkLoader.SCALE + pixelRow;
+      rowStart := drawY * TMapChunkLoader.IMAGE_SIZE;
+
+      for run := 0 to runCount - 1 do
+      begin
+        code    := runCodes[run];
+        n       := code and $F;
+        drawX   := runStarts[run];
+        runStop := runStops[run];
 
         for k := n - 1 downto 0 do
         begin
@@ -791,8 +837,6 @@ begin
                 pixels[rowStart + px] := src[px];
         end;
       end;
-
-      x := runEnd;
     end;
   end;
 end;
