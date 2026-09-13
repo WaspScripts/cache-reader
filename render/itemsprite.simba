@@ -338,10 +338,9 @@ function TItemSprite.ToImage(selected: Boolean = False; shadowColor: Integer = 0
 begin
   Self.Project(selected);
 
+  Self.Pixels.DrawBorder($FF000001);
   if selected then
-    Self.Pixels.DrawBorder($FFFFFFFF)
-  else
-    Self.Pixels.DrawBorder($FF000001);
+    Self.Pixels.DrawBorder($FFFFFFFF);
 
   if shadowColor <> 0 then
     Self.Pixels.DrawShadow(shadowColor);
@@ -369,10 +368,9 @@ function TItemSprite.BorderImage(selected: Boolean = False): TImage;
 begin
   Self.Project(selected);
 
+  Self.Pixels.DrawBorder($FF000001);
   if selected then
-    Self.Pixels.DrawBorder($FFFFFFFF)
-  else
-    Self.Pixels.DrawBorder($FF000001);
+    Self.Pixels.DrawBorder($FFFFFFFF);
 
   Result := Self.Pixels.BorderImage();
 end;
