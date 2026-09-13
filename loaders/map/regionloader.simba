@@ -192,31 +192,35 @@ per chunk while panning around only pays for what is new.
 function TRegionLoader.LoadRegionAndNeighbors(regionX, regionY: Integer): Boolean;
 var
   region: TRegion;
-  rx, ry: array [0..4] of Integer;
-  i: Integer;
+  coordinates: TPointArray;
+  i, id: Integer;
 begin
+  if not InRange(regionX, 0, 255) or not InRange(regionY, 0, 255) then
+    Exit;
+
   Self.BuildLookup();
 
-  rx[0] := regionX;     ry[0] := regionY;     // center
-  rx[1] := regionX - 1; ry[1] := regionY;     // left
-  rx[2] := regionX + 1; ry[2] := regionY;     // right
-  rx[3] := regionX;     ry[3] := regionY - 1; // down
-  rx[4] := regionX;     ry[4] := regionY + 1; // up
+  coordinates := [Point(regionX, regionY)];                          // center
+  if regionX > 0   then coordinates += Point(regionX - 1, regionY);  // left
+  if regionX < 255 then coordinates += Point(regionX + 1, regionY);  // right
+  if regionY > 0   then coordinates += Point(regionX, regionY - 1);  // down
+  if regionY < 255 then coordinates += Point(regionX, regionY + 1);  // up
 
-  for i := 0 to 4 do
+  for i := 0 to High(coordinates) do
   begin
-    if Self.RegionCoordinateIndex(rx[i], ry[i]) <> -1 then
+    id := (coordinates[i].X shl 8) or coordinates[i].Y;
+
+    if Self.Lookup[id] <> -1 then
     begin
       if i = 0 then
         Result := True;
       Continue;
     end;
 
-    if Self.LoadRegion((rx[i] shl 8) or ry[i], region) then
+    if Self.LoadRegion(id, region) then
     begin
       Self.Regions += region;
-      if InRange(rx[i], 0, 255) and InRange(ry[i], 0, 255) then
-        Self.Lookup[(rx[i] shl 8) or ry[i]] := High(Self.Regions);
+      Self.Lookup[id] := High(Self.Regions);
       if i = 0 then
         Result := True;
     end;

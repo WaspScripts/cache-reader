@@ -1,4 +1,4 @@
-{.$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
+{$DEFINE ENABLE_CACHEREADER_RANGE_CHECKS}
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
