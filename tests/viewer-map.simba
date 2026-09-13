@@ -113,7 +113,7 @@ begin
   x1Spinner.Left := 20;
   x1Spinner.MinValue := 0;
   x1Spinner.MaxValue := 99;
-  x1Spinner.Value := 50;
+  x1Spinner.Value := 48;
 
   lbl := TLazLabel.Create(form);
   lbl.Parent := form;
@@ -130,7 +130,7 @@ begin
   y1Spinner.Left := 20;
   y1Spinner.MinValue := 0;
   y1Spinner.MaxValue := 199;
-  y1Spinner.Value := 50;
+  y1Spinner.Value := 48;
 
   lbl := TLazLabel.Create(form);
   lbl.Parent := form;
@@ -148,7 +148,7 @@ begin
   x2Spinner.Left := 120;
   x2Spinner.MinValue := 0;
   x2Spinner.MaxValue := 99;
-  x2Spinner.Value := 50;
+  x2Spinner.Value := 52;
 
   lbl := TLazLabel.Create(form);
   lbl.Parent := form;
@@ -165,7 +165,7 @@ begin
   y2Spinner.Left := 120;
   y2Spinner.MinValue := 0;
   y2Spinner.MaxValue := 199;
-  y2Spinner.Value := 50;
+  y2Spinner.Value := 52;
 
   lbl := TLazLabel.Create(form);
   lbl.Parent := form;
