@@ -1,7 +1,7 @@
 (*
 # Graphics3D
 Software 3D rasterizer.
-Renders Gouraud-shaded and flat-coloured triangles into an integer pixel buffer.
+Renders Gouraud-shaded, flat-coloured and textured triangles into an integer pixel buffer.
 
 The pixel format is Alpha<<24 | Red<<16 | Green<<8 | Blue, which is what the `PColorBGRA` buffer
 `TImage.FromData` reads, so a finished buffer becomes an image without being walked again.
@@ -29,6 +29,7 @@ type
     RasterClipEnable,
     RasterGouraudLowRes: Boolean;
     RasterAlpha: Integer;
+    TextureFrame: Integer;
   end;
 
 (*
@@ -806,11 +807,12 @@ end;
 
 
 (*
-## Graphics3D.RasterFlat
+## Graphics3D.FlatRaster
 ```pascal
-procedure TGraphics3D.RasterFlat(x0, x1, x2, y0, y1, y2, color: Integer);
+procedure TGraphics3D.FlatRaster(baseIdx, leftX, rightX, color: Integer);
 ```
-Flat-colour scanline filler — writes one horizontal span of a single colour.
+Fills one scanline of a flat triangle with a single colour, blending it into what is already there
+when the face is translucent. An alpha of `254` leaves the scanline untouched, as the client does.
 *)
 procedure TGraphics3D.FlatRaster(baseIdx, leftX, rightX, color: Integer);
 var
@@ -822,7 +824,7 @@ begin
     if leftX < 0 then leftX := 0;
   end;
 
-  if leftX >= rightX then Exit;
+  if (leftX >= rightX) or (Self.RasterAlpha = 254) then Exit;
 
   pixelIdx := baseIdx + leftX;
 
@@ -858,123 +860,1222 @@ end;
 ```pascal
 procedure TGraphics3D.RasterFlat(x0, x1, x2, y0, y1, y2, color: Integer);
 ```
-Flat-coloured triangle — three vertices with X/Y, filled with a single colour.
-Uses the same scanline approach as {ref}`Graphics3D.GouraudTriangle` but without colour interpolation.
+Fills a triangle with a single colour.
+
+It walks the triangle exactly as {ref}`TGraphics3D.GouraudTriangle` does - sorted by height,
+one scanline at a time, edges advanced by fixed point steps - only without a colour to carry
+along, and hands each scanline to {ref}`TGraphics3D.FlatRaster`. Unlike a shaded triangle, one
+with no area is still walked.
 *)
 procedure TGraphics3D.RasterFlat(x0, x1, x2, y0, y1, y2, color: Integer);
 var
-  ax, ay, bx, by, cx, cy, tmp: Integer;
-  slopeAB, slopeAC, slopeBC: Integer;
-  y, leftX, rightX, baseIdx: Integer;
-  yStart, yEnd, yMid: Integer;
-  leftXFrac, rightXFrac: Integer;
+  dx1, dy1, dx2, dy2,
+  slope0, slope1, slope2,
+  pixelRow: Integer;
 begin
-  ax := x0; ay := y0;
-  bx := x1; by := y1;
-  cx := x2; cy := y2;
+  dx1 := x1 - x0;
+  dy1 := y1 - y0;
+  dx2 := x2 - x0;
+  dy2 := y2 - y0;
 
-  if ay > by then
-  begin
-    tmp := ax; ax := bx; bx := tmp;
-    tmp := ay; ay := by; by := tmp;
-  end;
-  if by > cy then
-  begin
-    tmp := bx; bx := cx; cx := tmp;
-    tmp := by; by := cy; cy := tmp;
-  end;
-  if ay > by then
-  begin
-    tmp := ax; ax := bx; bx := tmp;
-    tmp := ay; ay := by; by := tmp;
-  end;
+  slope0 := 0;
+  if y2 <> y1 then slope0 := ((x2 - x1) shl 14) div (y2 - y1);
+  slope1 := 0;
+  if y0 <> y1 then slope1 := (dx1 shl 14) div dy1;
+  slope2 := 0;
+  if y0 <> y2 then slope2 := (dx2 shl 14) div dy2;
 
-  if ay <> by then
-    slopeAB := ((bx - ax) shl 14) div (by - ay)
-  else
-    slopeAB := 0;
-  if ay <> cy then
-    slopeAC := ((cx - ax) shl 14) div (cy - ay)
-  else
-    slopeAC := 0;
-  if by <> cy then
-    slopeBC := ((cx - bx) shl 14) div (cy - by)
-  else
-    slopeBC := 0;
-
-  yMid := EnsureRange(by, 0, Self.ClipHeight);
-  yStart := EnsureRange(ay, 0, Self.ClipHeight);
-  yEnd := EnsureRange(cy, 0, Self.ClipHeight);
-
-  // Upper half
-  if yStart < yMid then
+  if (y0 <= y1) and (y0 <= y2) then
   begin
-    if ay < 0 then
+    if y0 >= Self.ClipHeight then Exit;
+    if y1 > Self.ClipHeight then y1 := Self.ClipHeight;
+    if y2 > Self.ClipHeight then y2 := Self.ClipHeight;
+
+    if y1 < y2 then
     begin
-      leftXFrac := (ax shl 14) - ay * slopeAB;
-      rightXFrac := (ax shl 14) - ay * slopeAC;
-    end
-    else
-    begin
-      leftXFrac := ax shl 14;
-      rightXFrac := ax shl 14;
-    end;
-
-    if slopeAB < slopeAC then
-    begin
-      for y := yStart to yMid - 1 do
+      x0 := x0 shl 14;
+      x2 := x0;
+      if y0 < 0 then
       begin
-        baseIdx := Self.ClipY[y];
-        Self.FlatRaster(baseIdx, ArithmeticShr(leftXFrac, 14), ArithmeticShr(rightXFrac, 14), color);
-        leftXFrac += slopeAB;
-        rightXFrac += slopeAC;
+        x2 -= y0 * slope2;
+        x0 -= y0 * slope1;
+        y0 := 0;
       end;
-    end
-    else
-    begin
-      for y := yStart to yMid - 1 do
-      begin
-        baseIdx := Self.ClipY[y];
-        Self.FlatRaster(baseIdx, ArithmeticShr(rightXFrac, 14), ArithmeticShr(leftXFrac, 14), color);
-        leftXFrac += slopeAB;
-        rightXFrac += slopeAC;
-      end;
-    end;
-  end;
 
-  // Lower half
-  if yMid < yEnd then
-  begin
-    if by < 0 then
-    begin
-      leftXFrac := (bx shl 14) - by * slopeBC;
-      rightXFrac := (ax shl 14) - ay * slopeAC;
-    end
-    else
-    begin
-      leftXFrac := bx shl 14;
-      rightXFrac := (ax shl 14) + (by - ay) * slopeAC;
-    end;
-
-    if slopeBC < slopeAC then
-    begin
-      for y := yMid to yEnd - 1 do
+      x1 := x1 shl 14;
+      if y1 < 0 then
       begin
-        baseIdx := Self.ClipY[y];
-        Self.FlatRaster(baseIdx, ArithmeticShr(leftXFrac, 14), ArithmeticShr(rightXFrac, 14), color);
-        leftXFrac += slopeBC;
-        rightXFrac += slopeAC;
+        x1 -= slope0 * y1;
+        y1 := 0;
       end;
-    end
-    else
-    begin
-      for y := yMid to yEnd - 1 do
+
+      if ((y0 = y1) or (slope2 >= slope1)) and ((y0 <> y1) or (slope2 <= slope0)) then
       begin
-        baseIdx := Self.ClipY[y];
-        Self.FlatRaster(baseIdx, ArithmeticShr(rightXFrac, 14), ArithmeticShr(leftXFrac, 14), color);
-        leftXFrac += slopeBC;
-        rightXFrac += slopeAC;
+        y2 -= y1;
+        y1 -= y0;
+        pixelRow := Self.ClipY[y0];
+
+        while True do
+        begin
+          Dec(y1);
+          if y1 < 0 then
+            while True do
+            begin
+              Dec(y2);
+              if y2 < 0 then Exit;
+              Self.FlatRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), color);
+              x2 += slope2;
+              x1 += slope0;
+              pixelRow += Self.PixelWidth;
+            end;
+
+          Self.FlatRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), color);
+          x2 += slope2;
+          x0 += slope1;
+          pixelRow += Self.PixelWidth;
+        end;
+      end;
+
+      y2 -= y1;
+      y1 -= y0;
+      pixelRow := Self.ClipY[y0];
+
+      while True do
+      begin
+        Dec(y1);
+        if y1 < 0 then
+          while True do
+          begin
+            Dec(y2);
+            if y2 < 0 then Exit;
+            Self.FlatRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), color);
+            x2 += slope2;
+            x1 += slope0;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.FlatRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), color);
+        x2 += slope2;
+        x0 += slope1;
+        pixelRow += Self.PixelWidth;
       end;
     end;
+
+    x0 := x0 shl 14;
+    x1 := x0;
+    if y0 < 0 then
+    begin
+      x1 -= y0 * slope2;
+      x0 -= y0 * slope1;
+      y0 := 0;
+    end;
+
+    x2 := x2 shl 14;
+    if y2 < 0 then
+    begin
+      x2 -= slope0 * y2;
+      y2 := 0;
+    end;
+
+    if ((y0 <> y2) and (slope2 < slope1)) or ((y0 = y2) and (slope0 > slope1)) then
+    begin
+      y1 -= y2;
+      y2 -= y0;
+      pixelRow := Self.ClipY[y0];
+
+      while True do
+      begin
+        Dec(y2);
+        if y2 < 0 then
+          while True do
+          begin
+            Dec(y1);
+            if y1 < 0 then Exit;
+            Self.FlatRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), color);
+            x2 += slope0;
+            x0 += slope1;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.FlatRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), color);
+        x1 += slope2;
+        x0 += slope1;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    y1 -= y2;
+    y2 -= y0;
+    pixelRow := Self.ClipY[y0];
+
+    while True do
+    begin
+      Dec(y2);
+      if y2 < 0 then
+        while True do
+        begin
+          Dec(y1);
+          if y1 < 0 then Exit;
+          Self.FlatRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), color);
+          x2 += slope0;
+          x0 += slope1;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.FlatRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), color);
+      x1 += slope2;
+      x0 += slope1;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  if y1 <= y2 then
+  begin
+    if y1 >= Self.ClipHeight then Exit;
+    if y2 > Self.ClipHeight then y2 := Self.ClipHeight;
+    if y0 > Self.ClipHeight then y0 := Self.ClipHeight;
+
+    if y2 < y0 then
+    begin
+      x1 := x1 shl 14;
+      x0 := x1;
+      if y1 < 0 then
+      begin
+        x0 -= slope1 * y1;
+        x1 -= slope0 * y1;
+        y1 := 0;
+      end;
+
+      x2 := x2 shl 14;
+      if y2 < 0 then
+      begin
+        x2 -= slope2 * y2;
+        y2 := 0;
+      end;
+
+      if ((y2 = y1) or (slope1 >= slope0)) and ((y2 <> y1) or (slope1 <= slope2)) then
+      begin
+        y0 -= y2;
+        y2 -= y1;
+        pixelRow := Self.ClipY[y1];
+
+        while True do
+        begin
+          Dec(y2);
+          if y2 < 0 then
+            while True do
+            begin
+              Dec(y0);
+              if y0 < 0 then Exit;
+              Self.FlatRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), color);
+              x0 += slope1;
+              x2 += slope2;
+              pixelRow += Self.PixelWidth;
+            end;
+
+          Self.FlatRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), color);
+          x0 += slope1;
+          x1 += slope0;
+          pixelRow += Self.PixelWidth;
+        end;
+      end;
+
+      y0 -= y2;
+      y2 -= y1;
+      pixelRow := Self.ClipY[y1];
+
+      while True do
+      begin
+        Dec(y2);
+        if y2 < 0 then
+          while True do
+          begin
+            Dec(y0);
+            if y0 < 0 then Exit;
+            Self.FlatRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), color);
+            x0 += slope1;
+            x2 += slope2;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.FlatRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), color);
+        x0 += slope1;
+        x1 += slope0;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    x1 := x1 shl 14;
+    x2 := x1;
+    if y1 < 0 then
+    begin
+      x2 -= slope1 * y1;
+      x1 -= slope0 * y1;
+      y1 := 0;
+    end;
+
+    x0 := x0 shl 14;
+    if y0 < 0 then
+    begin
+      x0 -= y0 * slope2;
+      y0 := 0;
+    end;
+
+    if slope1 < slope0 then
+    begin
+      y2 -= y0;
+      y0 -= y1;
+      pixelRow := Self.ClipY[y1];
+
+      while True do
+      begin
+        Dec(y0);
+        if y0 < 0 then
+          while True do
+          begin
+            Dec(y2);
+            if y2 < 0 then Exit;
+            Self.FlatRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), color);
+            x0 += slope2;
+            x1 += slope0;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.FlatRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), color);
+        x2 += slope1;
+        x1 += slope0;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    y2 -= y0;
+    y0 -= y1;
+    pixelRow := Self.ClipY[y1];
+
+    while True do
+    begin
+      Dec(y0);
+      if y0 < 0 then
+        while True do
+        begin
+          Dec(y2);
+          if y2 < 0 then Exit;
+          Self.FlatRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), color);
+          x0 += slope2;
+          x1 += slope0;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.FlatRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), color);
+      x2 += slope1;
+      x1 += slope0;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  if y2 >= Self.ClipHeight then Exit;
+  if y0 > Self.ClipHeight then y0 := Self.ClipHeight;
+  if y1 > Self.ClipHeight then y1 := Self.ClipHeight;
+
+  if y0 < y1 then
+  begin
+    x2 := x2 shl 14;
+    x1 := x2;
+    if y2 < 0 then
+    begin
+      x1 -= slope0 * y2;
+      x2 -= slope2 * y2;
+      y2 := 0;
+    end;
+
+    x0 := x0 shl 14;
+    if y0 < 0 then
+    begin
+      x0 -= y0 * slope1;
+      y0 := 0;
+    end;
+
+    if slope0 < slope2 then
+    begin
+      y1 -= y0;
+      y0 -= y2;
+      pixelRow := Self.ClipY[y2];
+
+      while True do
+      begin
+        Dec(y0);
+        if y0 < 0 then
+          while True do
+          begin
+            Dec(y1);
+            if y1 < 0 then Exit;
+            Self.FlatRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), color);
+            x1 += slope0;
+            x0 += slope1;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.FlatRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), color);
+        x1 += slope0;
+        x2 += slope2;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    y1 -= y0;
+    y0 -= y2;
+    pixelRow := Self.ClipY[y2];
+
+    while True do
+    begin
+      Dec(y0);
+      if y0 < 0 then
+        while True do
+        begin
+          Dec(y1);
+          if y1 < 0 then Exit;
+          Self.FlatRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), color);
+          x1 += slope0;
+          x0 += slope1;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.FlatRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), color);
+      x1 += slope0;
+      x2 += slope2;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  x2 := x2 shl 14;
+  x0 := x2;
+  if y2 < 0 then
+  begin
+    x0 -= slope0 * y2;
+    x2 -= slope2 * y2;
+    y2 := 0;
+  end;
+
+  x1 := x1 shl 14;
+  if y1 < 0 then
+  begin
+    x1 -= slope1 * y1;
+    y1 := 0;
+  end;
+
+  if slope0 < slope2 then
+  begin
+    y0 -= y1;
+    y1 -= y2;
+    pixelRow := Self.ClipY[y2];
+
+    while True do
+    begin
+      Dec(y1);
+      if y1 < 0 then
+        while True do
+        begin
+          Dec(y0);
+          if y0 < 0 then Exit;
+          Self.FlatRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), color);
+          x1 += slope1;
+          x2 += slope2;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.FlatRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), color);
+      x0 += slope0;
+      x2 += slope2;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  y0 -= y1;
+  y1 -= y2;
+  pixelRow := Self.ClipY[y2];
+
+  while True do
+  begin
+    Dec(y1);
+    if y1 < 0 then
+      while True do
+      begin
+        Dec(y0);
+        if y0 < 0 then Exit;
+        Self.FlatRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), color);
+        x1 += slope1;
+        x2 += slope2;
+        pixelRow += Self.PixelWidth;
+      end;
+
+    Self.FlatRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), color);
+    x0 += slope0;
+    x2 += slope2;
+    pixelRow += Self.PixelWidth;
+  end;
+end;
+
+(*
+## Graphics3D.TexturedRaster
+```pascal
+procedure TGraphics3D.TexturedRaster(baseIdx, leftX, rightX, shade, shadeStep, u, v, w, uStep, vStep, wStep: Integer; const texels: TIntegerArray; opaque: Boolean);
+```
+Fills one scanline of a textured triangle.
+
+`u`, `v` and `w` are the texture coordinates and depth of the scanline, not yet divided by depth,
+and each `Step` is how much they change per pixel. Dividing by depth for every pixel is what
+keeps a texture from warping across a face, but it is only done every 8 pixels, with the texture
+position stepped linearly in between, the same trade the client makes.
+
+The texel position is packed into one integer, the column in its top 7 bits and the row in bits
+7 to 13, so that one addition moves along both at once. The column is clamped to the texture
+while the row wraps around it.
+
+`shade` darkens each texel by the face's lighting. `opaque` is the texture's own flag: when it is
+not set, texels that are `0` are holes and leave the pixel underneath alone.
+*)
+procedure TGraphics3D.TexturedRaster(baseIdx, leftX, rightX, shade, shadeStep, u, v, w, uStep, vStep, wStep: Integer; const texels: TIntegerArray; opaque: Boolean);
+var
+  pixelIdx, cameraX, depth, blocks, remaining, i,
+  startU, startV, endU, endV,
+  texelIdx, texelStep, texel, intensity, shaded: Integer;
+begin
+  if Self.RasterClipEnable then
+  begin
+    if rightX > Self.ClipWidth then rightX := Self.ClipWidth;
+    if leftX < 0 then leftX := 0;
+  end;
+
+  if leftX >= rightX then Exit;
+
+  pixelIdx := baseIdx + leftX;
+  shade += leftX * shadeStep;
+  cameraX := leftX - Self.CenterX;
+
+  u += cameraX * ArithmeticShr(uStep, 3);
+  v += ArithmeticShr(vStep, 3) * cameraX;
+  w += cameraX * ArithmeticShr(wStep, 3);
+
+  depth := ArithmeticShr(w, 14);
+  startU := 0;
+  startV := 0;
+  if depth <> 0 then
+  begin
+    startU := EnsureRange(u div depth, 0, 16256);
+    startV := v div depth;
+  end;
+
+  u += uStep;
+  v += vStep;
+  w += wStep;
+
+  depth := ArithmeticShr(w, 14);
+  endU := 0;
+  endV := 0;
+  if depth <> 0 then
+  begin
+    endU := EnsureRange(u div depth, 0, 16256);
+    endV := v div depth;
+  end;
+
+  texelIdx := (startU shl 18) + startV;
+  texelStep := ArithmeticShr(endV - startV, 3) + (ArithmeticShr(endU - startU, 3) shl 18);
+  blocks := (rightX - leftX) shr 3;
+  shadeStep := shadeStep shl 3;
+  intensity := ArithmeticShr(shade, 8);
+
+  for 1 to blocks do
+  begin
+    for i := 0 to 7 do
+    begin
+      texel := texels[(texelIdx and 16256) + (texelIdx shr 25)];
+      if opaque or (texel <> 0) then
+      begin
+        shaded := ((((intensity * (texel and $FF00)) and $FF0000) + (((texel and $FF00FF) * intensity) and $FF00FF00)) shr 8) and $FFFFFF;
+        if shaded <> 0 then
+          shaded := shaded or $FF000000;
+        Self.Pixels[pixelIdx] := shaded;
+      end;
+      Inc(pixelIdx);
+      if i < 7 then
+        texelIdx += texelStep;
+    end;
+
+    startU := endU;
+    startV := endV;
+    u += uStep;
+    v += vStep;
+    w += wStep;
+
+    depth := ArithmeticShr(w, 14);
+    endU := 0;
+    endV := 0;
+    if depth <> 0 then
+    begin
+      endU := EnsureRange(u div depth, 0, 16256);
+      endV := v div depth;
+    end;
+
+    texelIdx := (startU shl 18) + startV;
+    texelStep := ArithmeticShr(endV - startV, 3) + (ArithmeticShr(endU - startU, 3) shl 18);
+    shade += shadeStep;
+    intensity := ArithmeticShr(shade, 8);
+  end;
+
+  remaining := (rightX - leftX) and 7;
+  for 1 to remaining do
+  begin
+    texel := texels[(texelIdx and 16256) + (texelIdx shr 25)];
+    if opaque or (texel <> 0) then
+    begin
+      shaded := ((((intensity * (texel and $FF00)) and $FF0000) + (((texel and $FF00FF) * intensity) and $FF00FF00)) shr 8) and $FFFFFF;
+      if shaded <> 0 then
+        shaded := shaded or $FF000000;
+      Self.Pixels[pixelIdx] := shaded;
+    end;
+    Inc(pixelIdx);
+    texelIdx += texelStep;
+  end;
+end;
+
+(*
+## Graphics3D.TexturedTriangle
+```pascal
+procedure TGraphics3D.TexturedTriangle(y0, y1, y2, x0, x1, x2, c0, c1, c2, localX0, localX1, localX2, localY0, localY1, localY2, localZ0, localZ1, localZ2: Integer; const texels: TIntegerArray; opaque: Boolean);
+```
+Fills a triangle with a texture, perspective correct, and shaded by a lighting value at each
+corner.
+
+`x` and `y` are the corners on screen and `c` their lighting, as for
+{ref}`TGraphics3D.GouraudTriangle`, except that `c` is a light level from `2` to `126` rather
+than a palette index. The `local` coordinates are three points in camera space that set how the
+texture lies across the face: the first is where the texture's origin sits and the other two are
+where its edges run to. They are usually the face's own corners, but a model can stretch one
+texture across several faces by pointing them all at the same three points.
+
+`texels` is a 128 by 128 texture from {ref}`TTextureLoader.Texels` and `opaque` is its
+{ref}`TTextureDefinition` flag.
+
+The triangle is walked exactly like {ref}`TGraphics3D.GouraudTriangle`, carrying the texture
+coordinates of the start of each scanline along with it for {ref}`TGraphics3D.TexturedRaster`.
+*)
+procedure TGraphics3D.TexturedTriangle(y0, y1, y2, x0, x1, x2, c0, c1, c2, localX0, localX1, localX2, localY0, localY1, localY2, localZ0, localZ1, localZ2: Integer; const texels: TIntegerArray; opaque: Boolean);
+var
+  dx1, dy1, dx2, dy2, dc1, dc2,
+  slope0, slope1, slope2,
+  area, shadeDX, shadeDY, pixelRow,
+  uRow, uStepX, uStepY,
+  vRow, vStepX, vStepY,
+  wRow, wStepX, wStepY: Integer;
+begin
+  dx1 := x1 - x0;
+  dy1 := y1 - y0;
+  dx2 := x2 - x0;
+  dy2 := y2 - y0;
+
+  dc1 := c1 - c0;
+  dc2 := c2 - c0;
+
+  slope0 := 0;
+  if y2 <> y1 then slope0 := ((x2 - x1) shl 14) div (y2 - y1);
+  slope1 := 0;
+  if y0 <> y1 then slope1 := (dx1 shl 14) div dy1;
+  slope2 := 0;
+  if y0 <> y2 then slope2 := (dx2 shl 14) div dy2;
+
+  area := dx1 * dy2 - dx2 * dy1;
+  if area = 0 then Exit;
+
+  shadeDX := ((dc1 * dy2 - dc2 * dy1) shl 9) div area;
+  shadeDY := ((dc2 * dx1 - dc1 * dx2) shl 9) div area;
+
+  localX1 := localX0 - localX1;
+  localY1 := localY0 - localY1;
+  localZ1 := localZ0 - localZ1;
+  localX2 -= localX0;
+  localY2 -= localY0;
+  localZ2 -= localZ0;
+
+  uRow := (localX2 * localY0 - localX0 * localY2) shl 14;
+  uStepX := (Int64(localZ0 * localY2 - localZ2 * localY0) shl 17) div Self.Zoom;
+  uStepY := (Int64(localZ2 * localX0 - localX2 * localZ0) shl 14) div Self.Zoom;
+  vRow := (localX1 * localY0 - localY1 * localX0) shl 14;
+  vStepX := (Int64(localY1 * localZ0 - localZ1 * localY0) shl 17) div Self.Zoom;
+  vStepY := (Int64(localZ1 * localX0 - localX1 * localZ0) shl 14) div Self.Zoom;
+  wRow := (localY1 * localX2 - localX1 * localY2) shl 14;
+  wStepX := (Int64(localZ1 * localY2 - localY1 * localZ2) shl 17) div Self.Zoom;
+  wStepY := (Int64(localZ2 * localX1 - localX2 * localZ1) shl 14) div Self.Zoom;
+
+  if (y0 <= y1) and (y0 <= y2) then
+  begin
+    if y0 >= Self.ClipHeight then Exit;
+    if y1 > Self.ClipHeight then y1 := Self.ClipHeight;
+    if y2 > Self.ClipHeight then y2 := Self.ClipHeight;
+
+    c0 := shadeDX + ((c0 shl 9) - x0 * shadeDX);
+
+    if y1 < y2 then
+    begin
+      x0 := x0 shl 14;
+      x2 := x0;
+      if y0 < 0 then
+      begin
+        x2 -= y0 * slope2;
+        x0 -= y0 * slope1;
+        c0 -= y0 * shadeDY;
+        y0 := 0;
+      end;
+
+      x1 := x1 shl 14;
+      if y1 < 0 then
+      begin
+        x1 -= slope0 * y1;
+        y1 := 0;
+      end;
+
+      if ((y0 = y1) or (slope2 >= slope1)) and ((y0 <> y1) or (slope2 <= slope0)) then
+      begin
+        y2 -= y1;
+        y1 -= y0;
+        uRow += uStepY * (y0 - Self.CenterY);
+        vRow += vStepY * (y0 - Self.CenterY);
+        wRow += wStepY * (y0 - Self.CenterY);
+        pixelRow := Self.ClipY[y0];
+
+        while True do
+        begin
+          Dec(y1);
+          if y1 < 0 then
+            while True do
+            begin
+              Dec(y2);
+              if y2 < 0 then Exit;
+              Self.TexturedRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), c0, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+              x2 += slope2;
+              x1 += slope0;
+              c0 += shadeDY;
+              uRow += uStepY;
+              vRow += vStepY;
+              wRow += wStepY;
+              pixelRow += Self.PixelWidth;
+            end;
+
+          Self.TexturedRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), c0, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+          x2 += slope2;
+          x0 += slope1;
+          c0 += shadeDY;
+          uRow += uStepY;
+          vRow += vStepY;
+          wRow += wStepY;
+          pixelRow += Self.PixelWidth;
+        end;
+      end;
+
+      y2 -= y1;
+      y1 -= y0;
+      uRow += uStepY * (y0 - Self.CenterY);
+      vRow += vStepY * (y0 - Self.CenterY);
+      wRow += wStepY * (y0 - Self.CenterY);
+      pixelRow := Self.ClipY[y0];
+
+      while True do
+      begin
+        Dec(y1);
+        if y1 < 0 then
+          while True do
+          begin
+            Dec(y2);
+            if y2 < 0 then Exit;
+            Self.TexturedRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), c0, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+            x2 += slope2;
+            x1 += slope0;
+            c0 += shadeDY;
+            uRow += uStepY;
+            vRow += vStepY;
+            wRow += wStepY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.TexturedRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), c0, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+        x2 += slope2;
+        x0 += slope1;
+        c0 += shadeDY;
+        uRow += uStepY;
+        vRow += vStepY;
+        wRow += wStepY;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    x0 := x0 shl 14;
+    x1 := x0;
+    if y0 < 0 then
+    begin
+      x1 -= y0 * slope2;
+      x0 -= y0 * slope1;
+      c0 -= y0 * shadeDY;
+      y0 := 0;
+    end;
+
+    x2 := x2 shl 14;
+    if y2 < 0 then
+    begin
+      x2 -= slope0 * y2;
+      y2 := 0;
+    end;
+
+    if ((y0 <> y2) and (slope2 < slope1)) or ((y0 = y2) and (slope0 > slope1)) then
+    begin
+      y1 -= y2;
+      y2 -= y0;
+      uRow += uStepY * (y0 - Self.CenterY);
+      vRow += vStepY * (y0 - Self.CenterY);
+      wRow += wStepY * (y0 - Self.CenterY);
+      pixelRow := Self.ClipY[y0];
+
+      while True do
+      begin
+        Dec(y2);
+        if y2 < 0 then
+          while True do
+          begin
+            Dec(y1);
+            if y1 < 0 then Exit;
+            Self.TexturedRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), c0, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+            x2 += slope0;
+            x0 += slope1;
+            c0 += shadeDY;
+            uRow += uStepY;
+            vRow += vStepY;
+            wRow += wStepY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.TexturedRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), c0, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+        x1 += slope2;
+        x0 += slope1;
+        c0 += shadeDY;
+        uRow += uStepY;
+        vRow += vStepY;
+        wRow += wStepY;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    y1 -= y2;
+    y2 -= y0;
+    uRow += uStepY * (y0 - Self.CenterY);
+    vRow += vStepY * (y0 - Self.CenterY);
+    wRow += wStepY * (y0 - Self.CenterY);
+    pixelRow := Self.ClipY[y0];
+
+    while True do
+    begin
+      Dec(y2);
+      if y2 < 0 then
+        while True do
+        begin
+          Dec(y1);
+          if y1 < 0 then Exit;
+          Self.TexturedRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), c0, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+          x2 += slope0;
+          x0 += slope1;
+          c0 += shadeDY;
+          uRow += uStepY;
+          vRow += vStepY;
+          wRow += wStepY;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.TexturedRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), c0, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+      x1 += slope2;
+      x0 += slope1;
+      c0 += shadeDY;
+      uRow += uStepY;
+      vRow += vStepY;
+      wRow += wStepY;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  if y1 <= y2 then
+  begin
+    if y1 >= Self.ClipHeight then Exit;
+    if y2 > Self.ClipHeight then y2 := Self.ClipHeight;
+    if y0 > Self.ClipHeight then y0 := Self.ClipHeight;
+
+    c1 := shadeDX + ((c1 shl 9) - shadeDX * x1);
+
+    if y2 < y0 then
+    begin
+      x1 := x1 shl 14;
+      x0 := x1;
+      if y1 < 0 then
+      begin
+        x0 -= slope1 * y1;
+        x1 -= slope0 * y1;
+        c1 -= shadeDY * y1;
+        y1 := 0;
+      end;
+
+      x2 := x2 shl 14;
+      if y2 < 0 then
+      begin
+        x2 -= slope2 * y2;
+        y2 := 0;
+      end;
+
+      if ((y2 = y1) or (slope1 >= slope0)) and ((y2 <> y1) or (slope1 <= slope2)) then
+      begin
+        y0 -= y2;
+        y2 -= y1;
+        uRow += uStepY * (y1 - Self.CenterY);
+        vRow += vStepY * (y1 - Self.CenterY);
+        wRow += wStepY * (y1 - Self.CenterY);
+        pixelRow := Self.ClipY[y1];
+
+        while True do
+        begin
+          Dec(y2);
+          if y2 < 0 then
+            while True do
+            begin
+              Dec(y0);
+              if y0 < 0 then Exit;
+              Self.TexturedRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), c1, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+              x0 += slope1;
+              x2 += slope2;
+              c1 += shadeDY;
+              uRow += uStepY;
+              vRow += vStepY;
+              wRow += wStepY;
+              pixelRow += Self.PixelWidth;
+            end;
+
+          Self.TexturedRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), c1, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+          x0 += slope1;
+          x1 += slope0;
+          c1 += shadeDY;
+          uRow += uStepY;
+          vRow += vStepY;
+          wRow += wStepY;
+          pixelRow += Self.PixelWidth;
+        end;
+      end;
+
+      y0 -= y2;
+      y2 -= y1;
+      uRow += uStepY * (y1 - Self.CenterY);
+      vRow += vStepY * (y1 - Self.CenterY);
+      wRow += wStepY * (y1 - Self.CenterY);
+      pixelRow := Self.ClipY[y1];
+
+      while True do
+      begin
+        Dec(y2);
+        if y2 < 0 then
+          while True do
+          begin
+            Dec(y0);
+            if y0 < 0 then Exit;
+            Self.TexturedRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), c1, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+            x0 += slope1;
+            x2 += slope2;
+            c1 += shadeDY;
+            uRow += uStepY;
+            vRow += vStepY;
+            wRow += wStepY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.TexturedRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), c1, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+        x0 += slope1;
+        x1 += slope0;
+        c1 += shadeDY;
+        uRow += uStepY;
+        vRow += vStepY;
+        wRow += wStepY;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    x1 := x1 shl 14;
+    x2 := x1;
+    if y1 < 0 then
+    begin
+      x2 -= slope1 * y1;
+      x1 -= slope0 * y1;
+      c1 -= shadeDY * y1;
+      y1 := 0;
+    end;
+
+    x0 := x0 shl 14;
+    if y0 < 0 then
+    begin
+      x0 -= y0 * slope2;
+      y0 := 0;
+    end;
+
+    if slope1 < slope0 then
+    begin
+      y2 -= y0;
+      y0 -= y1;
+      uRow += uStepY * (y1 - Self.CenterY);
+      vRow += vStepY * (y1 - Self.CenterY);
+      wRow += wStepY * (y1 - Self.CenterY);
+      pixelRow := Self.ClipY[y1];
+
+      while True do
+      begin
+        Dec(y0);
+        if y0 < 0 then
+          while True do
+          begin
+            Dec(y2);
+            if y2 < 0 then Exit;
+            Self.TexturedRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), c1, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+            x0 += slope2;
+            x1 += slope0;
+            c1 += shadeDY;
+            uRow += uStepY;
+            vRow += vStepY;
+            wRow += wStepY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.TexturedRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), c1, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+        x2 += slope1;
+        x1 += slope0;
+        c1 += shadeDY;
+        uRow += uStepY;
+        vRow += vStepY;
+        wRow += wStepY;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    y2 -= y0;
+    y0 -= y1;
+    uRow += uStepY * (y1 - Self.CenterY);
+    vRow += vStepY * (y1 - Self.CenterY);
+    wRow += wStepY * (y1 - Self.CenterY);
+    pixelRow := Self.ClipY[y1];
+
+    while True do
+    begin
+      Dec(y0);
+      if y0 < 0 then
+        while True do
+        begin
+          Dec(y2);
+          if y2 < 0 then Exit;
+          Self.TexturedRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), c1, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+          x0 += slope2;
+          x1 += slope0;
+          c1 += shadeDY;
+          uRow += uStepY;
+          vRow += vStepY;
+          wRow += wStepY;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.TexturedRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), c1, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+      x2 += slope1;
+      x1 += slope0;
+      c1 += shadeDY;
+      uRow += uStepY;
+      vRow += vStepY;
+      wRow += wStepY;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  if y2 >= Self.ClipHeight then Exit;
+  if y0 > Self.ClipHeight then y0 := Self.ClipHeight;
+  if y1 > Self.ClipHeight then y1 := Self.ClipHeight;
+
+  c2 := shadeDX + ((c2 shl 9) - x2 * shadeDX);
+
+  if y0 < y1 then
+  begin
+    x2 := x2 shl 14;
+    x1 := x2;
+    if y2 < 0 then
+    begin
+      x1 -= slope0 * y2;
+      x2 -= slope2 * y2;
+      c2 -= shadeDY * y2;
+      y2 := 0;
+    end;
+
+    x0 := x0 shl 14;
+    if y0 < 0 then
+    begin
+      x0 -= y0 * slope1;
+      y0 := 0;
+    end;
+
+    if slope0 < slope2 then
+    begin
+      y1 -= y0;
+      y0 -= y2;
+      uRow += uStepY * (y2 - Self.CenterY);
+      vRow += vStepY * (y2 - Self.CenterY);
+      wRow += wStepY * (y2 - Self.CenterY);
+      pixelRow := Self.ClipY[y2];
+
+      while True do
+      begin
+        Dec(y0);
+        if y0 < 0 then
+          while True do
+          begin
+            Dec(y1);
+            if y1 < 0 then Exit;
+            Self.TexturedRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x0, 14), c2, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+            x1 += slope0;
+            x0 += slope1;
+            c2 += shadeDY;
+            uRow += uStepY;
+            vRow += vStepY;
+            wRow += wStepY;
+            pixelRow += Self.PixelWidth;
+          end;
+
+        Self.TexturedRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), c2, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+        x1 += slope0;
+        x2 += slope2;
+        c2 += shadeDY;
+        uRow += uStepY;
+        vRow += vStepY;
+        wRow += wStepY;
+        pixelRow += Self.PixelWidth;
+      end;
+    end;
+
+    y1 -= y0;
+    y0 -= y2;
+    uRow += uStepY * (y2 - Self.CenterY);
+    vRow += vStepY * (y2 - Self.CenterY);
+    wRow += wStepY * (y2 - Self.CenterY);
+    pixelRow := Self.ClipY[y2];
+
+    while True do
+    begin
+      Dec(y0);
+      if y0 < 0 then
+        while True do
+        begin
+          Dec(y1);
+          if y1 < 0 then Exit;
+          Self.TexturedRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x1, 14), c2, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+          x1 += slope0;
+          x0 += slope1;
+          c2 += shadeDY;
+          uRow += uStepY;
+          vRow += vStepY;
+          wRow += wStepY;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.TexturedRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), c2, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+      x1 += slope0;
+      x2 += slope2;
+      c2 += shadeDY;
+      uRow += uStepY;
+      vRow += vStepY;
+      wRow += wStepY;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  x2 := x2 shl 14;
+  x0 := x2;
+  if y2 < 0 then
+  begin
+    x0 -= slope0 * y2;
+    x2 -= slope2 * y2;
+    c2 -= shadeDY * y2;
+    y2 := 0;
+  end;
+
+  x1 := x1 shl 14;
+  if y1 < 0 then
+  begin
+    x1 -= slope1 * y1;
+    y1 := 0;
+  end;
+
+  if slope0 < slope2 then
+  begin
+    y0 -= y1;
+    y1 -= y2;
+    uRow += uStepY * (y2 - Self.CenterY);
+    vRow += vStepY * (y2 - Self.CenterY);
+    wRow += wStepY * (y2 - Self.CenterY);
+    pixelRow := Self.ClipY[y2];
+
+    while True do
+    begin
+      Dec(y1);
+      if y1 < 0 then
+        while True do
+        begin
+          Dec(y0);
+          if y0 < 0 then Exit;
+          Self.TexturedRaster(pixelRow, ArithmeticShr(x1, 14), ArithmeticShr(x2, 14), c2, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+          x1 += slope1;
+          x2 += slope2;
+          c2 += shadeDY;
+          uRow += uStepY;
+          vRow += vStepY;
+          wRow += wStepY;
+          pixelRow += Self.PixelWidth;
+        end;
+
+      Self.TexturedRaster(pixelRow, ArithmeticShr(x0, 14), ArithmeticShr(x2, 14), c2, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+      x0 += slope0;
+      x2 += slope2;
+      c2 += shadeDY;
+      uRow += uStepY;
+      vRow += vStepY;
+      wRow += wStepY;
+      pixelRow += Self.PixelWidth;
+    end;
+  end;
+
+  y0 -= y1;
+  y1 -= y2;
+  uRow += uStepY * (y2 - Self.CenterY);
+  vRow += vStepY * (y2 - Self.CenterY);
+  wRow += wStepY * (y2 - Self.CenterY);
+  pixelRow := Self.ClipY[y2];
+
+  while True do
+  begin
+    Dec(y1);
+    if y1 < 0 then
+      while True do
+      begin
+        Dec(y0);
+        if y0 < 0 then Exit;
+        Self.TexturedRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x1, 14), c2, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+        x1 += slope1;
+        x2 += slope2;
+        c2 += shadeDY;
+        uRow += uStepY;
+        vRow += vStepY;
+        wRow += wStepY;
+        pixelRow += Self.PixelWidth;
+      end;
+
+    Self.TexturedRaster(pixelRow, ArithmeticShr(x2, 14), ArithmeticShr(x0, 14), c2, shadeDX, uRow, vRow, wRow, uStepX, vStepX, wStepX, texels, opaque);
+    x0 += slope0;
+    x2 += slope2;
+    c2 += shadeDY;
+    uRow += uStepY;
+    vRow += vStepY;
+    wRow += wStepY;
+    pixelRow += Self.PixelWidth;
   end;
 end;

@@ -10,6 +10,7 @@ lighting keeps its colours in arrays of its own.
 {$DEFINE WL_CACHE_LITMODEL_INCLUDED}
 {$IFNDEF WL_CACHE_GRAPHICS3D_INCLUDED}   {$INCLUDE_ONCE ../utils/graphics3d.simba}    {$ENDIF}
 {$IFNDEF WL_CACHE_DEFINITION_MODELS_INCLUDED}  {$INCLUDE_ONCE ../definitions/models.simba}  {$ENDIF}
+{$IFNDEF WL_CACHE_LOADER_TEXTURES_INCLUDED}    {$INCLUDE_ONCE ../loaders/textureloader.simba}  {$ENDIF}
 
 type
   TLitModel = record
@@ -29,7 +30,7 @@ type
     TexIndices1, TexIndices2, TexIndices3: TIntegerArray;
 
     FacePriorities, FaceTransparencies,
-    TextureCoords,
+    TextureCoords, TextureRenderTypes,
     FaceRenderTypes: TByteArray;
 
     HasTransparencies, HasTextures: Boolean;
@@ -69,6 +70,7 @@ begin
   Result.FacePriorities := src.FaceRenderPriorities;
   Result.FaceTransparencies := src.FaceTransparencies;
   Result.TextureCoords := src.TextureCoords;
+  Result.TextureRenderTypes := src.TextureRenderTypes;
   Result.FaceTextures := src.FaceTextures;
   Result.FaceRenderTypes := src.FaceRenderTypes;
   Result.FaceColors := src.FaceColors;
@@ -179,6 +181,7 @@ type
   TLitModelViewport = record
     FaceClipped: TBooleanArray;
     ScreenX, ScreenY, Depth,
+    LocalX, LocalY, LocalZ,
     SortedFaceIdx, SortedFaceDepth: TIntegerArray;
     SortedCount: Integer;
   end;
@@ -191,6 +194,9 @@ begin
   SetLength(Viewport.ScreenX, 6500);
   SetLength(Viewport.ScreenY, 6500);
   SetLength(Viewport.Depth, 6500);
+  SetLength(Viewport.LocalX, 6500);
+  SetLength(Viewport.LocalY, 6500);
+  SetLength(Viewport.LocalZ, 6500);
   SetLength(Viewport.SortedFaceIdx, 6500);
   SetLength(Viewport.SortedFaceDepth, 6500);
 end;
@@ -203,13 +209,20 @@ procedure TLitModel.RasterFace(var graphics: TGraphics3D; faceIdx: Integer);
 Draws one face, already projected to screen space by
 {ref}`TLitModel.ProjectAndDraw`.
 
-A face with three distinct vertex colours is Gouraud shaded; one with a single colour, or one
-carrying a texture, is filled flat - textures are approximated by their base colour rather than
-sampled. Clipping is only turned on for faces that actually reach outside the viewport.
+A face with three distinct vertex colours is Gouraud shaded and one with a single colour is
+filled flat. Clipping is only turned on for faces that actually reach outside the viewport.
+
+A textured face is drawn with the texels of `graphics.TextureFrame`. Its colours are light levels
+rather than palette indices, and the texture is laid across it by the three points its texture
+coordinate names, or by the face's own corners when it has none or names one that isn't mapped
+flat. A texture that can't be loaded is drawn in its average colour instead.
 *)
 procedure TLitModel.RasterFace(var graphics: TGraphics3D; faceIdx: Integer);
 var
-  idx1, idx2, idx3, pal: Integer;
+  idx1, idx2, idx3, pal,
+  texture, textureFace, origin, edgeU, edgeV,
+  light1, light2, light3, average: Integer;
+  texels: TIntegerArray;
 begin
   idx1 := Self.FaceIndices1[faceIdx];
   idx2 := Self.FaceIndices2[faceIdx];
@@ -223,9 +236,65 @@ begin
 
   if Self.HasTextures and (Self.FaceTextures[faceIdx] <> -1) then
   begin
-    // Textured face. We do not sample textures yet, so approximate with a flat fill.
-    pal := ColorUtils.Palette[Self.FaceColors1[faceIdx]];
-    graphics.RasterFlat(Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3], Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3], pal);
+    texture := Self.FaceTextures[faceIdx];
+
+    textureFace := 255;
+    if Length(Self.TextureCoords) > 0 then
+      textureFace := Self.TextureCoords[faceIdx];
+    if (textureFace <> 255) and (Self.TextureRenderTypes[textureFace] <> 0) then
+      textureFace := 255;
+
+    if textureFace = 255 then
+    begin
+      origin := idx1;
+      edgeU := idx2;
+      edgeV := idx3;
+    end
+    else
+    begin
+      origin := Self.TexIndices1[textureFace];
+      edgeU := Self.TexIndices2[textureFace];
+      edgeV := Self.TexIndices3[textureFace];
+    end;
+
+    light1 := Self.FaceColors1[faceIdx];
+    if Self.FaceColors3[faceIdx] = -1 then
+    begin
+      light2 := light1;
+      light3 := light1;
+    end
+    else
+    begin
+      light2 := Self.FaceColors2[faceIdx];
+      light3 := Self.FaceColors3[faceIdx];
+    end;
+
+    texels := TextureLoader.Texels(texture, graphics.TextureFrame);
+    if Length(texels) = 0 then
+    begin
+      average := 0;
+      if TextureLoader.Exists(texture) then
+        average := TextureLoader.Definitions[texture].AverageRGB;
+
+      graphics.GouraudTriangle(
+        Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3],
+        Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3],
+        (average and $FF80) + EnsureRange(((average and $7F) * light1) shr 7, 2, 126),
+        (average and $FF80) + EnsureRange(((average and $7F) * light2) shr 7, 2, 126),
+        (average and $FF80) + EnsureRange(((average and $7F) * light3) shr 7, 2, 126)
+      );
+      Exit;
+    end;
+
+    graphics.TexturedTriangle(
+      Viewport.ScreenY[idx1], Viewport.ScreenY[idx2], Viewport.ScreenY[idx3],
+      Viewport.ScreenX[idx1], Viewport.ScreenX[idx2], Viewport.ScreenX[idx3],
+      light1, light2, light3,
+      Viewport.LocalX[origin], Viewport.LocalX[edgeU], Viewport.LocalX[edgeV],
+      Viewport.LocalY[origin], Viewport.LocalY[edgeU], Viewport.LocalY[edgeV],
+      Viewport.LocalZ[origin], Viewport.LocalZ[edgeU], Viewport.LocalZ[edgeV],
+      texels, TextureLoader.Definitions[texture].IsTransparent
+    );
   end
   else if Self.FaceColors3[faceIdx] = -1 then
   begin
@@ -495,6 +564,13 @@ begin
     Viewport.Depth[i] := vz - zRelatedVar;
     Viewport.ScreenX[i] := vx * graphics.Zoom div vz + centerX;
     Viewport.ScreenY[i] := tmp * graphics.Zoom div vz + centerY;
+
+    if Self.HasTextures then
+    begin
+      Viewport.LocalX[i] := vx;
+      Viewport.LocalY[i] := tmp;
+      Viewport.LocalZ[i] := vz;
+    end;
   end;
 
   Self.Draw(graphics);

@@ -2,21 +2,17 @@
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 var
-  idSpinner, iterSpinner: TLazSpinEdit;
-  combobox: TLazComboBox;
-  selectedCheckBox: TLazCheckBox;
+  idSpinner, iterSpinner, frameSpinner, zoomSpinner: TLazSpinEdit;
+  combobox, modeCombobox: TLazComboBox;
+  selectedCheckBox, shadowCheckBox: TLazCheckBox;
   archive: TArchive;
 
-procedure ShowImage(sender: TLazObject);
+function LoadSprite(out sprite: TItemSprite): Boolean;
 var
   itemDef: TItemDefinition;
-  sprite: TItemSprite;
-  img: TImage;
-  t: Double;
-  itemId, iterations, shadowColor: Integer;
+  itemId: Integer;
 begin
   itemId := idSpinner.Value;
-  iterations := iterSpinner.Value;
 
   if not archive.Files.Exists(itemId) then
   begin
@@ -40,18 +36,73 @@ begin
     Exit;
   end;
 
-  WriteLn('-- Item #', itemId, ': ', itemDef.Name, ' --');
+  frameSpinner.MaxValue := sprite.FrameCount() - 1;
+  WriteLn('-- Item #', itemId, ': ', sprite.ItemDef.Name, ' (', sprite.FrameCount(), ' frames) --');
+  Result := True;
+end;
+
+function RenderSprite(var sprite: TItemSprite; frame: Integer): TImage;
+var
+  shadowColor: Integer;
+begin
+  shadowColor := 0;
+  if shadowCheckBox.Checked then
+    shadowColor := $FF333333;
+
+  case modeCombobox.ItemIndex of
+    1: Result := sprite.BorderImage(selectedCheckBox.Checked, frame);
+    2: Result := sprite.MaskImage(selectedCheckBox.Checked, frame);
+    else
+      Result := sprite.ToImage(selectedCheckBox.Checked, shadowColor, frame);
+  end;
+end;
+
+procedure ShowRender(img: TImage);
+begin
+  if zoomSpinner.Value > 1 then
+    img := img.Resize(EImageResizeAlgo.NEAREST_NEIGHBOUR, zoomSpinner.Value);
+  img.Show();
+end;
+
+procedure ShowImage(sender: TLazObject);
+var
+  sprite: TItemSprite;
+  img: TImage;
+  t: Double;
+  iterations, frame: Integer;
+begin
+  if not LoadSprite(sprite) then
+    Exit;
+
+  iterations := iterSpinner.Value;
+  frame := frameSpinner.Value;
 
   //the model is loaded once and the icon rendered from it repeatedly, which is the part that
   //runs again every time an icon is drawn
-  for 1 to iterations do img := sprite.ToImage(selectedCheckBox.Checked);
+  for 1 to iterations do img := RenderSprite(sprite, frame);
 
   t := PerformanceTime();
   for 1 to iterations do
-    img := sprite.ToImage(selectedCheckBox.Checked);
+    img := RenderSprite(sprite, frame);
   t := PerformanceTime() - t;
   WriteLn('Took: ', t, 'ms to run ', iterations, ' times (', t / iterations, 'ms each).');
-  img.Show();
+  ShowRender(img);
+end;
+
+procedure PlayAnimation(sender: TLazObject);
+var
+  sprite: TItemSprite;
+  frame: Integer;
+begin
+  if not LoadSprite(sprite) then
+    Exit;
+
+  for frame := 0 to sprite.FrameCount() - 1 do
+  begin
+    frameSpinner.Value := frame;
+    ShowRender(RenderSprite(sprite, frame));
+    Sleep(20);
+  end;
 end;
 
 procedure OnBrightnessChange(sender: TLazObject);
@@ -64,9 +115,22 @@ begin
   ColorUtils.SetBrightness(LEVELS[i]);
 end;
 
+procedure AddLabel(form: TLazForm; control: TLazControl; caption: String);
+var
+  lbl: TLazLabel;
+begin
+  lbl := TLazLabel.Create(form);
+  lbl.Parent := form;
+  lbl.Caption := caption;
+  lbl.AnchorSideBottom.Control := control;
+  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
+  lbl.AnchorSideLeft.Control := control;
+  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
+  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+end;
+
 var
   form: TLazForm;
-  lbl: TLazLabel;
   btn: TLazButton;
 begin
   CacheReader := TCacheReader.Create();
@@ -74,6 +138,7 @@ begin
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
 
   form := TLazForm.Create();
+  form.Width := 440;
   form.Height := 250;
   form.Position := ELazFormPosition.DesktopCenter;
 
@@ -86,15 +151,7 @@ begin
   combobox.Style := ELazComboBoxStyle.DropDownList;
   combobox.ItemIndex := 4;
   combobox.OnChange := @OnBrightnessChange;
-
-  lbl := TLazLabel.Create(form);
-  lbl.Parent := form;
-  lbl.Caption := 'Brightness:';
-  lbl.AnchorSideBottom.Control := combobox;
-  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
-  lbl.AnchorSideLeft.Control := combobox;
-  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
-  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+  AddLabel(form, combobox, 'Brightness:');
 
   iterSpinner := TLazSpinEdit.Create(form);
   iterSpinner.Parent := form;
@@ -103,15 +160,26 @@ begin
   iterSpinner.MinValue := 1;
   iterSpinner.MaxValue := 10000;
   iterSpinner.Value := 1;
+  AddLabel(form, iterSpinner, 'Iterations:');
 
-  lbl := TLazLabel.Create(form);
-  lbl.Parent := form;
-  lbl.Caption := 'Iterations:';
-  lbl.AnchorSideBottom.Control := iterSpinner;
-  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
-  lbl.AnchorSideLeft.Control := iterSpinner;
-  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
-  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+  modeCombobox := TLazComboBox.Create(form);
+  modeCombobox.Parent := form;
+  modeCombobox.Top := 50;
+  modeCombobox.Left := 220;
+  modeCombobox.Width := 80;
+  modeCombobox.Items.AddStrings(['Icon', 'Border', 'Mask']);
+  modeCombobox.Style := ELazComboBoxStyle.DropDownList;
+  modeCombobox.ItemIndex := 0;
+  AddLabel(form, modeCombobox, 'Show:');
+
+  zoomSpinner := TLazSpinEdit.Create(form);
+  zoomSpinner.Parent := form;
+  zoomSpinner.Top := 50;
+  zoomSpinner.Left := 320;
+  zoomSpinner.MinValue := 1;
+  zoomSpinner.MaxValue := 16;
+  zoomSpinner.Value := 4;
+  AddLabel(form, zoomSpinner, 'Zoom:');
 
   idSpinner := TLazSpinEdit.Create(form);
   idSpinner.Parent := form;
@@ -121,30 +189,46 @@ begin
   //ids run to whatever the archive holds, and its keys are stored ascending
   idSpinner.MaxValue := archive.Files.Keys[High(archive.Files.Keys)];
   idSpinner.Value := 4151;
+  AddLabel(form, idSpinner, 'Item ID:');
 
-  lbl := TLazLabel.Create(form);
-  lbl.Parent := form;
-  lbl.Caption := 'Item ID:';
-  lbl.AnchorSideBottom.Control := idSpinner;
-  lbl.AnchorSideBottom.Side := ELazAnchorSideReference.Top;
-  lbl.AnchorSideLeft.Control := idSpinner;
-  lbl.AnchorSideLeft.Side := ELazAnchorSideReference.Top;
-  lbl.Anchors := [ELazAnchorKind.Bottom, ELazAnchorKind.Left];
+  frameSpinner := TLazSpinEdit.Create(form);
+  frameSpinner.Parent := form;
+  frameSpinner.Top := 100;
+  frameSpinner.Left := 120;
+  frameSpinner.MinValue := 0;
+  frameSpinner.MaxValue := 0;
+  frameSpinner.Value := 0;
+  AddLabel(form, frameSpinner, 'Frame:');
 
   selectedCheckBox := TLazCheckBox.Create(form);
   selectedCheckBox.Parent := form;
   selectedCheckBox.Top := 100;
-  selectedCheckBox.Left := 120;
+  selectedCheckBox.Left := 220;
   selectedCheckBox.Caption := 'Selected';
   selectedCheckBox.Checked := False;
+
+  shadowCheckBox := TLazCheckBox.Create(form);
+  shadowCheckBox.Parent := form;
+  shadowCheckBox.Top := 100;
+  shadowCheckBox.Left := 320;
+  shadowCheckBox.Caption := 'Shadow';
+  shadowCheckBox.Checked := True;
 
   btn := TLazButton.Create(form);
   btn.Parent := form;
   btn.Top := 150;
   btn.Left := 20;
-  btn.Width := 200;
+  btn.Width := 180;
   btn.Caption := 'Render and show';
   btn.OnClick := @ShowImage;
+
+  btn := TLazButton.Create(form);
+  btn.Parent := form;
+  btn.Top := 150;
+  btn.Left := 220;
+  btn.Width := 180;
+  btn.Caption := 'Play animation';
+  btn.OnClick := @PlayAnimation;
 
   form.Show();
   while form.Showing do

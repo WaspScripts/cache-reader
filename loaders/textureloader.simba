@@ -1,0 +1,301 @@
+(*
+# Texture Loader
+Builds the pixels textured faces are drawn with, and animates them.
+
+A texture definition only names the sprite a texture is made from. The texels themselves are that
+sprite laid out on a 128 by 128 grid with the client's brightness curve applied to it, and they are
+built the first time a texture is asked for and kept until the brightness changes.
+
+Some textures scroll, such as lava or water. Their animation is not a series of stored images but
+the base texels shifted a little further along every client tick, so any frame can be built
+directly from the base texels. Frame `0` is the texture as it is stored.
+*)
+
+{$DEFINE WL_CACHE_LOADER_TEXTURES_INCLUDED}
+{$IFNDEF WL_CACHE_READER_INCLUDED}               {$INCLUDE_ONCE ../reader/reader.simba}         {$ENDIF}
+{$IFNDEF WL_CACHE_COLOR_INCLUDED}                {$INCLUDE_ONCE ../utils/color.simba}           {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_TEXTURE_INCLUDED}   {$INCLUDE_ONCE ../definitions/texture.simba}   {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_SPRITES_INCLUDED}   {$INCLUDE_ONCE ../definitions/sprites.simba}   {$ENDIF}
+
+type
+  TTextureLoader = record
+    Definitions: TTextureDefinitionArray;
+    BaseTexels, FrameTexels: array of TIntegerArray;
+    CachedFrames: TIntegerArray;
+    Revision: Integer;
+    IsLoaded: Boolean;
+    const SIZE: Integer = 128;
+  end;
+
+(*
+## TextureLoader.Load
+```pascal
+procedure TTextureLoader.Load();
+```
+Reads every texture definition, caching the texture index first. Does nothing once loaded.
+
+Definitions are stored at their own id, so an id that has no texture leaves an empty definition
+behind, one with no sprite to build texels from.
+*)
+procedure TTextureLoader.Load();
+var
+  archive: TArchive;
+  files: TFileArray;
+  i: Integer;
+begin
+  if Self.IsLoaded then
+    Exit;
+
+  CacheReader.Indices[ECacheIndex.TEXTURES].Cache();
+  archive := CacheReader.Indices[ECacheIndex.TEXTURES].ReferenceTable.Archives.Value[0];
+  files := archive.Files.Values;
+
+  SetLength(Self.Definitions, files[High(files)].ID + 1);
+  for i := 0 to High(files) do
+    Self.Definitions[files[i].ID] := TTextureDefinition.Create(files[i].ID, files[i].Data);
+
+  SetLength(Self.BaseTexels, Length(Self.Definitions));
+  SetLength(Self.FrameTexels, Length(Self.Definitions));
+  SetLength(Self.CachedFrames, Length(Self.Definitions));
+  Self.IsLoaded := True;
+end;
+
+(*
+## TextureLoader.Exists
+```pascal
+function TTextureLoader.Exists(id: Integer): Boolean;
+```
+Whether `id` is a texture with a sprite to draw it from.
+*)
+function TTextureLoader.Exists(id: Integer): Boolean;
+begin
+  Self.Load();
+  Result := InRange(id, 0, High(Self.Definitions)) and (Length(Self.Definitions[id].FileIds) > 0);
+end;
+
+(*
+## TextureLoader.BuildTexels
+```pascal
+function TTextureLoader.BuildTexels(id: Integer): TIntegerArray;
+```
+The unanimated texels of texture `id`, as `SIZE` by `SIZE` red, green and blue values with no
+alpha, or an empty array if its sprite can't be read.
+
+The sprite is placed on its full canvas and every colour is bent by the current brightness the way
+the client bends a texture's palette, which is not quite the same as the brightness the colour
+palette is built with, since texture colours are already red, green and blue. A texel that is `0`
+is a hole in the texture. A 64 by 64 sprite is doubled up to fill the grid.
+*)
+function TTextureLoader.BuildTexels(id: Integer): TIntegerArray;
+var
+  spritesIndex: TCacheIndex;
+  sector: TArchiveSector;
+  data: TByteArray;
+  frames: TSpriteDefinitionArray;
+  sprite: TSpriteDefinition;
+  canvas: TIntegerArray;
+  x, y, color, red, green, blue, scale: Integer;
+  brightness: Double;
+begin
+  spritesIndex := CacheReader.Indices[ECacheIndex.SPRITES];
+  sector := spritesIndex.ReadArchiveSector(Self.Definitions[id].FileIds[0], spritesIndex.ID, spritesIndex.IndexData);
+  if Length(sector.Data) = 0 then
+    Exit;
+
+  data := sector.Decompress();
+  if Length(data) = 0 then
+    Exit;
+
+  frames := TSpriteDefinition.Create(Self.Definitions[id].FileIds[0], data);
+  if Length(frames) = 0 then
+    Exit;
+
+  sprite := frames[0];
+  if sprite.MaxWidth = TTextureLoader.SIZE then
+    scale := 1
+  else if sprite.MaxWidth * 2 = TTextureLoader.SIZE then
+    scale := 2
+  else
+    Exit;
+
+  SetLength(canvas, sprite.MaxWidth * sprite.MaxHeight);
+  for y := 0 to sprite.Height - 1 do
+    for x := 0 to sprite.Width - 1 do
+      canvas[(y + sprite.OffsetY) * sprite.MaxWidth + x + sprite.OffsetX] := sprite.Pixels[y * sprite.Width + x] and $FFFFFF;
+
+  brightness := ColorUtils.Brightness;
+  SetLength(Result, TTextureLoader.SIZE * TTextureLoader.SIZE);
+
+  for y := 0 to TTextureLoader.SIZE - 1 do
+    for x := 0 to TTextureLoader.SIZE - 1 do
+    begin
+      color := canvas[(y div scale) * sprite.MaxWidth + x div scale];
+      if color = 0 then
+        Continue;
+
+      red := Trunc(Power((color shr 16) / 256, brightness) * 256);
+      green := Trunc(Power(((color shr 8) and $FF) / 256, brightness) * 256);
+      blue := Trunc(Power((color and $FF) / 256, brightness) * 256);
+      Result[y * TTextureLoader.SIZE + x] := blue + (green shl 8) + (red shl 16);
+    end;
+end;
+
+(*
+## TextureLoader.FrameCount
+```pascal
+function TTextureLoader.FrameCount(id: Integer): Integer;
+```
+How many distinct frames texture `id` animates through before it repeats, `1` if it doesn't move.
+
+Each tick moves the texture `AnimationSpeed` texels along a grid that wraps every `SIZE` texels, so
+it lines up with itself again after `SIZE` divided by the largest number both are divisible by.
+*)
+function TTextureLoader.FrameCount(id: Integer): Integer;
+var
+  speed, divisor, remainder: Integer;
+begin
+  Result := 1;
+  if not Self.Exists(id) then
+    Exit;
+
+  speed := Self.Definitions[id].AnimationSpeed mod TTextureLoader.SIZE;
+  if not InRange(Self.Definitions[id].AnimationDirection, 1, 4) or (speed = 0) then
+    Exit;
+
+  divisor := TTextureLoader.SIZE;
+  while speed <> 0 do
+  begin
+    remainder := divisor mod speed;
+    divisor := speed;
+    speed := remainder;
+  end;
+
+  Result := TTextureLoader.SIZE div divisor;
+end;
+
+(*
+## TextureLoader.CombineFrameCounts
+```pascal
+function TTextureLoader.CombineFrameCounts(a, b: Integer): Integer; static;
+```
+How many frames two animations take to both be back where they started, which is the smallest
+number both `a` and `b` divide into.
+*)
+function TTextureLoader.CombineFrameCounts(a, b: Integer): Integer; static;
+var
+  divisor, remainder, other: Integer;
+begin
+  divisor := a;
+  other := b;
+  while other <> 0 do
+  begin
+    remainder := divisor mod other;
+    divisor := other;
+    other := remainder;
+  end;
+
+  Result := a div divisor * b;
+end;
+
+(*
+## TextureLoader.Animate
+```pascal
+function TTextureLoader.Animate(const texels: TIntegerArray; direction, speed, frame: Integer): TIntegerArray; static;
+```
+`texels` shifted as far as `frame` ticks of animation move them.
+
+Directions `1` and `3` scroll the texture along its rows, `1` one way and `3` the other, by whole
+rows at a time. Directions `2` and `4` scroll along its columns. Anything else doesn't move.
+*)
+function TTextureLoader.Animate(const texels: TIntegerArray; direction, speed, frame: Integer): TIntegerArray; static;
+var
+  i, row, column, offset, lastIndex, lastColumn: Integer;
+begin
+  case direction of
+    1, 3:
+    begin
+      offset := TTextureLoader.SIZE * speed * frame;
+      if direction = 1 then
+        offset := -offset;
+
+      lastIndex := High(texels);
+      SetLength(Result, Length(texels));
+      for i := 0 to lastIndex do
+        Result[i] := texels[(i + offset) and lastIndex];
+    end;
+
+    2, 4:
+    begin
+      offset := speed * frame;
+      if direction = 2 then
+        offset := -offset;
+
+      lastColumn := TTextureLoader.SIZE - 1;
+      SetLength(Result, Length(texels));
+      row := 0;
+      while row < Length(texels) do
+      begin
+        for column := 0 to lastColumn do
+          Result[row + column] := texels[row + ((column + offset) and lastColumn)];
+        row += TTextureLoader.SIZE;
+      end;
+    end;
+
+    else
+      Result := texels;
+  end;
+end;
+
+(*
+## TextureLoader.Texels
+```pascal
+function TTextureLoader.Texels(id: Integer; frame: Integer = 0): TIntegerArray;
+```
+The texels of texture `id` at animation `frame`, or an empty array if the texture doesn't exist or
+its sprite can't be read. Frames past {ref}`TTextureLoader.FrameCount` wrap back around.
+
+Texels are built once per brightness. Only the last frame asked for is kept for each texture, which
+is all a renderer drawing one frame at a time needs.
+
+Example:
+```pascal
+texels := TextureLoader.Texels(40, 3);
+```
+*)
+function TTextureLoader.Texels(id: Integer; frame: Integer = 0): TIntegerArray;
+var
+  frameCount, i: Integer;
+begin
+  if not Self.Exists(id) then
+    Exit;
+
+  if Self.Revision <> ColorUtils.Revision then
+  begin
+    for i := 0 to High(Self.BaseTexels) do
+    begin
+      Self.BaseTexels[i] := [];
+      Self.FrameTexels[i] := [];
+      Self.CachedFrames[i] := 0;
+    end;
+    Self.Revision := ColorUtils.Revision;
+  end;
+
+  if Length(Self.BaseTexels[id]) = 0 then
+    Self.BaseTexels[id] := Self.BuildTexels(id);
+
+  frameCount := Self.FrameCount(id);
+  frame := ((frame mod frameCount) + frameCount) mod frameCount;
+  if (frame = 0) or (Length(Self.BaseTexels[id]) = 0) then
+    Exit(Self.BaseTexels[id]);
+
+  if (Self.CachedFrames[id] <> frame) or (Length(Self.FrameTexels[id]) = 0) then
+  begin
+    Self.FrameTexels[id] := TTextureLoader.Animate(Self.BaseTexels[id], Self.Definitions[id].AnimationDirection, Self.Definitions[id].AnimationSpeed, frame);
+    Self.CachedFrames[id] := frame;
+  end;
+
+  Result := Self.FrameTexels[id];
+end;
+
+var
+  TextureLoader: TTextureLoader;
