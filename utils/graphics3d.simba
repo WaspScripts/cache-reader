@@ -812,7 +812,12 @@ end;
 procedure TGraphics3D.FlatRaster(baseIdx, leftX, rightX, color: Integer);
 ```
 Fills one scanline of a flat triangle with a single colour, blending it into what is already there
-when the face is translucent. An alpha of `254` leaves the scanline untouched, as the client does.
+when the face is translucent.
+
+An alpha of `254` doesn't draw the colour at all. Instead every pixel of the scanline takes the
+colour of the pixel to its right, smearing what is already drawn one pixel to the left. That is a
+quirk of the client, whose copy reads the next pixel after it has already moved on to it, and
+models use such faces on purpose, so it is reproduced here.
 *)
 procedure TGraphics3D.FlatRaster(baseIdx, leftX, rightX, color: Integer);
 var
@@ -824,9 +829,16 @@ begin
     if leftX < 0 then leftX := 0;
   end;
 
-  if (leftX >= rightX) or (Self.RasterAlpha = 254) then Exit;
+  if leftX >= rightX then Exit;
 
   pixelIdx := baseIdx + leftX;
+
+  if Self.RasterAlpha = 254 then
+  begin
+    for i := pixelIdx to pixelIdx + rightX - leftX - 1 do
+      Self.Pixels[i] := Self.Pixels[i + 1];
+    Exit;
+  end;
 
   if Self.RasterAlpha = 0 then
   begin
