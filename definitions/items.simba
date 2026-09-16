@@ -257,3 +257,41 @@ begin
     Result.Weight := 0;
 end;
 
+(*
+## ItemDefinition.LinkNote
+```pascal
+procedure TItemDefinition.LinkNote(const template, unnoted: TItemDefinition);
+```
+Fills in a noted item from the two items it is made of. A noted item's own definition holds little
+more than `NotedTemplate` and `NotedID`: its icon model and camera come from `template`, the note
+paper, while its name, members flag and value come from `unnoted`, the item it is a note of.
+Noted items always stack.
+
+Example:
+```pascal
+noted := TItemDefinition.Create(4152, archive.Files.Value[4152].Data);
+noted.LinkNote(
+  TItemDefinition.Create(noted.NotedTemplate, archive.Files.Value[noted.NotedTemplate].Data),
+  TItemDefinition.Create(noted.NotedID, archive.Files.Value[noted.NotedID].Data)
+);
+```
+*)
+procedure TItemDefinition.LinkNote(const template, unnoted: TItemDefinition);
+begin
+  Self.InventoryModel := template.InventoryModel;
+  Self.Zoom2D := template.Zoom2D;
+  Self.Xan2D := template.Xan2D;
+  Self.Yan2D := template.Yan2D;
+  Self.Zan2D := template.Zan2D;
+  Self.XOffset2D := template.XOffset2D;
+  Self.YOffset2D := template.YOffset2D;
+  Self.ColorFind := template.ColorFind;
+  Self.ColorReplace := template.ColorReplace;
+  Self.TextureFind := template.TextureFind;
+  Self.TextureReplace := template.TextureReplace;
+  Self.Name := unnoted.Name;
+  Self.Members := unnoted.Members;
+  Self.Cost := unnoted.Cost;
+  Self.Stackable := 1;
+end;
+

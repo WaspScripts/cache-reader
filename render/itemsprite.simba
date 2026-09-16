@@ -28,7 +28,7 @@ type
     ModelDef: TModelDefinition;
     LitModel: TLitModel;
     Graphics: TGraphics3D;
-    Sprite: TSpritePixels;
+    Sprite, NotePixels: TSpritePixels;
     Valid: Boolean;
   end;
 
@@ -62,10 +62,17 @@ end;
 (*
 ## TItemSprite.Create
 ```pascal
-function TItemSprite.Create(constref cacheReader: TCacheReader; const itemDef: TItemDefinition): TItemSprite; static;
+function TItemSprite.Create(const itemDef: TItemDefinition): TItemSprite; static;
+function TItemSprite.Create(const archive: TArchive; id: Integer): TItemSprite; static; overload;
+function TItemSprite.Create(id: Integer): TItemSprite; static; overload;
 ```
 Loads the item's inventory model and lights it.
 Sets `TItemSprite.Valid` to `False` if the model archive/data can't be loaded.
+
+Noted items are only drawn properly by the overloads that take an item id. Those link the item
+to its note paper with {ref}`TItemDefinition.LinkNote` and render the unnoted item into
+`TItemSprite.NotePixels`, which every image is then drawn with on top of the paper. A noted
+item whose paper or unnoted item can't be rendered is not valid.
 
 Lighting depends only on the model and the item, not on how the icon is drawn, so it is done
 once here rather than again by every {ref}`TItemSprite.ToImage` or {ref}`TItemSprite.BorderImage`.
@@ -107,21 +114,50 @@ end;
 
 function TItemSprite.Create(const archive: TArchive; id: Integer): TItemSprite; static; overload;
 var
-  itemDef: TItemDefinition;
-  tmp: TItemSprite;
+  itemDef, unnotedDef: TItemDefinition;
+  tmp, unnotedSprite: TItemSprite;
+  i, unnotedID: Integer;
 begin
   if not archive.Files.Exists(id) then
     Exit;
 
   itemDef := TItemDefinition.Create(id, archive.Files.Value[id].Data);
 
-  //an item with no name and no noted variant is a gap in the id space rather than an item
-  if (itemDef.Name = 'null') and (itemDef.NotedTemplate = -1) then
+  //an item with no model and no noted variant is a gap in the id space rather than an item
+  if (itemDef.InventoryModel = 0) and (itemDef.NotedTemplate = -1) then
     Exit;
+
+  if itemDef.NotedTemplate <> -1 then
+  begin
+    if not archive.Files.Exists(itemDef.NotedTemplate) or not archive.Files.Exists(itemDef.NotedID) then
+      Exit;
+
+    unnotedDef := TItemDefinition.Create(itemDef.NotedID, archive.Files.Value[itemDef.NotedID].Data);
+    itemDef.LinkNote(
+      TItemDefinition.Create(itemDef.NotedTemplate, archive.Files.Value[itemDef.NotedTemplate].Data),
+      unnotedDef
+    );
+  end;
 
   tmp := TItemSprite.Create(itemDef);
   if not tmp.Valid then
     Exit;
+
+  if itemDef.NotedTemplate <> -1 then
+  begin
+    unnotedID := itemDef.NotedID;
+    for i := 0 to High(unnotedDef.CountCo) do
+      if (unnotedDef.CountCo[i] <> 0) and (unnotedDef.CountCo[i] <= 10) then
+        unnotedID := unnotedDef.CountObj[i];
+
+    unnotedSprite := TItemSprite.Create(archive, unnotedID);
+    if not unnotedSprite.Valid then
+      Exit;
+
+    unnotedSprite.Project(False, True);
+    unnotedSprite.Sprite.DrawBorder($FF000001);
+    tmp.NotePixels := unnotedSprite.Sprite;
+  end;
 
   Result := tmp;
 end;
@@ -293,22 +329,27 @@ end;
 (*
 ## TItemSprite.Project
 ```pascal
-procedure TItemSprite.Project(selected: Boolean = False);
+procedure TItemSprite.Project(selected: Boolean = False; noted: Boolean = False);
 ```
 Sets up the 36x32 rasterizer and projects and draws the model through the item's calibrated 2D
 camera parameters.
 
 `selected` pushes the camera back to 1.04 times the item's `Zoom2D`, which is what the game does
 for the item you currently have selected so its thicker outline still fits inside the icon.
+
+`noted` pushes it back to 1.5 times instead, the smaller icon the game draws on top of note paper.
+It takes priority over `selected`.
 *)
-procedure TItemSprite.Project(selected: Boolean = False);
+procedure TItemSprite.Project(selected: Boolean = False; noted: Boolean = False);
 var
   zoom2d, xOffset, yOffset: Integer;
   xanSin, pitchOffsetY, pitchOffsetZ, i: Integer;
   dump: TIntegerArray;
 begin
   zoom2d := Self.ItemDef.Zoom2D;
-  if selected then
+  if noted then
+    zoom2d := Trunc(1.5 * zoom2d)
+  else if selected then
     zoom2d := Trunc(1.04 * zoom2d);
 
   xanSin := Self.ItemDef.Xan2D;
@@ -375,6 +416,9 @@ begin
   if shadowColor <> 0 then
     Self.Sprite.DrawShadow(shadowColor);
 
+  if Self.ItemDef.NotedTemplate <> -1 then
+    Self.Sprite.Overlay(Self.NotePixels);
+
   Result := Self.Sprite.ToImage();
 end;
 
@@ -402,6 +446,9 @@ begin
   if selected then
     Self.Sprite.DrawBorder($FFFFFFFF);
 
+  if Self.ItemDef.NotedTemplate <> -1 then
+    Self.Sprite.Overlay(Self.NotePixels);
+
   Result := Self.Sprite.BorderImage();
 end;
 
@@ -424,6 +471,9 @@ begin
   Self.Sprite.DrawBorder($FF000001);
   if selected then
     Self.Sprite.DrawBorder($FFFFFFFF);
+
+  if Self.ItemDef.NotedTemplate <> -1 then
+    Self.Sprite.Overlay(Self.NotePixels);
 
   Result := Self.Sprite.MaskImage();
 end;

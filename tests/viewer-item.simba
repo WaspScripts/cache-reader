@@ -26,14 +26,14 @@ begin
 
   itemDef := TItemDefinition.Create(itemId, archive.Files.Value[itemId].Data);
 
-  //an item with no name and no noted variant is a gap in the id space rather than an item
-  if (itemDef.Name = 'null') and (itemDef.NotedTemplate = -1) then
+  //an item with no model and no noted variant is a gap in the id space rather than an item
+  if (itemDef.InventoryModel = 0) and (itemDef.NotedTemplate = -1) then
   begin
     WriteLn('Item #', itemId, ': skipped (no data)');
     Exit;
   end;
 
-  sprite := TItemSprite.Create(itemDef);
+  sprite := TItemSprite.Create(archive, itemId);
   if not sprite.Valid then
   begin
     WriteLn('Item #', itemId, ': failed to render (no model?). InventoryModel = ', itemDef.InventoryModel);

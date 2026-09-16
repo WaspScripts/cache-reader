@@ -177,14 +177,23 @@ end;
 
 type
   TLitModelViewport = record
-    FaceClipped: array [0..6499] of Boolean;
+    FaceClipped: TBooleanArray;
     ScreenX, ScreenY, Depth,
-    SortedFaceIdx, SortedFaceDepth: array [0..6499] of Integer;
+    SortedFaceIdx, SortedFaceDepth: TIntegerArray;
     SortedCount: Integer;
   end;
 
 var
   Viewport: TLitModelViewport;
+
+begin
+  SetLength(Viewport.FaceClipped, 6500);
+  SetLength(Viewport.ScreenX, 6500);
+  SetLength(Viewport.ScreenY, 6500);
+  SetLength(Viewport.Depth, 6500);
+  SetLength(Viewport.SortedFaceIdx, 6500);
+  SetLength(Viewport.SortedFaceDepth, 6500);
+end;
 
 (*
 ## LitModel.RasterFace

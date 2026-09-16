@@ -131,6 +131,33 @@ begin
 end;
 
 (*
+## SpritePixels.Overlay
+```pascal
+procedure TSpritePixels.Overlay(const sprite: TSpritePixels);
+```
+Draws `sprite` on top of this buffer, skipping its transparent pixels. Both buffers must be the
+same size and both must have had {ref}`TSpritePixels.DrawBorder` called on them.
+
+`Border` and `Mask` follow what ends up visible: every pixel `sprite` covers takes `sprite`'s
+border in place of this buffer's, and becomes part of the mask if it was not already.
+*)
+procedure TSpritePixels.Overlay(const sprite: TSpritePixels);
+var
+  i: Integer;
+begin
+  for i := 0 to High(sprite.Pixels) do
+  begin
+    if sprite.Pixels[i] = 0 then
+      Continue;
+
+    Self.Pixels[i] := sprite.Pixels[i];
+    Self.Border[i] := sprite.Border[i];
+    if Self.Mask[i] = 0 then
+      Self.Mask[i] := $FFFFFF;
+  end;
+end;
+
+(*
 ## SpritePixels.DrawAtOn
 ```pascal
 procedure TSpritePixels.DrawAtOn(var graphics: TGraphics3D; x, y: Integer);
