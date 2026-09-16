@@ -16,7 +16,7 @@ Methods:
 
 type
   TSpritePixels = record
-    Pixels, Mask: TIntegerArray;
+    Pixels, Border, Mask: TIntegerArray;
     Width, Height, OffsetX, OffsetY: Integer;
   end;
 
@@ -49,9 +49,10 @@ not itself count as a neighbour and grow outwards.
 procedure TSpritePixels.DrawBorder(color: Integer);
 var
   x, y, i: Integer;
-  pixels, mask: TIntegerArray;
+  pixels, mask, border: TIntegerArray;
 begin
   SetLength(pixels, Self.Width * Self.Height);
+  SetLength(border, Self.Width * Self.Height);
   SetLength(mask, Self.Width * Self.Height);
   i := -1;
 
@@ -66,21 +67,25 @@ begin
         if (x > 0) and (Self.Pixels[i - 1] <> 0) then
         begin
           pixels[i] := color;
+          border[i] := color;
           mask[i] := $FFFFFFFF;
         end
         else if (y > 0) and (Self.Pixels[i - Self.Width] <> 0) then
         begin
           pixels[i] := color;
+          border[i] := color;
           mask[i] := $FFFFFFFF;
         end
         else if (x < Self.Width - 1) and (Self.Pixels[i + 1] <> 0) then
         begin
           pixels[i] := color;
+          border[i] := color;
           mask[i] := $FFFFFFFF;
         end
         else if (y < Self.Height - 1) and (Self.Pixels[i + Self.Width] <> 0) then
         begin
           pixels[i] := color;
+          border[i] := color;
           mask[i] := $FFFFFFFF;
         end;
         Continue;
@@ -91,6 +96,7 @@ begin
     end;
 
   Self.Pixels := pixels;
+  Self.Border := border;
   Self.Mask := mask;
 end;
 
@@ -208,6 +214,19 @@ function TSpritePixels.ToImage(): TImage;
 begin
   Result := new TImage(Self.Width, Self.Height);
   Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Pixels[0]), Self.Width);
+end;
+
+(*
+## SpritePixels.BorderImage
+```pascal
+function TSpritePixels.BorderImage(): TImage;
+```
+Get an image of the sprite border.
+*)
+function TSpritePixels.BorderImage(): TImage;
+begin
+  Result := new TImage(Self.Width, Self.Height);
+  Result.FromData(Self.Width, Self.Height, PColorBGRA(@Self.Border[0]), Self.Width);
 end;
 
 (*

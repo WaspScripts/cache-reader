@@ -394,6 +394,29 @@ img := sprite.BorderImage();
 img.Show();
 ```
 *)
+function TItemSprite.BorderImage(selected: Boolean = False): TImage;
+begin
+  Self.Project(selected);
+
+  Self.Sprite.DrawBorder($FF000001);
+  if selected then
+    Self.Sprite.DrawBorder($FFFFFFFF);
+
+  Result := Self.Sprite.BorderImage();
+end;
+
+(*
+## TItemSprite.MaskImage
+```pascal
+function TItemSprite.MaskImage(selected: Boolean = False): TImage;
+```
+The item's outline on its own filled white.
+
+```pascal
+img := sprite.MaskImage();
+img.Show();
+```
+*)
 function TItemSprite.MaskImage(selected: Boolean = False): TImage;
 begin
   Self.Project(selected);
