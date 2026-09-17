@@ -1,141 +1,19 @@
 {$I WaspLib/utils.simba}
-{$R-}
 
 var
   PATH: String = {$MACRO DIR} + 'items-db' + PATH_SEP;
 
-function DecodeName(constref name: String): String;
 var
-  c: Char;
-  o: Integer;
-begin
-  for c in name do
-  begin
-    o := Ord(c);
-    if o < $80 then
-      Result += c
-    else
-      Result += Char($C0 or (o shr 6)) + Char($80 or (o and $3F));
-  end;
-
-  Result := Result.ToLower();
-end;
-
-function GetItemNames(const archive: TArchive): TStringArray;
-var
-  id, i, variant: Integer;
-  itemDef: TItemDefinition;
-  name: String;
-begin
-  SetLength(Result, archive.Files.Keys[High(archive.Files.Keys)] + 1);
-
-  for id in archive.Files.Keys do
-  begin
-    itemDef := TItemDefinition.Create(id, archive.Files.Value[id].Data);
-
-    if itemDef.NotedTemplate <> -1 then
-    begin
-      if not archive.Files.Exists(itemDef.NotedID) then
-        Continue;
-      name := DecodeName(TItemDefinition.Create(itemDef.NotedID, archive.Files.Value[itemDef.NotedID].Data).Name);
-    end
-    else
-      name := DecodeName(itemDef.Name);
-
-    if (name = '') or (name = 'null') then
-      Continue;
-
-    if itemDef.NotedTemplate <> -1 then
-      name := 'noted ' + name;
-
-    if Result[id] = '' then
-      Result[id] := name;
-
-    for i := 0 to High(itemDef.CountObj) do
-    begin
-      if itemDef.CountCo[i] = 0 then
-        Continue;
-
-      variant := itemDef.CountObj[i];
-      if InRange(variant, 0, High(Result)) and (Result[variant] = '') then
-        Result[variant] := name;
-    end;
-  end;
-end;
-
-
-procedure WriteColumn(column: String; const rows: TStringArray);
-begin
-  if not FileWrite(PATH + column + '.txt', rows.Join(LINE_SEP) + LINE_SEP) then
-    raise 'Couldn''t write ' + PATH + column + '.txt';
-end;
-
-var
-  archive: TArchive;
-  names, items, ids, hashes: TStringArray;
-  rendered: TStringMap<Boolean>;
-  sprite: TItemSprite;
-  img: TImage;
-  id, frame, unrendered, duplicates: Integer;
-  renderKey, name, hash: String;
+  rows: Integer;
   start: Double;
 begin
   ClearSimbaOutput();
 
-  if not DirCreate(PATH) then
-    raise 'Couldn''t create ' + PATH;
-
   CacheReader := TCacheReader.Create();
-  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
 
   start := PerformanceTime();
-  archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+  rows := ItemLoader.WriteDatabase(PATH);
 
-  names := GetItemNames(archive);
-
-  WriteLn('Rendering items.');
-  for id := 0 to High(names) do
-  begin
-    name := names[id];
-    if name = '' then
-      Continue;
-
-    sprite := TItemSprite.Create(archive, id);
-    if not sprite.Valid then
-    begin
-      Inc(unrendered);
-      Continue;
-    end;
-
-    for frame := 0 to sprite.FrameCount() - 1 do
-    begin
-      img := sprite.ToImage(False, 0, frame);
-
-      hash := ToStr(TItemSprite.GetCRC(img, 9));
-      renderKey := name + ':' + hash;
-
-      if rendered.Exists(renderKey) then
-      begin
-        Inc(duplicates);
-        Continue;
-      end;
-
-      rendered.Value[renderKey] := True;
-
-      items += name;
-      ids += ToStr(id);
-      hashes += hash;
-    end;
-  end;
-
-  WriteLn('Total items: ', Length(ids));
-  WriteLn('Skipped duplicates: ', duplicates);
-  WriteLn('Failed to render: ', unrendered);
-
-  WriteLn('Saving files to ', PATH);
-  WriteColumn('item', items);
-  WriteColumn('id', ids);
-  WriteColumn('hash', hashes);
-
+  WriteLn('Saved ', rows, ' rows to ', PATH);
   WriteLn('Took ', Round(PerformanceTime()-start, 3), 'ms to run.');
 end.

@@ -1,0 +1,184 @@
+(*
+# Item Loader
+Builds the item database WaspLib looks items up in: every named item, the ids it goes by, and the
+hash of each icon it can be drawn with.
+*)
+
+{$DEFINE WL_CACHE_LOADER_ITEMS_INCLUDED}
+{$IFNDEF WL_CACHE_READER_INCLUDED}               {$INCLUDE_ONCE ../reader/reader.simba}         {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_ITEMS_INCLUDED}     {$INCLUDE_ONCE ../definitions/items.simba}     {$ENDIF}
+{$IFNDEF WL_CACHE_ITEM_SPRITE_INCLUDED}          {$INCLUDE_ONCE ../render/itemsprite.simba}     {$ENDIF}
+
+type
+  TItemLoader = record
+    Archive: TArchive;
+    Names: TStringArray;
+    IsLoaded: Boolean;
+  end;
+
+(*
+## TItemLoader.DecodeName
+```pascal
+function TItemLoader.DecodeName(const name: String): String; static;
+```
+Turns a name as the cache stores it, one byte per character, into lowercase UTF-8.
+*)
+function TItemLoader.DecodeName(const name: String): String; static;
+var
+  c: Char;
+  o: Integer;
+begin
+  for c in name do
+  begin
+    o := Ord(c);
+    if o < $80 then
+      Result += c
+    else
+      Result += Char($C0 or (o shr 6)) + Char($80 or (o and $3F));
+  end;
+
+  Result := Result.ToLower();
+end;
+
+(*
+## TItemLoader.Load
+```pascal
+procedure TItemLoader.Load();
+```
+Caches the config index and works out the database name of every item id, filling
+`TItemLoader.Names`. Does nothing once loaded.
+
+`TItemLoader.Names` is indexed by item id and holds `''` for ids that aren't items. Noted items
+are named `noted ` followed by the name of the item they are a note of, and the ids an item
+switches to as its stack grows share that item's name unless they have one of their own.
+*)
+procedure TItemLoader.Load();
+var
+  id, i, variant: Integer;
+  itemDef: TItemDefinition;
+  name: String;
+begin
+  if Self.IsLoaded then
+    Exit;
+
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+  Self.Archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+
+  SetLength(Self.Names, Self.Archive.Files.Keys[High(Self.Archive.Files.Keys)] + 1);
+
+  for id in Self.Archive.Files.Keys do
+  begin
+    itemDef := TItemDefinition.Create(id, Self.Archive.Files.Value[id].Data);
+
+    if itemDef.NotedTemplate <> -1 then
+    begin
+      if not Self.Archive.Files.Exists(itemDef.NotedID) then
+        Continue;
+      name := TItemLoader.DecodeName(TItemDefinition.Create(itemDef.NotedID, Self.Archive.Files.Value[itemDef.NotedID].Data).Name);
+    end
+    else
+      name := TItemLoader.DecodeName(itemDef.Name);
+
+    if (name = '') or (name = 'null') then
+      Continue;
+
+    if itemDef.NotedTemplate <> -1 then
+      name := 'noted ' + name;
+
+    if Self.Names[id] = '' then
+      Self.Names[id] := name;
+
+    for i := 0 to High(itemDef.CountObj) do
+    begin
+      if itemDef.CountCo[i] = 0 then
+        Continue;
+
+      variant := itemDef.CountObj[i];
+      if InRange(variant, 0, High(Self.Names)) and (Self.Names[variant] = '') then
+        Self.Names[variant] := name;
+    end;
+  end;
+
+  Self.IsLoaded := True;
+end;
+
+(*
+## TItemLoader.WriteDatabase
+```pascal
+function TItemLoader.WriteDatabase(path: String): Integer;
+```
+Renders every item in `TItemLoader.Names` and writes the database into `path` as four column
+files, `item.txt`, `id.txt`, `hash.txt` and `border.txt`, where line `N` of each file belongs to
+row `N`.
+Loads the items first with {ref}`TItemLoader.Load` if they aren't yet, and creates `path` if it
+doesn't exist. Returns how many rows were written.
+
+Every animation frame of an item is hashed with {ref}`TItemSprite.GetCRC` and
+{ref}`TItemSprite.GetBorderCRC`, and each distinct icon an item has gets its own row. An id whose icon looks exactly like a lower id of the same name adds
+nothing and is left out. Items that can't be rendered are left out too.
+
+Example:
+```pascal
+CacheReader := TCacheReader.Create();
+ItemLoader.WriteDatabase('C:/items-db/');
+```
+*)
+function TItemLoader.WriteDatabase(path: String): Integer;
+var
+  items, ids, hashes, borders: TStringArray;
+  rendered: TStringMap<Boolean>;
+  sprite: TItemSprite;
+  img: TImage;
+  id, frame: Integer;
+  name, hash, renderKey: String;
+begin
+  Self.Load();
+
+  if not path.EndsWith(PATH_SEP) then
+    path += PATH_SEP;
+
+  if not DirCreate(path) then
+    raise 'TItemLoader: Couldn''t create ' + path;
+
+  for id := 0 to High(Self.Names) do
+  begin
+    name := Self.Names[id];
+    if name = '' then
+      Continue;
+
+    sprite := TItemSprite.Create(Self.Archive, id);
+    if not sprite.Valid then
+      Continue;
+
+    for frame := 0 to sprite.FrameCount() - 1 do
+    begin
+      img := sprite.ToImage(False, 0, frame);
+      hash := ToStr(TItemSprite.GetCRC(img, 9));
+      renderKey := name + ':' + hash;
+
+      if rendered.Exists(renderKey) then
+        Continue;
+
+      rendered.Value[renderKey] := True;
+
+      items += name;
+      ids += ToStr(id);
+      hashes += hash;
+      borders += ToStr(TItemSprite.GetBorderCRC(img, 9));
+    end;
+  end;
+
+  if not FileWrite(path + 'item.txt', items.Join(LINE_SEP) + LINE_SEP) then
+    raise 'TItemLoader: Couldn''t write ' + path + 'item.txt';
+  if not FileWrite(path + 'id.txt', ids.Join(LINE_SEP) + LINE_SEP) then
+    raise 'TItemLoader: Couldn''t write ' + path + 'id.txt';
+  if not FileWrite(path + 'hash.txt', hashes.Join(LINE_SEP) + LINE_SEP) then
+    raise 'TItemLoader: Couldn''t write ' + path + 'hash.txt';
+  if not FileWrite(path + 'border.txt', borders.Join(LINE_SEP) + LINE_SEP) then
+    raise 'TItemLoader: Couldn''t write ' + path + 'border.txt';
+
+  Result := Length(ids);
+end;
+
+var
+  ItemLoader: TItemLoader;

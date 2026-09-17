@@ -553,6 +553,26 @@ begin
   Result := Self.Sprite.MaskImage();
 end;
 
+(*
+## TItemSprite.GetCRC
+```pascal
+function TItemSprite.GetCRC(img: TImage; top: Integer = 9): UInt32; static;
+function TItemSprite.GetBorderCRC(img: TImage; top: Integer = 9): UInt32; static;
+```
+Hashes an item icon from {ref}`TItemSprite.ToImage`, leaving out the first `top` rows, where the
+game draws stack numbers over the icon.
+
+`GetCRC` hashes the pixels themselves. `GetBorderCRC` hashes only where the icon's outline is:
+the points of the `$010000` border colour, in the order `TImage.FindColor` returns them. Every item
+drawn with the same outline shares a border hash, however it is coloured, and an icon with no
+outline below `top` gives `0`.
+
+Example:
+```pascal
+img := TItemSprite.Create(4151).ToImage();
+WriteLn TItemSprite.GetCRC(img), ' ', TItemSprite.GetBorderCRC(img);
+```
+*)
 function TItemSprite.GetCRC(img: TImage; top: Integer = 9): UInt32; static;
 var
   ptr: PColorBGRA;
@@ -560,4 +580,18 @@ begin
   ptr := img.Data;
   Inc(ptr, top*img.Width);  //skip the top pixels e.g. stack numbers
   Result := CrcData(ptr, (img.Height - top) * img.Width * SizeOf(TColorBGRA));
+end;
+
+function TItemSprite.GetBorderCRC(img: TImage; top: Integer = 9): UInt32; static;
+var
+  tpa: TPointArray;
+  corner: TPoint;
+begin
+  tpa := img.FindColor($010000, 0, [0, top, img.Width - 1, img.Height - 1]);
+  if tpa.IsEmpty then
+    Exit;
+
+  corner := tpa.Bounds().TopLeft;
+  tpa := tpa.Offset([-corner.X, -corner.Y]);
+  Result := CrcData(@tpa[0], Length(tpa) * SizeOf(TPoint));
 end;
