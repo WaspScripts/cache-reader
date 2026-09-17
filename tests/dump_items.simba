@@ -1,4 +1,4 @@
-{$I WaspLib/utils/cache-reader/cache.simba}
+{$I WaspLib/utils.simba}
 {$R-}
 
 var
