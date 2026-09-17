@@ -558,6 +558,6 @@ var
   ptr: PColorBGRA;
 begin
   ptr := img.Data;
-  Inc(ptr, top*36);  //skip the top pixels e.g. stack numbers
-  Result := CrcData(ptr, 3312);
+  Inc(ptr, top*img.Width);  //skip the top pixels e.g. stack numbers
+  Result := CrcData(ptr, (img.Height - top) * img.Width * SizeOf(TColorBGRA));
 end;
