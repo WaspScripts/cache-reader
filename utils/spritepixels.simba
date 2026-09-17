@@ -35,6 +35,7 @@ begin
   SetLength(Result.Mask, w * h);
 end;
 
+
 (*
 ## SpritePixels.DrawBorder
 ```pascal
@@ -130,6 +131,7 @@ begin
   end;
 end;
 
+
 (*
 ## SpritePixels.Overlay
 ```pascal
@@ -224,6 +226,7 @@ begin
     deltaIndex += w + sourceRowSkip;
   end;
 end;
+
 
 (*
 ## SpritePixels.ToImage

@@ -552,3 +552,12 @@ begin
 
   Result := Self.Sprite.MaskImage();
 end;
+
+function TItemSprite.GetCRC(img: TImage; top: Integer = 9): UInt32; static;
+var
+  ptr: PColorBGRA;
+begin
+  ptr := img.Data;
+  Inc(ptr, top*36);  //skip the top pixels e.g. stack numbers
+  Result := CrcData(ptr, 3312);
+end;
