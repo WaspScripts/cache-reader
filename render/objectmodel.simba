@@ -1,0 +1,211 @@
+(*
+# Object Model
+What a world object looks like once the game has built it: how tall it stands and the colours its
+faces are drawn in.
+
+The models are put together the way the client does it for the shape the object is placed with,
+recoloured, retextured, resized and moved as the definition asks, and lit from the same fixed
+light and with the same ambient and contrast the client lights objects with. The colours are the
+lit ones, so they cover the range of shades the object is actually drawn in rather than only the
+flat colour it was modelled with.
+
+Example:
+```pascal
+model := TObjectModel.Create(objectDef, 10);
+WriteLn(model.Height, ' ', model.Colors);
+```
+*)
+
+{$DEFINE WL_CACHE_OBJECT_MODEL_INCLUDED}
+{$IFNDEF WL_CACHE_DEFINITION_OBJECTS_INCLUDED} {$INCLUDE_ONCE ../definitions/objects.simba} {$ENDIF}
+{$IFNDEF WL_CACHE_LITMODEL_INCLUDED}           {$INCLUDE_ONCE litmodel.simba}               {$ENDIF}
+
+type
+(*
+## TObjectModel
+- `Height` is how far the object rises above the ground, in the game's units: a tile is `128`.
+- `Colors` are the colours its visible faces are drawn in, as `TColor`s, most common first.
+- `Counts` is how many face corners were drawn in each of `Colors`.
+- `Valid` is `False` when the object has no model for the shape it was asked for.
+*)
+  TObjectModel = record
+    Height: Integer;
+    Colors, Counts: TIntegerArray;
+    Valid: Boolean;
+  end;
+
+(*
+## ObjectModel.ModelType
+```pascal
+function TObjectModel.ModelType(locType: Integer): Integer; static;
+```
+The shape whose models the client draws an object placed as `locType` with. Wall decorations of
+every kind share the models of the straight one, `4`, and a diagonal object (`11`) is an ordinary
+one (`10`) turned by 45 degrees.
+*)
+function TObjectModel.ModelType(locType: Integer): Integer; static;
+begin
+  case locType of
+    5..8: Result := 4;
+    11:   Result := 10;
+    else  Result := locType;
+  end;
+end;
+
+(*
+## ObjectModel.ModelIDs
+```pascal
+function TObjectModel.ModelIDs(constref def: TObjectDefinition; locType: Integer): TIntegerArray; static;
+```
+The ids of the models the client builds `def` from when it is placed as `locType`.
+
+A definition that lists no shapes only has models for an ordinary object and every model it
+lists is drawn together. One that does list shapes has a single model per shape.
+*)
+function TObjectModel.ModelIDs(constref def: TObjectDefinition; locType: Integer): TIntegerArray; static;
+var
+  i, typ: Integer;
+begin
+  typ := TObjectModel.ModelType(locType);
+
+  if def.ObjectTypes = [] then
+  begin
+    if typ = 10 then
+      Result := def.ObjectModels;
+    Exit;
+  end;
+
+  for i := 0 to High(def.ObjectTypes) do
+    if def.ObjectTypes[i] = typ then
+      Exit([def.ObjectModels[i]]);
+end;
+
+(*
+## ObjectModel.Create
+```pascal
+function TObjectModel.Create(constref def: TObjectDefinition; locType: Integer): TObjectModel; static;
+```
+Builds `def` as it is drawn when placed as `locType` and measures it.
+
+It is always built facing north: turning it would only move which of its faces the light falls
+on, not the range of shades they are drawn in.
+
+Faces that are hidden or see-through are left out of the colours, since what shows through them
+is whatever is behind the object. Textured faces count as their texture's
+{ref}`TTextureLoader.AverageColor`, darkened by their light the way the rasterizer darkens each
+texel.
+*)
+function TObjectModel.Create(constref def: TObjectDefinition; locType: Integer): TObjectModel; static;
+var
+  idx: TCacheIndex;
+  sector: TArchiveSector;
+  data: TByteArray;
+  modelDef: TModelDefinition;
+  lit: TLitModel;
+  ids, colors, hsl: TIntegerArray;
+  id, i, j, texture, color, previous: Integer;
+  alpha: Byte;
+begin
+  ids := TObjectModel.ModelIDs(def, locType);
+  if ids = [] then
+    Exit;
+
+  idx := CacheReader.Indices[ECacheIndex.MODELS];
+
+  for id in ids do
+  begin
+    sector := idx.ReadArchiveSector(id, idx.ID, idx.IndexData);
+    if sector.Data.IsEmpty then
+      Exit;
+
+    data := sector.Decompress();
+    if data.IsEmpty then
+      Exit;
+
+    modelDef := TModelDefinition.Create(id, data);
+
+    for i := 0 to High(def.RecolorToFind) do
+      modelDef.Recolor(def.RecolorToFind[i], def.RecolorToReplace[i]);
+
+    for i := 0 to High(def.RetextureToFind) do
+      modelDef.Retexture(def.RetextureToFind[i], def.TextureToReplace[i]);
+
+    if (def.ModelSizeX <> 128) or (def.ModelSizeHeight <> 128) or (def.ModelSizeY <> 128) then
+      modelDef.Resize(def.ModelSizeX, def.ModelSizeHeight, def.ModelSizeY);
+
+    lit := TLitModel.Create(modelDef);
+    lit.Light(def.Ambient + 64, def.Contrast + 768);
+    lit.CalcBoundsCylinder();
+
+    //the offset moves the model down, heights are counted up
+    Result.Height := Max(Result.Height, lit.ModelHeight - def.OffsetHeight);
+
+    for i := 0 to lit.IndicesCount - 1 do
+    begin
+      //a third colour of -2 is a face the rasterizer skips
+      if lit.FaceColors3[i] = -2 then
+        Continue;
+
+      if lit.HasTransparencies then
+      begin
+        alpha := lit.FaceTransparencies[i];
+        if alpha <> 0 then
+          Continue;
+      end;
+
+      //a flat face has one colour, a shaded one a colour per corner
+      if lit.FaceColors3[i] = -1 then
+        hsl := [lit.FaceColors1[i]]
+      else
+        hsl := [lit.FaceColors1[i], lit.FaceColors2[i], lit.FaceColors3[i]];
+
+      texture := -1;
+      if lit.HasTextures then
+        texture := lit.FaceTextures[i];
+
+      for j := 0 to High(hsl) do
+      begin
+        if texture = -1 then
+          color := ColorUtils.Palette[hsl[j] and $FFFF] and $FFFFFF
+        else
+        begin
+          //on a textured face the colours are light intensities
+          color := TextureLoader.AverageColor(texture);
+          if color = -1 then
+            Continue;
+          color := ((((color shr 16) and $FF) * hsl[j] div 128) shl 16) or
+                   ((((color shr 8) and $FF) * hsl[j] div 128) shl 8) or
+                   ((color and $FF) * hsl[j] div 128);
+        end;
+
+        //$RRGGBB to TColor's $BBGGRR
+        colors += ((color and $FF) shl 16) or (color and $FF00) or ((color shr 16) and $FF);
+      end;
+    end;
+  end;
+
+  //most common first, so the colours that cover the object come before stray ones
+  colors.Sort();
+  previous := -1;
+  for color in colors do
+    if (Result.Colors <> []) and (color = previous) then
+      Inc(Result.Counts[High(Result.Counts)])
+    else
+    begin
+      Result.Colors += color;
+      Result.Counts += 1;
+      previous := color;
+    end;
+
+  for i := 1 to High(Result.Counts) do
+    for j := i downto 1 do
+      if Result.Counts[j] > Result.Counts[j - 1] then
+      begin
+        Swap(Result.Counts[j], Result.Counts[j - 1]);
+        Swap(Result.Colors[j], Result.Colors[j - 1]);
+      end
+      else
+        Break;
+
+  Result.Valid := True;
+end;

@@ -137,6 +137,218 @@ begin
 end;
 
 (*
+## LitModel.LightIntensity
+```pascal
+function TLitModel.LightIntensity(normalX, normalY, normalZ, mag, atten, ambient: Integer): Integer; static;
+```
+How brightly the fixed light falls on a surface facing along the normal, unclamped.
+`mag` is how many face normals were summed into the normal, `1` for a single face's own normal.
+*)
+function TLitModel.LightIntensity(normalX, normalY, normalZ, mag, atten, ambient: Integer): Integer; static;
+begin
+  if (mag = 0) or (atten = 0) then
+    Exit(ambient);
+
+  Result := ((-50) * normalX + (-10) * normalY + (-50) * normalZ) div (atten * mag) + ambient;
+end;
+
+(*
+## LitModel.ApplyLightIntensity
+```pascal
+function TLitModel.ApplyLightIntensity(color, intensity: Integer): Integer; static;
+```
+Scale a colour's luminance by a light intensity.
+
+Pascal's `shr` is a *logical* shift, so it cannot be used here: `intensity`
+is unclamped and goes negative for a face turned away from the light, and a
+logical shift would turn that into a large positive value that clamps to full
+brightness instead of the minimum.
+*)
+function TLitModel.ApplyLightIntensity(color, normalX, normalY, normalZ, mag, atten, ambient: Integer): Integer; static;
+begin
+  Result := (color and $FF80) + EnsureRange(((color and $7F) * TLitModel.LightIntensity(normalX, normalY, normalZ, mag, atten, ambient)) div 128, 2, 126);
+end;
+
+(*
+## LitModel.Light
+```pascal
+procedure TLitModel.Light(ambient, contrast: Integer);
+```
+Computes vertex/face normals and lights each face from the fixed `-50, -10, -50` light the game
+uses for items and world objects, writing the result into `FaceColors1/2/3`.
+
+`ambient` and `contrast` are the values the client passes once it has added its base to the
+definition's own: `Ambient + 64` for both, and `Contrast + 768` where the definition's contrast
+is already scaled - by 5 for items and by 25 for objects.
+*)
+procedure TLitModel.Light(ambient, contrast: Integer);
+const
+  LIGHT_MAGNITUDE: Integer = 71; //Trunc(Sqrt(5100))
+var
+  attenuation, faceColor, faceAttenuation,
+  i, faceIdx, faceType, faceRenderType, r1, r2, r3,
+  nx, ny, nz,
+  faceTexId, faceAlphaVal: Integer;
+  vMag, vNx, vNy, vNz,
+  fNx, fNy, fNz, dump,
+  faceIndices1, faceIndices2, faceIndices3, faceColors, faceTextures: TIntegerArray;
+  faceRenderTypes, faceTransparencies: TByteArray;
+  hasFaceNormals, hasRenderTypes, hasTransparencies, hasTextures: Boolean;
+begin
+  SetLength(vNx, Self.VerticesCount);
+  SetLength(vNy, Self.VerticesCount);
+  SetLength(vNz, Self.VerticesCount);
+  SetLength(vMag, Self.VerticesCount);
+  SetLength(fNx, Self.IndicesCount);
+  SetLength(fNy, Self.IndicesCount);
+  SetLength(fNz, Self.IndicesCount);
+
+  hasFaceNormals := False;
+
+  //everything below is fixed for the whole model, so it is read out once rather than per face
+  faceIndices1 := Self.FaceIndices1;
+  faceIndices2 := Self.FaceIndices2;
+  faceIndices3 := Self.FaceIndices3;
+  faceColors := Self.FaceColors;
+  faceTextures := Self.FaceTextures;
+  faceRenderTypes := Self.FaceRenderTypes;
+  faceTransparencies := Self.FaceTransparencies;
+
+  hasRenderTypes := Length(faceRenderTypes) > 0;
+  hasTransparencies := Length(faceTransparencies) > 0;
+  hasTextures := Length(faceTextures) > 0;
+
+  // Precompute attenuation (-50, -10, -50 direction)
+  attenuation := Max((LIGHT_MAGNITUDE * contrast) shr 8, 1);
+  faceAttenuation := (attenuation shr 1) + attenuation;
+
+  for i := 0 to Self.IndicesCount - 1 do
+  begin
+    Self.FaceNormal(i, nx, ny, nz);
+
+    if not hasRenderTypes then
+      faceRenderType := 0
+    else
+    begin
+      faceRenderType := faceRenderTypes[i];
+      if faceRenderType > 127 then
+        faceRenderType -= 256;
+    end;
+
+    if faceRenderType = 0 then
+    begin
+      vNx[faceIndices1[i]] += nx;
+      vNy[faceIndices1[i]] += ny;
+      vNz[faceIndices1[i]] += nz;
+      Inc(vMag[faceIndices1[i]]);
+
+      vNx[faceIndices2[i]] += nx;
+      vNy[faceIndices2[i]] += ny;
+      vNz[faceIndices2[i]] += nz;
+      Inc(vMag[faceIndices2[i]]);
+
+      vNx[faceIndices3[i]] += nx;
+      vNy[faceIndices3[i]] += ny;
+      vNz[faceIndices3[i]] += nz;
+      Inc(vMag[faceIndices3[i]]);
+    end
+    else if faceRenderType = 1 then
+    begin
+      hasFaceNormals := True;
+      fNx[i] := nx;
+      fNy[i] := ny;
+      fNz[i] := nz;
+    end;
+  end;
+
+  for faceIdx := 0 to Self.IndicesCount - 1 do
+  begin
+    faceType := 0;
+    faceAlphaVal := 0;
+    faceTexId := -1;
+
+    if hasRenderTypes then
+      faceType := faceRenderTypes[faceIdx] and $FF;
+    if hasTransparencies then
+    begin
+      // RuneLite reads this as a *signed* byte, so 0xFE/0xFF mean -2/-1.
+      // TByteArray is unsigned here, so sign-extend before the comparisons
+      // below, otherwise the "always bright" and "hidden face" render types
+      // never trigger and fully transparent faces get drawn.
+      faceAlphaVal := faceTransparencies[faceIdx];
+      if faceAlphaVal > 127 then
+        faceAlphaVal -= 256;
+    end;
+    if hasTextures then
+      faceTexId := faceTextures[faceIdx];
+
+    if faceAlphaVal = -2 then
+      faceType := 3;
+    if faceAlphaVal = -1 then
+      faceType := 2;
+
+    faceColor := faceColors[faceIdx] and $FFFF;
+
+    if faceTexId <> -1 then
+      case faceType of
+        0:
+          begin
+            r1 := EnsureRange(TLitModel.LightIntensity(vNx[faceIndices1[faceIdx]], vNy[faceIndices1[faceIdx]], vNz[faceIndices1[faceIdx]], vMag[faceIndices1[faceIdx]], attenuation, ambient), 2, 126);
+            r2 := EnsureRange(TLitModel.LightIntensity(vNx[faceIndices2[faceIdx]], vNy[faceIndices2[faceIdx]], vNz[faceIndices2[faceIdx]], vMag[faceIndices2[faceIdx]], attenuation, ambient), 2, 126);
+            r3 := EnsureRange(TLitModel.LightIntensity(vNx[faceIndices3[faceIdx]], vNy[faceIndices3[faceIdx]], vNz[faceIndices3[faceIdx]], vMag[faceIndices3[faceIdx]], attenuation, ambient), 2, 126);
+          end;
+        1:
+          begin
+            r1 := EnsureRange(TLitModel.LightIntensity(fNx[faceIdx], fNy[faceIdx], fNz[faceIdx], 1, faceAttenuation, ambient), 2, 126);
+            r2 := -1;
+            r3 := -1;
+          end;
+        else
+          begin
+            r1 := faceColor;
+            r2 := -1;
+            r3 := -2;
+          end;
+      end
+    else
+    case faceType of
+      0: // Gouraud flat-shaded (no texture, 3 vertex colors)
+        begin
+          r1 := TLitModel.ApplyLightIntensity(faceColor, vNx[faceIndices1[faceIdx]], vNy[faceIndices1[faceIdx]], vNz[faceIndices1[faceIdx]], vMag[faceIndices1[faceIdx]], attenuation, ambient);
+          r2 := TLitModel.ApplyLightIntensity(faceColor, vNx[faceIndices2[faceIdx]], vNy[faceIndices2[faceIdx]], vNz[faceIndices2[faceIdx]], vMag[faceIndices2[faceIdx]], attenuation, ambient);
+          r3 := TLitModel.ApplyLightIntensity(faceColor, vNx[faceIndices3[faceIdx]], vNy[faceIndices3[faceIdx]], vNz[faceIndices3[faceIdx]], vMag[faceIndices3[faceIdx]], attenuation, ambient);
+        end;
+      1: // Single-color face with face normal
+        begin
+          if hasFaceNormals then
+          begin
+            r1 := TLitModel.ApplyLightIntensity(faceColor, fNx[faceIdx], fNy[faceIdx], fNz[faceIdx], 1, faceAttenuation, ambient);
+            r2 := -1;
+            r3 := -1;
+          end
+          else
+          begin
+            r1 := faceColor;
+            r2 := -1; r3 := -1;
+          end;
+        end;
+      3: // Always bright face
+        begin r1 := 128; r2 := -1; r3 := -1; end;
+      else // No lighting change
+        begin
+          r1 := faceColor;
+          r2 := -1;
+          r3 := -2;
+        end;
+    end;
+
+    Self.FaceColors1[faceIdx] := r1;
+    Self.FaceColors2[faceIdx] := r2;
+    Self.FaceColors3[faceIdx] := r3;
+  end;
+end;
+
+(*
 ## LitModel.CalcBoundsCylinder
 ```pascal
 procedure TLitModel.CalcBoundsCylinder();

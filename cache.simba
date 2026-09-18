@@ -36,11 +36,12 @@ end;
 {$IFNDEF WL_CACHE_DEFINITION_ENUMS_INCLUDED}      {$INCLUDE_ONCE definitions/enums.simba}
 {$IFNDEF WL_CACHE_DEFINITION_INTERFACES_INCLUDED} {$INCLUDE_ONCE definitions/interfaces.simba}
 {$IFNDEF WL_ITEM_SPRITE_INCLUDED}           {$INCLUDE_ONCE render/itemsprite.simba}
+{$IFNDEF WL_CACHE_OBJECT_MODEL_INCLUDED}     {$INCLUDE_ONCE render/objectmodel.simba}
 {$IFNDEF WL_CACHE_LOADER_FONTS_INCLUDED}          {$INCLUDE_ONCE loaders/fontloader.simba}
 {$IFNDEF WL_CACHE_LOADER_ITEMS_INCLUDED}          {$INCLUDE_ONCE loaders/itemloader.simba}
 {$IFNDEF WL_CACHE_LOADER_MAPCHUNK_INCLUDED}       {$INCLUDE_ONCE loaders/map/mapchunk.simba}
 
-{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}
+{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}
 
 begin
   ColorUtils.SetBrightness(TColorUtils.BRIGHTNESS_MAX);   

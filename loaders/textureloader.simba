@@ -21,8 +21,8 @@ type
   TTextureLoader = record
     Definitions: TTextureDefinitionArray;
     BaseTexels, FrameTexels: array of TIntegerArray;
-    CachedFrames: TIntegerArray;
-    Revision: Integer;
+    CachedFrames, AverageColors: TIntegerArray;
+    Revision, AverageRevision: Integer;
     IsLoaded: Boolean;
     const SIZE: Integer = 128;
   end;
@@ -295,6 +295,55 @@ begin
   end;
 
   Result := Self.FrameTexels[id];
+end;
+
+(*
+## TextureLoader.AverageColor
+```pascal
+function TTextureLoader.AverageColor(id: Integer): Integer;
+```
+The average colour of texture `id` as `$RRGGBB`, or `-1` if it has no texels. Holes in the
+texture don't count towards it.
+
+It is what a textured face looks like from far enough away, which is all something that only
+needs a face's colour, rather than its pattern, cares about. Worked out once per texture and
+brightness.
+*)
+function TTextureLoader.AverageColor(id: Integer): Integer;
+var
+  texel, n, r, g, b: Integer;
+begin
+  if not Self.Exists(id) then
+    Exit(-1);
+
+  if Self.AverageRevision <> ColorUtils.Revision then
+  begin
+    Self.AverageColors := [];
+    Self.AverageRevision := ColorUtils.Revision;
+  end;
+
+  if id >= Length(Self.AverageColors) then
+    SetLength(Self.AverageColors, id + 1);
+
+  //0 means not worked out yet, so the colours are stored one higher
+  if Self.AverageColors[id] <> 0 then
+    Exit(Self.AverageColors[id] - 1);
+
+  for texel in Self.Texels(id) do
+    if texel <> 0 then
+    begin
+      r += (texel shr 16) and $FF;
+      g += (texel shr 8) and $FF;
+      b += texel and $FF;
+      Inc(n);
+    end;
+
+  if n = 0 then
+    Result := -1
+  else
+    Result := ((r div n) shl 16) or ((g div n) shl 8) or (b div n);
+
+  Self.AverageColors[id] := Result + 1;
 end;
 
 var

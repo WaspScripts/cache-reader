@@ -189,8 +189,8 @@ begin
       end;
       27: Result.InteractType := 1;
       28: Result.DecorDisplacement := Read8Bits(data, offset);
-      29: Result.Ambient := Read8Bits(data, offset);
-      39: Result.Contrast := Read8Bits(data, offset) * 25;
+      29: Result.Ambient := Read8SignedBits(data, offset);
+      39: Result.Contrast := Read8SignedBits(data, offset) * 25;
       30..34: Result.Ops.DecodeOp(data, offset, opcode - 30);
       40:
       begin
