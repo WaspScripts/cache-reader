@@ -13,6 +13,7 @@ that depends only on the tile's world position - so it can be reproduced exactly
 type
   THeightCalc = record
     CoarseWeights: array [0..3] of Integer;
+    MidWeights: array [0..1] of Integer;
   end;
 
 (*
@@ -20,12 +21,13 @@ type
 ```pascal
 procedure THeightCalc.Setup();
 ```
-Fills the cosine tables the noise interpolation reads. Called once at startup by `cache.simba`.
+Fills the blend weights the noise interpolation reads. Called once at startup by `cache.simba`.
 
-`CosTable` is the table {ref}`THeightCalc.Interpolate` blends along. `CoarseWeights` holds the
-only four blend weights the coarsest noise layer can ever ask for - a tile sits at one of four
-positions within a 4 tile sample - so {ref}`THeightCalc.CalculateArea` indexes them rather than
-going back to the cosine table per row and column.
+A noise layer sampled every `frequency` tiles blends between its samples along a cosine curve,
+and a tile can only sit at one of `frequency` positions within a sample. `CoarseWeights` holds
+the four weights of the layer sampled every 4 tiles and `MidWeights` the two of the layer sampled
+every 2, so {ref}`THeightCalc.CalculateArea` indexes them rather than going back to the cosine
+table per row and column.
 *)
 procedure THeightCalc.Setup();
 var
@@ -33,6 +35,8 @@ var
 begin
   for i := 0 to 3 do
     Self.CoarseWeights[i] := (65536 - CircularAngle.COSINE[256 * i]) shr 1;
+  for i := 0 to 1 do
+    Self.MidWeights[i] := (65536 - CircularAngle.COSINE[512 * i]) shr 1;
 end;
 
 (*
@@ -54,8 +58,8 @@ begin
   n := x + y * 57;
   n := n xor (n shl 13);
 
-  hash := (n * n * $3D73 + $C0AE5) + $5208DD0D;
-  Result := ((n * hash) and $7FFFFFFF) shr 19 and $FF;
+  hash := n * (n * n * $3D73 + $C0AE5) + $5208DD0D;
+  Result := (hash and $7FFFFFFF) shr 19 and $FF;
 end;
 
 
@@ -83,12 +87,11 @@ end;
 ```pascal
 function THeightCalc.SmoothedNoiseArea(x, y, width, height: Integer): TIntegerMatrix;
 ```
-{ref}`THeightCalc.SmoothedNoise` for every point of a `width` by `height` rectangle whose
-top-left corner is `x, y`, returned indexed `[x, y]`.
+{ref}`THeightCalc.Noise` smoothed over the 3x3 block around each point of a `width` by `height`
+rectangle whose top-left corner is `x, y`, returned indexed `[x, y]`.
 
-Each point smooths the 3x3 block of raw noise around it, so neighbouring points overlap by two
-thirds. Laying the raw noise out once and reading it back nine times costs a ninth of the
-`Noise` calls that smoothing each point on its own would.
+Neighbouring points overlap by two thirds, so laying the raw noise out once and reading it back
+nine times costs a ninth of the `Noise` calls that smoothing each point on its own would.
 *)
 function THeightCalc.SmoothedNoiseArea(x, y, width, height: Integer): TIntegerMatrix;
 var
@@ -122,96 +125,101 @@ begin
 end;
 
 (*
-## HeightCalc.CalculateArea
+## HeightCalc.InterpolatedNoiseArea
 ```pascal
-function THeightCalc.CalculateArea(x, y, size: Integer): TIntegerMatrix;
+function THeightCalc.InterpolatedNoiseArea(x, y, size, frequency: Integer; constref weights: array of Integer): TIntegerMatrix;
 ```
-{ref}`THeightCalc.Calculate` for every tile of a `size` by `size` square whose corner is `x, y`,
-returned indexed `[x, y]`.
+One noise layer for every tile of a `size` by `size` square whose corner is `x, y`: smoothed
+noise sampled every `frequency` tiles, with the tiles in between blended from the four samples
+around them. `weights` are that layer's blend weights, from {ref}`THeightCalc.Setup`.
 
-The result is identical to calling `Calculate` per tile, but the three noise layers it sums are
-built as grids first. The two coarse layers are sampled every 4 and every 2 tiles, so a whole
-square shares a handful of their points rather than re-deriving them for each tile.
-
-The cosine blend {ref}`THeightCalc.Interpolate` would do is folded in as well: at frequency 4 a
-tile's position within a sample can only be one of four, so the weight is read out of
-`CoarseWeights` once per column and row instead of being derived once per tile.
+The whole square shares a handful of samples, so they are built as a grid first rather than
+re-derived for every tile.
 *)
-function THeightCalc.CalculateArea(x, y, size: Integer): TIntegerMatrix;
+function THeightCalc.InterpolatedNoiseArea(x, y, size, frequency: Integer; constref weights: array of Integer): TIntegerMatrix;
 var
-  coarseX, coarseY, midX, midY,
-  i, j, n, idxY, sample, interpolatedLow, interpolatedHigh,
-  weightX, weightY, invWeightX, invWeightY: Integer;
-  coarse, mid, fine: TIntegerMatrix;
-  coarseIdxX, coarseIdxY, coarseWeightX, coarseWeightY, midIdxX, midIdxY: TIntegerArray;
-  row, fineRow, midRow, coarseRow, coarseNextRow: TIntegerArray;
+  gridX, gridY, i, j, idxY, low, high, weightX, invWeightX, weightY: Integer;
+  grid: TIntegerMatrix;
+  idxX, idxYs, weightXs, weightYs: TIntegerArray;
+  row, gridRow, gridNextRow: TIntegerArray;
 begin
-  coarseX := (x + 45365) div 4;
-  coarseY := (y + 91923) div 4;
-  coarse := Self.SmoothedNoiseArea(
-    coarseX, coarseY,
-    ((x + 45365 + size - 1) div 4) - coarseX + 2,
-    ((y + 91923 + size - 1) div 4) - coarseY + 2
+  gridX := x div frequency;
+  gridY := y div frequency;
+  grid := Self.SmoothedNoiseArea(
+    gridX, gridY,
+    ((x + size - 1) div frequency) - gridX + 2,
+    ((y + size - 1) div frequency) - gridY + 2
   );
 
-  midX := (x + 10294) div 2;
-  midY := (y + 37821) div 2;
-  mid := Self.SmoothedNoiseArea(
-    midX, midY,
-    ((x + 10294 + size - 1) div 2) - midX + 2,
-    ((y + 37821 + size - 1) div 2) - midY + 2
-  );
-
-  fine := Self.SmoothedNoiseArea(x, y, size, size);
-
-  SetLength(coarseIdxX, size);
-  SetLength(coarseIdxY, size);
-  SetLength(coarseWeightX, size);
-  SetLength(coarseWeightY, size);
-  SetLength(midIdxX, size);
-  SetLength(midIdxY, size);
-
+  SetLength(idxX, size);
+  SetLength(idxYs, size);
+  SetLength(weightXs, size);
+  SetLength(weightYs, size);
   for i := 0 to size - 1 do
   begin
-    coarseIdxX[i]    := ((x + 45365 + i) div 4) - coarseX;
-    coarseWeightX[i] := Self.CoarseWeights[(x + 45365 + i) and 3];
-    coarseIdxY[i]    := ((y + 91923 + i) div 4) - coarseY;
-    coarseWeightY[i] := Self.CoarseWeights[(y + 91923 + i) and 3];
-    //at frequency 2 the client snaps to the nearer grid point instead of interpolating
-    midIdxX[i] := ((x + 10294 + i) div 2) + ((x + 10294 + i) and 1) - midX;
-    midIdxY[i] := ((y + 37821 + i) div 2) + ((y + 37821 + i) and 1) - midY;
+    idxX[i]     := ((x + i) div frequency) - gridX;
+    weightXs[i] := weights[(x + i) and (frequency - 1)];
+    idxYs[i]    := ((y + i) div frequency) - gridY;
+    weightYs[i] := weights[(y + i) and (frequency - 1)];
   end;
 
   SetLength(Result, size, size);
   for i := 0 to size - 1 do
   begin
-    row           := Result[i];
-    fineRow       := fine[i];
-    midRow        := mid[midIdxX[i]];
-    coarseRow     := coarse[coarseIdxX[i]];
-    coarseNextRow := coarse[coarseIdxX[i] + 1];
-    weightX       := coarseWeightX[i];
-    invWeightX    := 65536 - weightX;
+    row         := Result[i];
+    gridRow     := grid[idxX[i]];
+    gridNextRow := grid[idxX[i] + 1];
+    weightX     := weightXs[i];
+    invWeightX  := 65536 - weightX;
 
     for j := 0 to size - 1 do
     begin
-      idxY := coarseIdxY[j];
+      idxY := idxYs[j];
+      low  := ((invWeightX * gridRow[idxY]) shr 16) + ((gridNextRow[idxY] * weightX) shr 16);
+      high := ((invWeightX * gridRow[idxY + 1]) shr 16) + ((gridNextRow[idxY + 1] * weightX) shr 16);
 
-      interpolatedLow  := ((weightX * coarseNextRow[idxY]) shr 16) +
-                          ((coarseRow[idxY] * invWeightX) shr 16);
-      interpolatedHigh := ((weightX * coarseNextRow[idxY + 1]) shr 16) +
-                          ((coarseRow[idxY + 1] * invWeightX) shr 16);
+      weightY := weightYs[j];
+      row[j]  := (((65536 - weightY) * low) shr 16) + ((high * weightY) shr 16);
+    end;
+  end;
+end;
 
-      weightY    := coarseWeightY[j];
-      invWeightY := 65536 - weightY;
-      sample     := ((weightY * interpolatedHigh) shr 16) +
-                    ((interpolatedLow * invWeightY) shr 16);
+(*
+## HeightCalc.CalculateArea
+```pascal
+function THeightCalc.CalculateArea(x, y, size: Integer): TIntegerMatrix;
+```
+The procedural height of every tile of a `size` by `size` square whose corner is `x, y`, returned
+indexed `[x, y]`, from `10` to `60`. `x` and `y` are world tile coordinates already moved by the
+client's `932731, 556238` offset.
 
-      n := sample - 128 +
-           ((midRow[midIdxY[j]] - 128) shr 1) +
-           ((fineRow[j] - 128) shr 2);
+The height is three noise layers summed: one sampled every 4 tiles, one every 2 tiles at half the
+weight, and one every tile at a quarter of the weight.
+*)
+function THeightCalc.CalculateArea(x, y, size: Integer): TIntegerMatrix;
+var
+  i, j, n: Integer;
+  coarse, mid, fine: TIntegerMatrix;
+  row, coarseRow, midRow, fineRow: TIntegerArray;
+begin
+  coarse := Self.InterpolatedNoiseArea(x + 45365, y + 91923, size, 4, Self.CoarseWeights);
+  mid    := Self.InterpolatedNoiseArea(x + 10294, y + 37821, size, 2, Self.MidWeights);
+  //every tile is a sample, so there is nothing to blend
+  fine   := Self.SmoothedNoiseArea(x, y, size, size);
 
-      n := 35 + (n * 3) div 10;
+  SetLength(Result, size, size);
+  for i := 0 to size - 1 do
+  begin
+    row       := Result[i];
+    coarseRow := coarse[i];
+    midRow    := mid[i];
+    fineRow   := fine[i];
+
+    for j := 0 to size - 1 do
+    begin
+      n := coarseRow[j] - 128 + Sar(midRow[j] - 128, 1) + Sar(fineRow[j] - 128, 2);
+      //the client truncates a double, which can round differently from n * 3 div 10
+      n := Trunc(n * 0.3) + 35;
 
       if n < 10 then
         n := 10

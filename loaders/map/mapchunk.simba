@@ -1012,13 +1012,15 @@ function TMapChunkLoader.GetChunkHeightMap(regionX, regionY, z: Integer): THeigh
 The terrain height of every tile of one region on plane `z`, one entry per tile rather than per
 pixel.
 
-A bridge tile reports the height of the surface walked on rather than the one underneath it.
+A bridge tile reports the height of the surface walked on rather than the one underneath it:
+like the client, when plane 1 flags a tile as a bridge, every plane below 3 reads the height of
+the plane above it there.
 *)
 function TMapChunkLoader.GetChunkHeightMap(regionX, regionY, z: Integer): THeightMap;
 var
   id, x, y: Integer;
   region: TRegion;
-  settingsRow, bridgeRow, heightRow, bridgeHeightRow, row: TIntegerArray;
+  bridgeRow, heightRow, bridgeHeightRow, row: TIntegerArray;
 begin
   SetLength(Result, TMapChunkLoader.REGION_SIZE, TMapChunkLoader.REGION_SIZE);
 
@@ -1030,14 +1032,14 @@ begin
 
   for x := 0 to TMapChunkLoader.REGION_SIZE - 1 do
   begin
-    row             := Result[x];
-    settingsRow     := region.TileSettings[z, x];
-    bridgeRow       := region.TileSettings[1, x];
-    heightRow       := region.TileHeights[z, x];
-    bridgeHeightRow := region.TileHeights[1, x];
+    row       := Result[x];
+    bridgeRow := region.TileSettings[1, x];
+    heightRow := region.TileHeights[z, x];
+    if z < 3 then
+      bridgeHeightRow := region.TileHeights[z + 1, x];
 
     for y := 0 to TMapChunkLoader.REGION_SIZE - 1 do
-      if (z = 0) and ((settingsRow[y] and 24) = 0) and ((bridgeRow[y] and 2) <> 0) then
+      if (z < 3) and ((bridgeRow[y] and 2) <> 0) then
         row[y] := bridgeHeightRow[y]
       else
         row[y] := heightRow[y];

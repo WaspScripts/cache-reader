@@ -91,9 +91,10 @@ procedure TRegion.LoadTerrain(constref map: TMapDefinition);
 ```
 Expands a decoded {ref}`TMapDefinition` into the region's per-plane tile arrays.
 
-A tile with no stored height falls back to the procedural terrain height, which depends only on
-the tile's world x and y - not on its plane - so the whole region's worth is built in one pass
-the first time any tile asks for it, and all four planes then read out of it.
+A ground tile with no stored height falls back to the procedural terrain height, which depends
+only on the tile's world x and y, so the whole region's worth is built in one pass the first time
+any tile asks for it. A tile on a higher plane with no stored height sits 240 above the one below
+it, the way the client does it.
 *)
 procedure TRegion.LoadTerrain(constref map: TMapDefinition);
 var
@@ -124,9 +125,15 @@ begin
 
         if tile.Height = -1 then
         begin
-          if procedural.IsEmpty then
-            procedural := HeightCalc.CalculateArea(xOffset, yOffset, 64);
-          height := procedural[x, y];
+          //only the ground is procedural, a plane above it without a height is a flat 240 up
+          if z = 0 then
+          begin
+            if procedural.IsEmpty then
+              procedural := HeightCalc.CalculateArea(xOffset, yOffset, 64);
+            height := procedural[x, y];
+          end
+          else
+            height := 30;
         end
         else
         begin
