@@ -147,6 +147,7 @@ begin
       Continue;
 
     sprite := TItemSprite.Create(Self.Archive, id);
+
     if not sprite.Valid then
       Continue;
 

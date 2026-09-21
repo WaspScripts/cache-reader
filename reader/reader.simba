@@ -65,10 +65,25 @@ begin
 end;
 
 function TCacheReader.Create(): TCacheReader; static; overload;
+var
+  path: String;
 begin
-  Result := TCacheReader.Create(
-    {$IFDEF WINDOWS}GetEnvVar('USERPROFILE'){$ELSE}GetEnvVar('HOME'){$ENDIF} + PATH_SEP + '.runelite' + PATH_SEP
-  );
+  {$IFDEF WINDOWS}
+  path := GetEnvVar('USERPROFILE') + PATH_SEP;
+  {$ELSE}
+  path := GetEnvVar('HOME') + PATH_SEP;
+  if not DirExists(path + '.runelite') then
+  begin
+    path += '.var' + PATH_SEP + 'app' + PATH_SEP +
+            'com.adamcake.Bolt' + PATH_SEP + 'data' + PATH_SEP +
+            'bolt-launcher' + PATH_SEP;
+    if not DirExists(path + '.runelite') then
+      raise 'CacheReader: Can''t find the runelite folder.';
+  end;
+  {$ENDIF}
+
+
+  Result := TCacheReader.Create(path + '.runelite' + PATH_SEP);
 end;
 
 var

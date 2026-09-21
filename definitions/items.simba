@@ -276,7 +276,7 @@ noted.LinkNote(
 );
 ```
 *)
-procedure TItemDefinition.LinkNote(const template, unnoted: TItemDefinition);
+procedure TItemDefinition.LinkNote(constref template, unnoted: TItemDefinition);
 begin
   Self.InventoryModel := template.InventoryModel;
   Self.Zoom2D := template.Zoom2D;

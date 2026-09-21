@@ -1,7 +1,7 @@
 {$I WaspLib/utils.simba}
 
 var
-  PATH: String = {$MACRO DIR} + 'items-db' + PATH_SEP;
+  PATH: String = SimbaEnv.DataPath + 'items-db' + PATH_SEP;
 
 var
   rows: Integer;

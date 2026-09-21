@@ -51,7 +51,7 @@ paper. A noted item whose paper or unnoted item can't be rendered is not valid.
 Lighting depends only on the model and the item, not on how the icon is drawn, so it is done
 once here rather than again by every {ref}`TItemSprite.ToImage` or {ref}`TItemSprite.BorderImage`.
 *)
-function TItemSprite.Create(const itemDef: TItemDefinition): TItemSprite; static;
+function TItemSprite.Create(constref itemDef: TItemDefinition): TItemSprite; static;
 var
   idx: TCacheIndex;
   sector: TArchiveSector;
@@ -88,7 +88,7 @@ end;
 
 function TItemSprite.Create(const archive: TArchive; id: Integer): TItemSprite; static; overload;
 var
-  itemDef, unnotedDef: TItemDefinition;
+  itemDef, notedDef, unnotedDef: TItemDefinition;
   tmp, unnotedSprite: TItemSprite;
   i, unnotedID, frame: Integer;
 begin
@@ -103,14 +103,14 @@ begin
 
   if itemDef.NotedTemplate <> -1 then
   begin
-    if not archive.Files.Exists(itemDef.NotedTemplate) or not archive.Files.Exists(itemDef.NotedID) then
+    if not archive.Files.Exists(itemDef.NotedTemplate) then
+      Exit;
+    if not archive.Files.Exists(itemDef.NotedID) then
       Exit;
 
+    notedDef := TItemDefinition.Create(itemDef.NotedTemplate, archive.Files.Value[itemDef.NotedTemplate].Data);
     unnotedDef := TItemDefinition.Create(itemDef.NotedID, archive.Files.Value[itemDef.NotedID].Data);
-    itemDef.LinkNote(
-      TItemDefinition.Create(itemDef.NotedTemplate, archive.Files.Value[itemDef.NotedTemplate].Data),
-      unnotedDef
-    );
+    itemDef.LinkNote(notedDef, unnotedDef);
   end;
 
   tmp := TItemSprite.Create(itemDef);
