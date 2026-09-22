@@ -1,0 +1,113 @@
+{.$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+const
+  //the enum the house viewer picks each room's image from, keyed by the room's type
+  ROOM_SPRITE_ENUM = 1423;
+
+  //the database table the build room menu lists the rooms from, one row per room.
+  //the level column holds the skill and then the level needed.
+  ROOM_TABLE = 111;
+  ROOM_NAME_COLUMN  = 1;
+  ROOM_COST_COLUMN  = 2;
+  ROOM_TYPE_COLUMN  = 3;
+  ROOM_LEVEL_COLUMN = 4;
+
+  GRID_COLS = 8;
+  SCALE = 2;
+  BACKGROUND = $404040;
+var
+  enumArchive, rowArchive: TArchive;
+  enumDef: TEnumDefinition;
+  rowDef: TDBRowDefinition;
+  rowIds, roomTypes, roomLevels, roomCosts: TIntegerArray;
+  roomNames: TStringArray;
+  spriteSector: TArchiveSector;
+  spriteData: TByteArray;
+  sprites: TSpriteDefinitionArray;
+
+  i, j, roomType, spriteId, rowId: Integer;
+  glyphImg, gridImg: TImage;
+  cellW, cellH, row, col, count: Integer;
+  spriteList: array of TSpriteDefinition;
+begin
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+
+  enumArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ENUMS];
+  enumDef := TEnumDefinition.Create(ROOM_SPRITE_ENUM, enumArchive.Files.Value[ROOM_SPRITE_ENUM].Data);
+
+  rowArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.DBROW];
+  rowIds := rowArchive.Files.Keys;
+  for rowId in rowIds do
+  begin
+    rowDef := TDBRowDefinition.Create(rowId, rowArchive.Files.Value[rowId].Data);
+    if (rowDef.TableID <> ROOM_TABLE) or not rowDef.HasColumn(ROOM_TYPE_COLUMN) then
+      Continue;
+
+    roomTypes += rowDef.Columns[ROOM_TYPE_COLUMN].Value(0, 0).IntValue;
+    roomNames += rowDef.Columns[ROOM_NAME_COLUMN].Value(0, 0).StrValue;
+    roomCosts += rowDef.Columns[ROOM_COST_COLUMN].Value(0, 0).IntValue;
+    roomLevels += rowDef.Columns[ROOM_LEVEL_COLUMN].Value(0, 1).IntValue;
+  end;
+
+  for i := 0 to enumDef.Size - 1 do
+  begin
+    roomType := enumDef.Keys[i];
+    spriteId := enumDef.IntVals[i];
+
+    j := roomTypes.IndexOf(roomType);
+    if j = -1 then
+      WriteLn('Unknown room (type ', roomType, ', sprite ', spriteId, ')')
+    else
+      WriteLn(roomNames[j], ' (type ', roomType, ', sprite ', spriteId, ', level ', roomLevels[j], ', ', roomCosts[j], ' coins)');
+
+    spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
+      spriteId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
+    );
+
+    if Length(spriteSector.Data) = 0 then
+      Continue;
+
+    spriteData := spriteSector.Decompress();
+    sprites := TSpriteDefinition.Create(spriteId, spriteData);
+
+    count := Length(spriteList);
+    SetLength(spriteList, count + 1);
+    spriteList[count] := sprites[0];
+  end;
+
+  WriteLn('Found ', Length(spriteList), ' room images.');
+
+  if Length(spriteList) = 0 then
+    Exit;
+
+  cellW := 1;
+  cellH := 1;
+  for i := 0 to High(spriteList) do
+  begin
+    if spriteList[i].Width > cellW then cellW := spriteList[i].Width;
+    if spriteList[i].Height > cellH then cellH := spriteList[i].Height;
+  end;
+  cellW := cellW * SCALE + 4;
+  cellH := cellH * SCALE + 4;
+
+  gridImg := new TImage(GRID_COLS * cellW, ((Length(spriteList) + GRID_COLS - 1) div GRID_COLS) * cellH);
+  //the menageries have transparent corners, they'd blend into a black background
+  gridImg.Fill(BACKGROUND);
+
+  for i := 0 to High(spriteList) do
+  begin
+    if (spriteList[i].Width = 0) or (spriteList[i].Height = 0) then
+      Continue;
+
+    row := i div GRID_COLS;
+    col := i mod GRID_COLS;
+
+    glyphImg := spriteList[i].ToImage();
+    glyphImg := glyphImg.Resize(EImageResizeAlgo.NEAREST_NEIGHBOUR, glyphImg.Width * SCALE, glyphImg.Height * SCALE);
+    gridImg.DrawImage(glyphImg, [col * cellW + (cellW - glyphImg.Width) div 2, row * cellH + (cellH - glyphImg.Height) div 2]);
+  end;
+
+  gridImg.Show();
+end.

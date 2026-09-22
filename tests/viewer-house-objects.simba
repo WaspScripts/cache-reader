@@ -1,0 +1,87 @@
+{$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+const
+  //the items the construction build menu shows for each piece of house furniture share this
+  //category, and hold the construction level needed to build them in this param
+  FURNITURE_CATEGORY = 206;
+  LEVEL_PARAM = 23;
+
+  GRID_COLS = 16;
+  BACKGROUND = $404040;
+var
+  itemArchive: TArchive;
+  itemDef: TItemDefinition;
+  sprite: TItemSprite;
+
+  i, j, itemId, level: Integer;
+  ids: TIntegerArray;
+  filter: String;
+  icons: array of TImage;
+  gridImg: TImage;
+  cellW, cellH, row, col: Integer;
+begin
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+
+  itemArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+  ids := itemArchive.Files.Keys;
+
+  while ShowQueryDialog('House objects viewer', 'Filter by name (leave empty for all):', filter) do
+  begin
+    SetLength(icons, 0);
+
+    for itemId in ids do
+    begin
+      itemDef := TItemDefinition.Create(itemId, itemArchive.Files.Value[itemId].Data);
+      if itemDef.Category <> FURNITURE_CATEGORY then
+        Continue;
+
+      if (filter <> '') and (Pos(filter.ToLower(), itemDef.Name.ToLower()) = 0) then
+        Continue;
+
+      level := -1;
+      for j := 0 to High(itemDef.Params) do
+        if itemDef.Params[j].Key = LEVEL_PARAM then
+          level := itemDef.Params[j].IntValue;
+
+      sprite := TItemSprite.Create(itemDef);
+      if not sprite.Valid then
+      begin
+        WriteLn(itemDef.Name, ' (item ', itemId, ', level ', level, '): failed to render');
+        Continue;
+      end;
+
+      WriteLn(itemDef.Name, ' (item ', itemId, ', level ', level, ')');
+      icons += sprite.ToImage();
+    end;
+
+    WriteLn('Found ', Length(icons), ' house objects.');
+
+    if Length(icons) = 0 then
+      Continue;
+
+    cellW := 1;
+    cellH := 1;
+    for i := 0 to High(icons) do
+    begin
+      if icons[i].Width > cellW then cellW := icons[i].Width;
+      if icons[i].Height > cellH then cellH := icons[i].Height;
+    end;
+    Inc(cellW, 4);
+    Inc(cellH, 4);
+
+    gridImg := new TImage(Min(Length(icons), GRID_COLS) * cellW, ((Length(icons) + GRID_COLS - 1) div GRID_COLS) * cellH);
+    //a lot of the furniture is dark wood, it'd blend into a black background
+    gridImg.Fill(BACKGROUND);
+
+    for i := 0 to High(icons) do
+    begin
+      row := i div GRID_COLS;
+      col := i mod GRID_COLS;
+      gridImg.DrawImage(icons[i], [col * cellW + (cellW - icons[i].Width) div 2, row * cellH + (cellH - icons[i].Height) div 2]);
+    end;
+
+    gridImg.Show();
+  end;
+end.
