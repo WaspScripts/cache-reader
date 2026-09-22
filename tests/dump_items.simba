@@ -2,18 +2,33 @@
 
 var
   PATH: String = SimbaEnv.DataPath + 'items-db' + PATH_SEP;
+  VERSION_PATH: String;
 
 var
+  itemArchive: TArchive;
+  crc: String;
   rows: Integer;
   start: Double;
 begin
   ClearSimbaOutput();
 
   CacheReader := TCacheReader.Create();
+  itemArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
+  crc := ToStr(itemArchive.CRC);
 
-  start := PerformanceTime();
-  rows := ItemLoader.WriteDatabase(PATH);
+  VERSION_PATH := PATH + 'version.txt';
 
-  WriteLn('Saved ', rows, ' rows to ', PATH);
-  WriteLn('Took ', Round(PerformanceTime()-start, 3), 'ms to run.');
+  if FileExists(VERSION_PATH) and (FileRead(VERSION_PATH).Trim() = crc) then
+    WriteLn('Item cache unchanged (CRC ', crc, '), skipping database rebuild.')
+  else
+  begin
+    start := PerformanceTime();
+    rows := ItemLoader.WriteDatabase(PATH);
+
+    if not FileWrite(VERSION_PATH, crc) then
+      raise 'dump_items: Couldn''t write ' + VERSION_PATH;
+
+    WriteLn('Saved ', rows, ' rows to ', PATH);
+    WriteLn('Took ', Round(PerformanceTime()-start, 3), 'ms to run.');
+  end;
 end.
