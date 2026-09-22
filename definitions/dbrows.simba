@@ -1,0 +1,155 @@
+(*
+# DBRow Definition
+Rows of the cache's newer "database" tables - the format several UI panels (the prayer, skill
+guide and other section content) migrated to. Each row belongs to a table id and holds a sparse
+set of columns; a column can itself hold more than one typed value per row, and more than one
+row of values (`FieldCount`).
+
+This decoder is generic: it does not know what any table's columns mean, only how to split them
+out. Interpreting a specific table's columns - which one is an icon, which is display text - is
+up to the caller, worked out by inspecting real rows (see {ref}`TItemLoader` for the equivalent
+on items).
+*)
+
+{$DEFINE WL_CACHE_DEFINITION_DBROWS_INCLUDED}
+
+{$IFNDEF WL_CACHE_HELPERS_INCLUDED}
+  {$INCLUDE_ONCE ../utils/helpers.simba}
+{$ENDIF}
+
+const
+  //the cache's "script var type" id for a string column - every other type id reads as a plain
+  //32-bit int instead. https://github.com/runelite/runelite `ScriptVarType.STRING`.
+  DBROW_TYPE_STRING = 36;
+
+type
+  TDBRowValue = record
+    IsString: Boolean;
+    IntValue: Integer;
+    StrValue: String;
+  end;
+
+  TDBRowColumn = record
+    Types: TIntegerArray;
+    //row-major: every type's value for field 0, then every type's value for field 1, and so on
+    Values: array of TDBRowValue;
+  end;
+
+  TDBRowDefinition = record
+    ID, TableID: Integer;
+    //indexed by column id. A column nothing set has an empty `Types` - check with `HasColumn`
+    Columns: array of TDBRowColumn;
+  end;
+
+(*
+## DBRowColumn.FieldCount
+```pascal
+function TDBRowColumn.FieldCount(): Integer;
+```
+How many rows of typed values this column holds. Most columns hold exactly one.
+*)
+function TDBRowColumn.FieldCount(): Integer;
+begin
+  if Length(Self.Types) = 0 then
+    Exit(0);
+  Result := Length(Self.Values) div Length(Self.Types);
+end;
+
+(*
+## DBRowColumn.Value
+```pascal
+function TDBRowColumn.Value(field, typeIndex: Integer): TDBRowValue;
+```
+The value of `typeIndex` within row `field` of this column.
+*)
+function TDBRowColumn.Value(field, typeIndex: Integer): TDBRowValue;
+begin
+  Result := Self.Values[field * Length(Self.Types) + typeIndex];
+end;
+
+(*
+## DBRowDefinition.HasColumn
+```pascal
+function TDBRowDefinition.HasColumn(id: Integer): Boolean;
+```
+Whether column `id` was set on this row at all.
+*)
+function TDBRowDefinition.HasColumn(id: Integer): Boolean;
+begin
+  Result := InRange(id, 0, High(Self.Columns)) and (Length(Self.Columns[id].Types) > 0);
+end;
+
+(*
+## DBRowDefinition.Create
+```pascal
+function TDBRowDefinition.Create(id: Integer; const data: TByteArray): TDBRowDefinition; static;
+```
+Decodes a database row: the table it belongs to and every column it sets.
+
+A column's own bytes start with its types - one cache "script var type" id per value a field of
+this column holds - followed by however many fields it has, each one holding that many typed
+values back to back. A string type reads as a NUL terminated string; anything else reads as a
+plain 32-bit int, regardless of what the type id actually means.
+
+Example:
+```pascal
+archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.DBROW];
+row := TDBRowDefinition.Create(12230, archive.Files.Value[12230].Data);
+```
+*)
+function TDBRowDefinition.Create(id: Integer; const data: TByteArray): TDBRowDefinition; static;
+var
+  offset, opcode, numColumns, columnId, typeCount, fieldCount, i, f, t: Integer;
+begin
+  Result.ID := id;
+  offset := 0;
+
+  while offset < Length(data) do
+  begin
+    opcode := Read8Bits(data, offset);
+    if opcode = 0 then
+      Break;
+
+    case opcode of
+      4: Result.TableID := ReadVarInt2(data, offset);
+      3:
+      begin
+        numColumns := Read8Bits(data, offset);
+        if Length(Result.Columns) < numColumns then
+          SetLength(Result.Columns, numColumns);
+
+        columnId := Read8Bits(data, offset);
+        while columnId <> 255 do
+        begin
+          typeCount := Read8Bits(data, offset);
+          SetLength(Result.Columns[columnId].Types, typeCount);
+          for i := 0 to typeCount - 1 do
+            Result.Columns[columnId].Types[i] := ReadUnsignedShortSmart(data, offset);
+
+          fieldCount := ReadUnsignedShortSmart(data, offset);
+          SetLength(Result.Columns[columnId].Values, fieldCount * typeCount);
+
+          for f := 0 to fieldCount - 1 do
+            for t := 0 to typeCount - 1 do
+            begin
+              i := f * typeCount + t;
+              if Result.Columns[columnId].Types[t] = DBROW_TYPE_STRING then
+              begin
+                Result.Columns[columnId].Values[i].IsString := True;
+                Result.Columns[columnId].Values[i].StrValue := data.ReadCString(offset);
+              end
+              else
+                Result.Columns[columnId].Values[i].IntValue := Read32Bits(data, offset);
+            end;
+
+          columnId := Read8Bits(data, offset);
+        end;
+      end;
+      else
+      begin
+        WriteLn('Unrecognized dbrow opcode ', opcode, ' at offset ', offset - 1, '. Parsing may be corrupted from here.');
+        Break;
+      end;
+    end;
+  end;
+end;

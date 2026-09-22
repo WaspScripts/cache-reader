@@ -1,0 +1,139 @@
+{.$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+const
+  //the one hardcoded anchor this script needs: the skill guide's own tab label for the prayer
+  //book section. Everything else - which prayers exist, their names, icons and order - is read
+  //straight out of the cache below, so adding or removing a prayer needs no changes here.
+  PRAYER_SECTION_LABEL = 'Standard Prayers';
+
+  //the skill guide stores its section tabs (eg. "Standard Prayers") as rows of one table and the
+  //tab's actual content (eg. each prayer) as rows of the next table, immediately after it in the
+  //dbrow archive. Found by scanning the live cache for the row holding "Thick Skin<br>..." and
+  //reading back its own TableID.
+  SECTION_TABLE_ID = 212;
+  CONTENT_TABLE_ID = 213;
+
+  //column layout of a content row, same for every skill guide entry that has an icon:
+  //column 1 is [spriteId, width, height, offsetX, offsetY], column 2 is "Name<br>Description".
+  ICON_COLUMN = 1;
+  TEXT_COLUMN = 2;
+
+  ST_SEARCHING  = 0; //looking for the "Standard Prayers" section row
+  ST_IN_HEADER  = 1; //past it, still inside that section's own tab rows
+  ST_SKIMMING   = 2; //inside the content table, before the prayer list starts
+  ST_COLLECTING = 3; //inside the contiguous run of prayer rows
+
+  GRID_COLS = 6;
+
+var
+  dbrowArchive: TArchive;
+  row: TDBRowDefinition;
+  spriteSector: TArchiveSector;
+  spriteData: TByteArray;
+  sprites: TSpriteDefinitionArray;
+  icons: TSpriteDefinitionArray;
+  labels: TStringArray;
+  id, spriteId, i, count, state: Integer;
+  text, name: String;
+  matches: Boolean;
+  cellW, cellH, gridRow, col: Integer;
+  glyphImg, gridImg: TImage;
+begin
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+
+  dbrowArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.DBROW];
+
+  state := ST_SEARCHING;
+
+  for id in dbrowArchive.Files.Keys do
+  begin
+    row := TDBRowDefinition.Create(id, dbrowArchive.Files.Value[id].Data);
+
+    case state of
+      ST_SEARCHING:
+      begin
+        if (row.TableID = SECTION_TABLE_ID) and row.HasColumn(TEXT_COLUMN) and
+           (row.Columns[TEXT_COLUMN].Value(0, 0).StrValue = PRAYER_SECTION_LABEL) then
+          state := ST_IN_HEADER;
+        Continue;
+      end;
+
+      ST_IN_HEADER:
+      begin
+        if row.TableID = SECTION_TABLE_ID then
+          Continue; //another tab of the same section, keep waiting
+
+        if row.TableID <> CONTENT_TABLE_ID then
+          Break; //cache no longer shapes this the way we expect - stop rather than guess
+
+        state := ST_SKIMMING;
+        //falls through to the shape test below for this same row
+      end;
+    end;
+
+    matches := (row.TableID = CONTENT_TABLE_ID) and row.HasColumn(ICON_COLUMN) and row.HasColumn(TEXT_COLUMN) and
+               (Pos('<br>', row.Columns[TEXT_COLUMN].Value(0, 0).StrValue) > 0);
+
+    if state = ST_COLLECTING then
+    begin
+      if not matches then
+        Break; //the contiguous run of prayers ended
+    end
+    else //ST_SKIMMING
+    begin
+      if not matches then
+        Continue; //still the section's intro text, keep skimming
+      state := ST_COLLECTING;
+    end;
+
+    spriteId := row.Columns[ICON_COLUMN].Value(0, 0).IntValue;
+    text := row.Columns[TEXT_COLUMN].Value(0, 0).StrValue;
+    name := Copy(text, 1, Pos('<br>', text) - 1);
+
+    spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
+      spriteId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
+    );
+    if Length(spriteSector.Data) = 0 then
+      Continue;
+
+    spriteData := spriteSector.Decompress();
+    sprites := TSpriteDefinition.Create(spriteId, spriteData);
+    if Length(sprites) = 0 then
+      Continue;
+
+    count := Length(icons);
+    SetLength(icons, count + 1);
+    icons[count] := sprites[0];
+    labels += name;
+  end;
+
+  WriteLn('Found ', Length(icons), ' prayer(s) via the cache''s skill guide tables.');
+
+  cellW := 1;
+  cellH := 1;
+  for i := 0 to High(icons) do
+  begin
+    if icons[i].Width > cellW then cellW := icons[i].Width;
+    if icons[i].Height > cellH then cellH := icons[i].Height;
+  end;
+  Inc(cellW, 4);
+  Inc(cellH, 20); //room for the label under the icon
+
+  gridImg := new TImage(GRID_COLS * cellW, ((Length(icons) + GRID_COLS - 1) div GRID_COLS) * cellH);
+
+  for i := 0 to High(icons) do
+  begin
+    gridRow := i div GRID_COLS;
+    col := i mod GRID_COLS;
+
+    if (icons[i].Width > 0) and (icons[i].Height > 0) then
+    begin
+      glyphImg := icons[i].ToImage();
+      gridImg.DrawImage(glyphImg, [col * cellW + 2, gridRow * cellH + 2]);
+    end;
+  end;
+
+  gridImg.Show();
+end.

@@ -217,6 +217,29 @@ begin
 end;
 
 (*
+## ReadVarInt2
+```pascal
+function ReadVarInt2(constref data: TByteArray; var offset: Integer): Integer;
+```
+Reads a value written as a run of 7-bit groups, least significant group first.
+
+Each byte contributes its low 7 bits to the result, in order; a set top bit says another byte
+follows. This is how {ref}`TDBRowDefinition.Create` reads a row's table id - unlike the other
+smart encodings above, the byte count is not capped at two.
+*)
+function ReadVarInt2(constref data: TByteArray; var offset: Integer): Integer;
+var
+  b, bits: Integer;
+begin
+  bits := 0;
+  repeat
+    b := Read8Bits(data, offset);
+    Result := Result or ((b and $7F) shl bits);
+    Inc(bits, 7);
+  until b <= 127;
+end;
+
+(*
 ## TByteArray.ReadCString
 ```pascal
 function TByteArray.ReadCString(var offset: Integer): String;

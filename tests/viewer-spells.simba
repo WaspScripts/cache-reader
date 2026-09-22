@@ -4,7 +4,6 @@
 const
   //597=small castable, 598=small grayed, 599=large castable, 600=large grayed
   SPELL_GRAPHIC1_OFF_KEY = 599;
-
   SPELLBOOK_NAMES: TStringArray = ['Standard', 'Ancient', 'Lunar', 'Arceuus'];
   SPELLBOOK_ENUMS: array [0..3] of Integer = [1982, 1983, 1984, 1985];
   GRID_COLS = 8;
