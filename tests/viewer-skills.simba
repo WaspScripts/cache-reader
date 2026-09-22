@@ -1,0 +1,101 @@
+{.$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+const
+  //the enums the client draws the stats tab from, both keyed by the skill's id.
+  //255 gives the skill's icon sprite and 680 its name.
+  SKILL_SPRITE_ENUM = 255;
+  SKILL_NAME_ENUM   = 680;
+  //the total level icon isn't a skill so it isn't in the enums
+  TOTAL_SPRITE = 222;
+
+  GRID_COLS = 6;
+  BACKGROUND = $404040;
+var
+  enumArchive: TArchive;
+  spriteEnum, nameEnum: TEnumDefinition;
+  spriteSector: TArchiveSector;
+  spriteData: TByteArray;
+  sprites: TSpriteDefinitionArray;
+
+  i, j, skillId, spriteId: Integer;
+  name: String;
+  spriteIds: TIntegerArray;
+  glyphImg, gridImg: TImage;
+  cellW, cellH, row, col, count: Integer;
+  spriteList: array of TSpriteDefinition;
+begin
+  CacheReader := TCacheReader.Create();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+
+  enumArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ENUMS];
+  spriteEnum := TEnumDefinition.Create(SKILL_SPRITE_ENUM, enumArchive.Files.Value[SKILL_SPRITE_ENUM].Data);
+  nameEnum := TEnumDefinition.Create(SKILL_NAME_ENUM, enumArchive.Files.Value[SKILL_NAME_ENUM].Data);
+
+  for i := 0 to spriteEnum.Size - 1 do
+  begin
+    skillId := spriteEnum.Keys[i];
+    spriteId := spriteEnum.IntVals[i];
+
+    name := '';
+    for j := 0 to nameEnum.Size - 1 do
+      if nameEnum.Keys[j] = skillId then
+        name := nameEnum.StringVals[j];
+
+    WriteLn(name, ' (skill ', skillId, ', sprite ', spriteId, ')');
+    spriteIds += spriteId;
+  end;
+
+  WriteLn('Total (sprite ', TOTAL_SPRITE, ')');
+  spriteIds += TOTAL_SPRITE;
+
+  for spriteId in spriteIds do
+  begin
+    spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
+      spriteId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
+    );
+
+    if Length(spriteSector.Data) = 0 then
+      Continue;
+
+    spriteData := spriteSector.Decompress();
+    sprites := TSpriteDefinition.Create(spriteId, spriteData);
+
+    count := Length(spriteList);
+    SetLength(spriteList, count + 1);
+    spriteList[count] := sprites[0];
+  end;
+
+  WriteLn('Found ', Length(spriteList), ' skill icons.');
+
+  if Length(spriteList) = 0 then
+    Exit;
+
+  cellW := 1;
+  cellH := 1;
+  for i := 0 to High(spriteList) do
+  begin
+    if spriteList[i].Width > cellW then cellW := spriteList[i].Width;
+    if spriteList[i].Height > cellH then cellH := spriteList[i].Height;
+  end;
+  Inc(cellW, 4);
+  Inc(cellH, 4);
+
+  gridImg := new TImage(GRID_COLS * cellW, ((Length(spriteList) + GRID_COLS - 1) div GRID_COLS) * cellH);
+  //agility and thieving are black silhouettes, they'd be invisible on a black background
+  gridImg.Fill(BACKGROUND);
+
+  for i := 0 to High(spriteList) do
+  begin
+    if (spriteList[i].Width = 0) or (spriteList[i].Height = 0) then
+      Continue;
+
+    row := i div GRID_COLS;
+    col := i mod GRID_COLS;
+
+    glyphImg := spriteList[i].ToImage();
+    gridImg.DrawImage(glyphImg, [col * cellW + (cellW - glyphImg.Width) div 2, row * cellH + (cellH - glyphImg.Height) div 2]);
+  end;
+
+  gridImg.Show();
+end.
