@@ -2,137 +2,111 @@
 {$I WaspLib/utils/cache-reader/cache.simba}
 
 const
-  //the one hardcoded anchor this script needs: the skill guide's own tab label for the prayer
-  //book section. Everything else - which prayers exist, their names, icons and order - is read
-  //straight out of the cache below, so adding or removing a prayer needs no changes here.
-  PRAYER_SECTION_LABEL = 'Standard Prayers';
+  //the enums the client picks the prayer tab's contents from, each listing one item per prayer keyed
+  //by its slot in the tab. 4956 is the standard prayer book, 3341, 3342 and 3343 are the same book
+  //with Deadeye, Mystic Vigour or both replacing Eagle Eye and Mystic Might once unlocked.
+  PRAYER_ENUMS: array [0..3] of Integer = [4956, 3341, 3342, 3343];
 
-  //the skill guide stores its section tabs (eg. "Standard Prayers") as rows of one table and the
-  //tab's actual content (eg. each prayer) as rows of the next table, immediately after it in the
-  //dbrow archive. Found by scanning the live cache for the row holding "Thick Skin<br>..." and
-  //reading back its own TableID.
-  SECTION_TABLE_ID = 212;
-  CONTENT_TABLE_ID = 213;
-
-  //column layout of a content row, same for every skill guide entry that has an icon:
-  //column 1 is [spriteId, width, height, offsetX, offsetY], column 2 is "Name<br>Description".
-  ICON_COLUMN = 1;
-  TEXT_COLUMN = 2;
-
-  ST_SEARCHING  = 0; //looking for the "Standard Prayers" section row
-  ST_IN_HEADER  = 1; //past it, still inside that section's own tab rows
-  ST_SKIMMING   = 2; //inside the content table, before the prayer list starts
-  ST_COLLECTING = 3; //inside the contiguous run of prayer rows
+  PRAYER_NAME_PARAM   = 1752;
+  PRAYER_LEVEL_PARAM  = 1753;
+  //1757=usable, 1756=locked
+  PRAYER_SPRITE_PARAM = 1757;
 
   GRID_COLS = 6;
-
 var
-  dbrowArchive: TArchive;
-  row: TDBRowDefinition;
+  enumArchive, itemArchive: TArchive;
+  enumDef: TEnumDefinition;
+  itemDef: TItemDefinition;
   spriteSector: TArchiveSector;
   spriteData: TByteArray;
   sprites: TSpriteDefinitionArray;
-  icons: TSpriteDefinitionArray;
-  labels: TStringArray;
-  id, spriteId, i, count, state: Integer;
-  text, name: String;
-  matches: Boolean;
-  cellW, cellH, gridRow, col: Integer;
+
+  i, j, itemId, spriteId, level, enumId: Integer;
+  name: String;
   glyphImg, gridImg: TImage;
+  cellW, cellH, row, col, count: Integer;
+  spriteList: array of TSpriteDefinition;
+  seen: TIntegerArray;
 begin
   CacheReader := TCacheReader.Create();
   CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
 
-  dbrowArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.DBROW];
+  enumArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ENUMS];
+  itemArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
 
-  state := ST_SEARCHING;
-
-  for id in dbrowArchive.Files.Keys do
+  for enumId in PRAYER_ENUMS do
   begin
-    row := TDBRowDefinition.Create(id, dbrowArchive.Files.Value[id].Data);
+    enumDef := TEnumDefinition.Create(enumId, enumArchive.Files.Value[enumId].Data);
 
-    case state of
-      ST_SEARCHING:
-      begin
-        if (row.TableID = SECTION_TABLE_ID) and row.HasColumn(TEXT_COLUMN) and
-           (row.Columns[TEXT_COLUMN].Value(0, 0).StrValue = PRAYER_SECTION_LABEL) then
-          state := ST_IN_HEADER;
+    for i := 0 to enumDef.Size - 1 do
+    begin
+      itemId := enumDef.IntVals[i];
+
+      //the enums share most of their prayers, only keep each one once
+      if itemId in seen then
         Continue;
-      end;
+      seen += itemId;
 
-      ST_IN_HEADER:
-      begin
-        if row.TableID = SECTION_TABLE_ID then
-          Continue; //another tab of the same section, keep waiting
+      itemDef := TItemDefinition.Create(itemId, itemArchive.Files.Value[itemId].Data);
 
-        if row.TableID <> CONTENT_TABLE_ID then
-          Break; //cache no longer shapes this the way we expect - stop rather than guess
+      name := '';
+      level := -1;
+      spriteId := -1;
+      for j := 0 to High(itemDef.Params) do
+        case itemDef.Params[j].Key of
+          PRAYER_NAME_PARAM:   name := itemDef.Params[j].StrValue;
+          PRAYER_LEVEL_PARAM:  level := itemDef.Params[j].IntValue;
+          PRAYER_SPRITE_PARAM: spriteId := itemDef.Params[j].IntValue;
+        end;
 
-        state := ST_SKIMMING;
-        //falls through to the shape test below for this same row
-      end;
+      WriteLn(name, ' (level ', level, ', item ', itemId, ', sprite ', spriteId, ')');
+
+      if spriteId = -1 then
+        Continue;
+
+      spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
+        spriteId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
+      );
+
+      if Length(spriteSector.Data) = 0 then
+        Continue;
+
+      spriteData := spriteSector.Decompress();
+      sprites := TSpriteDefinition.Create(spriteId, spriteData);
+
+      count := Length(spriteList);
+      SetLength(spriteList, count + 1);
+      spriteList[count] := sprites[0];
     end;
-
-    matches := (row.TableID = CONTENT_TABLE_ID) and row.HasColumn(ICON_COLUMN) and row.HasColumn(TEXT_COLUMN) and
-               (Pos('<br>', row.Columns[TEXT_COLUMN].Value(0, 0).StrValue) > 0);
-
-    if state = ST_COLLECTING then
-    begin
-      if not matches then
-        Break; //the contiguous run of prayers ended
-    end
-    else //ST_SKIMMING
-    begin
-      if not matches then
-        Continue; //still the section's intro text, keep skimming
-      state := ST_COLLECTING;
-    end;
-
-    spriteId := row.Columns[ICON_COLUMN].Value(0, 0).IntValue;
-    text := row.Columns[TEXT_COLUMN].Value(0, 0).StrValue;
-    name := Copy(text, 1, Pos('<br>', text) - 1);
-
-    spriteSector := CacheReader.Indices[ECacheIndex.SPRITES].ReadArchiveSector(
-      spriteId, CacheReader.Indices[ECacheIndex.SPRITES].ID, CacheReader.Indices[ECacheIndex.SPRITES].IndexData
-    );
-    if Length(spriteSector.Data) = 0 then
-      Continue;
-
-    spriteData := spriteSector.Decompress();
-    sprites := TSpriteDefinition.Create(spriteId, spriteData);
-    if Length(sprites) = 0 then
-      Continue;
-
-    count := Length(icons);
-    SetLength(icons, count + 1);
-    icons[count] := sprites[0];
-    labels += name;
   end;
 
-  WriteLn('Found ', Length(icons), ' prayer(s) via the cache''s skill guide tables.');
+  WriteLn('Found ', Length(spriteList), ' prayers.');
+
+  if Length(spriteList) = 0 then
+    Exit;
 
   cellW := 1;
   cellH := 1;
-  for i := 0 to High(icons) do
+  for i := 0 to High(spriteList) do
   begin
-    if icons[i].Width > cellW then cellW := icons[i].Width;
-    if icons[i].Height > cellH then cellH := icons[i].Height;
+    if spriteList[i].Width > cellW then cellW := spriteList[i].Width;
+    if spriteList[i].Height > cellH then cellH := spriteList[i].Height;
   end;
   Inc(cellW, 4);
-  Inc(cellH, 20); //room for the label under the icon
+  Inc(cellH, 4);
 
-  gridImg := new TImage(GRID_COLS * cellW, ((Length(icons) + GRID_COLS - 1) div GRID_COLS) * cellH);
+  gridImg := new TImage(GRID_COLS * cellW, ((Length(spriteList) + GRID_COLS - 1) div GRID_COLS) * cellH);
 
-  for i := 0 to High(icons) do
+  for i := 0 to High(spriteList) do
   begin
-    gridRow := i div GRID_COLS;
+    if (spriteList[i].Width = 0) or (spriteList[i].Height = 0) then
+      Continue;
+
+    row := i div GRID_COLS;
     col := i mod GRID_COLS;
 
-    if (icons[i].Width > 0) and (icons[i].Height > 0) then
-    begin
-      glyphImg := icons[i].ToImage();
-      gridImg.DrawImage(glyphImg, [col * cellW + 2, gridRow * cellH + 2]);
-    end;
+    glyphImg := spriteList[i].ToImage();
+    gridImg.DrawImage(glyphImg, [col * cellW + (cellW - glyphImg.Width) div 2, row * cellH + (cellH - glyphImg.Height) div 2]);
   end;
 
   gridImg.Show();
