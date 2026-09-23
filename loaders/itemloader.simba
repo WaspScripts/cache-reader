@@ -13,6 +13,9 @@ type
   TItemLoader = record
     Archive: TArchive;
     Names: TStringArray;
+    //equippable item names by slot, in the order TItemLoader.WriteGearJSON writes them:
+    //head, cape, neck, ammo, weapon, body, shield, legs, hands, feet, ring, 2h.
+    Gear: array [0..11] of TStringArray;
     IsLoaded: Boolean;
   end;
 
@@ -41,12 +44,69 @@ begin
 end;
 
 (*
+## TItemLoader._CollectGear
+```pascal
+procedure TItemLoader._CollectGear(constref itemDef: TItemDefinition; name: String);
+```
+Files `name` under the `TItemLoader.Gear` slot of each of the up to 3 wear positions `itemDef`
+has, so a hat that also covers the hair is filed once under head while a cape that occupies the
+ammo position too is filed under both. Anything that takes up the weapon and the shield position
+at once is two handed and is filed only under `2h`. Items that can't be equipped are ignored.
+
+{ref}`TItemLoader.Load` calls this for every named item as it decodes it, so the gear lists cost
+nothing beyond the pass that names the items. Duplicates are left in and weeded out by
+{ref}`TItemLoader.WriteGearJSON`.
+*)
+procedure TItemLoader._CollectGear(constref itemDef: TItemDefinition; name: String);
+const
+  //every wear position, in order, mapped to the TItemLoader.Gear slot it belongs to.
+  //hair (8) and jaw (11) are worn on the head, 6 is unused and 2h is worked out below.
+  SLOTS: array [0..13] of Integer = [0, 1, 2, 4, 5, 6, -1, 7, 0, 8, 9, 0, 10, 3];
+  WEAPON_POS: Integer = 3;
+  SHIELD_POS: Integer = 5;
+var
+  positions: TIntegerArray;
+  isWeapon, isShield: Boolean;
+  pos, slot: Integer;
+begin
+  positions := [itemDef.WearPos1, itemDef.WearPos2, itemDef.WearPos3];
+  if (positions[0] = -1) and (positions[1] = -1) and (positions[2] = -1) then
+    Exit;
+
+  isWeapon := False;
+  isShield := False;
+  for pos in positions do
+  begin
+    isWeapon := isWeapon or (pos = WEAPON_POS);
+    isShield := isShield or (pos = SHIELD_POS);
+  end;
+
+  if isWeapon and isShield then
+  begin
+    Self.Gear[High(Self.Gear)] += name;
+    Exit;
+  end;
+
+  for pos in positions do
+  begin
+    if not InRange(pos, Low(SLOTS), High(SLOTS)) then
+      Continue;
+
+    slot := SLOTS[pos];
+    if slot > -1 then
+      Self.Gear[slot] += name;
+  end;
+end;
+
+
+(*
 ## TItemLoader.Load
 ```pascal
 procedure TItemLoader.Load();
 ```
 Caches the config index and works out the database name of every item id, filling
-`TItemLoader.Names`. Does nothing once loaded.
+`TItemLoader.Names`, and files every equippable item into `TItemLoader.Gear` as it goes. Does
+nothing once loaded.
 
 `TItemLoader.Names` is indexed by item id and holds `''` for ids that aren't items. Noted items
 are named `noted ` followed by the name of the item they are a note of, and the ids an item
@@ -83,7 +143,9 @@ begin
       Continue;
 
     if itemDef.NotedTemplate <> -1 then
-      name := 'noted ' + name;
+      name := 'noted ' + name
+    else
+      Self._CollectGear(itemDef, name); //a noted item is never equippable
 
     if Self.Names[id] = '' then
       Self.Names[id] := name;
@@ -103,13 +165,73 @@ begin
 end;
 
 (*
+## TItemLoader.WriteGearJSON
+```pascal
+function TItemLoader.WriteGearJSON(path: String): Integer;
+```
+Writes `TItemLoader.Gear` into `path` as `gear.json`: the name of every equippable item, sorted
+and without repeats, grouped under the `head`, `cape`, `neck`, `ammo`, `weapon`, `body`,
+`shield`, `legs`, `hands`, `feet`, `ring` and `2h` keys, in that order. Loads the items first
+with {ref}`TItemLoader.Load` if they aren't yet, and creates `path` if it doesn't exist.
+Returns how many names were written.
+
+Example:
+```pascal
+CacheReader := TCacheReader.Create();
+ItemLoader.WriteGearJSON('C:/items-db/');
+```
+*)
+function TItemLoader.WriteGearJSON(path: String): Integer;
+const
+  KEYS: TStringArray = [
+    'head', 'cape', 'neck', 'ammo', 'weapon', 'body',
+    'shield', 'legs', 'hands', 'feet', 'ring', '2h'
+  ];
+var
+  names, values: TStringArray;
+  i: Integer;
+  name, json: String;
+begin
+  Self.Load();
+
+  if not path.EndsWith(PATH_SEP) then
+    path += PATH_SEP;
+
+  if not DirCreate(path) then
+    raise 'TItemLoader: Couldn''t create ' + path;
+
+  json := '{' + LINE_SEP;
+
+  for i := 0 to High(KEYS) do
+  begin
+    names := Self.Gear[i].Unique().Sorted();
+    Result += Length(names);
+
+    values := [];
+    for name in names do
+      values += '"' + name.Replace('\', '\\').Replace('"', '\"') + '"';
+
+    json += '  "' + KEYS[i] + '": [' + values.Join(', ') + ']';
+    if i < High(KEYS) then
+      json += ',';
+    json += LINE_SEP;
+  end;
+
+  json += '}' + LINE_SEP;
+
+  if not FileWrite(path + 'gear.json', json) then
+    raise 'TItemLoader: Couldn''t write ' + path + 'gear.json';
+end;
+
+
+(*
 ## TItemLoader.WriteDatabase
 ```pascal
 function TItemLoader.WriteDatabase(path: String): Integer;
 ```
 Renders every item in `TItemLoader.Names` and writes the database into `path` as four column
 files, `item.txt`, `id.txt`, `hash.txt` and `border.txt`, where line `N` of each file belongs to
-row `N`.
+row `N`. `gear.json` is written next to them with {ref}`TItemLoader.WriteGearJSON`.
 Loads the items first with {ref}`TItemLoader.Load` if they aren't yet, and creates `path` if it
 doesn't exist. Returns how many rows were written.
 
@@ -177,6 +299,8 @@ begin
     raise 'TItemLoader: Couldn''t write ' + path + 'hash.txt';
   if not FileWrite(path + 'border.txt', borders.Join(LINE_SEP) + LINE_SEP) then
     raise 'TItemLoader: Couldn''t write ' + path + 'border.txt';
+
+  Self.WriteGearJSON(path);
 
   Result := Length(ids);
 end;
