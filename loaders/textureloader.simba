@@ -46,7 +46,7 @@ begin
   if Self.IsLoaded then
     Exit;
 
-  CacheReader.Indices[ECacheIndex.TEXTURES].Cache();
+  CacheReader.Indices[ECacheIndex.TEXTURES].Cache(0);
   archive := CacheReader.Indices[ECacheIndex.TEXTURES].ReferenceTable.Archives.Value[0];
   files := archive.Files.Values;
 

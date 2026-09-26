@@ -121,7 +121,7 @@ begin
   if Self.IsLoaded then
     Exit;
 
-  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache(EConfigArchive.ITEM);
   Self.Archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
 
   SetLength(Self.Names, Self.Archive.Files.Keys[High(Self.Archive.Files.Keys)] + 1);

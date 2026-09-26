@@ -23,9 +23,8 @@ type
 
   TCacheIndex = record
     ReferenceTable: TReferenceTable;
-    ID, CRC: Integer;
-    CompressionType: ECacheCompression;
-    Whirlpool, MainData, Index255, IndexData: TByteArray;
+    ID: Integer;
+    MainData, Index255, IndexData: TByteArray;
     Cached: Boolean;
   end;
 
@@ -168,8 +167,7 @@ end;
 ```pascal
 procedure TCacheIndex.Load();
 ```
-Reads this index's entry out of the master index, which is where its reference table lives, and
-records the CRC and whirlpool digest of that entry.
+Reads this index's entry out of the master index, which is where its reference table lives.
 
 The reference table is what says which archives the index holds and what is in them, so this
 has to run before the index can be used for anything.
@@ -178,8 +176,7 @@ procedure TCacheIndex.Load();
 var
   sector: TArchiveSector;
   data: TByteArray;
-  i, offset: Integer;
-  digest: String;
+  offset: Integer;
 begin
   if not InRange(Self.ID, 1, 255) then //TODO: check if min should be 0 (animations)
     Exit;
@@ -188,77 +185,107 @@ begin
   if sector.Data.IsEmpty then
     Exit;
 
-  Self.CRC := CrcData(@sector.Data[0], Length(sector.Data));
-  digest := DigestData(EDigest.WHIRLPOOL, @sector.Data[0], Length(sector.Data));
-
-  if Length(digest) < TArchiveSector.WHIRLPOOL_SIZE * 2 then
-    raise 'Something is wrong with whirlpool digest';
-
-  SetLength(Self.Whirlpool, TArchiveSector.WHIRLPOOL_SIZE);
-  for i := 0 to TArchiveSector.WHIRLPOOL_SIZE - 1 do
-    Self.Whirlpool[i] := (digest[i*2+1].ToHex() shl 4) or digest[i*2+2].ToHex();
-
   data := sector.Decompress();
   Self.ReferenceTable.Read(data, offset);
-  Self.CompressionType := sector.CompressionType;
+end;
+
+(*
+## CacheIndex._CacheArchive
+```pascal
+procedure TCacheIndex._CacheArchive(idx: Integer);
+```
+Decompresses the archive sitting at position `idx` of this index's archive list and splits it
+into its files. An archive that is already cached is left alone.
+*)
+procedure TCacheIndex._CacheArchive(idx: Integer);
+var
+  archives: TArchiveArray;
+  sector: TArchiveSector;
+  data: TByteArray;
+  tailOffset, remaining, compressedFieldValue, revOffset: Integer;
+begin
+  archives := Self.ReferenceTable.Archives.Values;
+
+  if archives[idx].Cached then
+    Exit;
+  archives[idx].Cached := True;
+
+  sector := Self.ReadArchiveSector(archives[idx].ID, Self.ID, Self.IndexData);
+  if sector.Data.IsEmpty then
+  begin
+    archives[idx].Files.Clear();
+    Exit;
+  end;
+
+  data := sector.Decompress();
+  archives[idx].CompressionType := sector.CompressionType;
+
+  if Length(data) > 0 then
+    archives[idx].Read(data);
+
+  tailOffset := 1;
+  compressedFieldValue := Read32Bits(sector.Data, tailOffset);
+  remaining := Length(sector.Data) - (compressedFieldValue + tailOffset);
+
+  if remaining >= 2 then
+  begin
+    revOffset := Length(sector.Data) - 2;
+    archives[idx].Revision := Read16Bits(sector.Data, revOffset);
+  end;
 end;
 
 (*
 ## CacheIndex.Cache
 ```pascal
 procedure TCacheIndex.Cache();
+procedure TCacheIndex.Cache(id: Integer); overload;
+procedure TCacheIndex.Cache(archive: EConfigArchive); overload;
 ```
-Decompresses every archive in this index and splits it into its files, leaving the contents in
+Decompresses this index's archives and splits them into their files, leaving the contents in
 `ReferenceTable.Archives`.
 
-This is the expensive step, and how expensive depends on the index - decompressing all of
-`ECacheIndex.MAPS` unpacks well over a hundred megabytes. It is a no-op the second time, so
-calling it before reaching for an archive's data is safe.
+Without arguments every archive is decompressed. Given an archive id, or for the config index an
+{ref}`EConfigArchive` name, only that one is - which is what you want when a few archives are all
+you are after, because decompressing a whole index is expensive: all of `ECacheIndex.MAPS` unpacks
+well over a hundred megabytes, and of the few hundred milliseconds the config index costs the item
+and enum archives are a small part. An id the index does not hold is ignored, since the lookup
+that follows raises on it anyway.
+
+Each form is a no-op once the archives it covers are cached, so calling it before reaching for an
+archive's data is safe.
 
 Example:
 ```pascal
-CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
+CacheReader.Indices[ECacheIndex.CONFIGS].Cache(EConfigArchive.ITEM);
 archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
 ```
 *)
 procedure TCacheIndex.Cache();
 var
-  archives: TArchiveArray;
-  sector: TArchiveSector;
-  data: TByteArray;
-  i, tailOffset, remaining, compressedFieldValue, revOffset: Integer;
+  i: Integer;
 begin
   if Self.Cached then
     Exit;
 
-  archives := Self.ReferenceTable.Archives.Values;
-
-  for i := 0 to High(archives) do
-  begin
-    sector := Self.ReadArchiveSector(archives[i].ID, Self.ID, Self.IndexData);
-    if sector.Data.IsEmpty then
-    begin
-      archives[i].Files.Clear();
-      Continue;
-    end;
-
-    data := sector.Decompress();
-    archives[i].CompressionType := sector.CompressionType;
-
-    if Length(data) > 0 then
-      archives[i].Read(data);
-
-    tailOffset := 1;
-    compressedFieldValue := Read32Bits(sector.Data, tailOffset);
-    remaining := Length(sector.Data) - (compressedFieldValue + tailOffset);
-
-    if remaining >= 2 then
-    begin
-      revOffset := Length(sector.Data) - 2;
-      archives[i].Revision := Read16Bits(sector.Data, revOffset);
-    end;
-  end;
+  for i := 0 to Self.ReferenceTable.Archives.Count - 1 do
+    Self._CacheArchive(i);
 
   Self.Cached := True;
 end;
 
+procedure TCacheIndex.Cache(id: Integer); overload;
+var
+  idx: Integer;
+begin
+  if Self.Cached then
+    Exit;
+
+  idx := Self.ReferenceTable.Archives.IndexOf(id);
+  if idx > -1 then
+    Self._CacheArchive(idx);
+end;
+
+procedure TCacheIndex.Cache(archive: EConfigArchive); overload;
+begin
+  Self.Cache(Ord(archive));
+end;

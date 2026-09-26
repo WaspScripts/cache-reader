@@ -29,6 +29,7 @@ type
     Whirlpool: TByteArray;
     XTEA: TIntegerArray;
     Files: TFileMap;
+    Cached: Boolean;
   end;
 
   TArchiveArray = array of TArchive;

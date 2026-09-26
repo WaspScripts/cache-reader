@@ -98,14 +98,16 @@ end;
 ```pascal
 procedure TFileMap._Grow();
 ```
-Doubles the hash table and reinserts every key into it. Entry order is untouched - only the
-slots that point at the entries are rebuilt.
+Resizes the hash table to fit one more entry and reinserts every key into it. Entry order is
+untouched - only the slots that point at the entries are rebuilt.
+
+It is also how a map that {ref}`TFileMap.Build` left without a table gets one.
 *)
 procedure TFileMap._Grow();
 var
   i: Integer;
 begin
-  Self.HashSize := Self.HashSize * 2;
+  Self.HashSize := MapHashSize(Length(Self.Keys) + 1);
 
   SetLength(Self.HashSlots, 0);
   SetLength(Self.HashSlots, Self.HashSize);
@@ -125,6 +127,12 @@ arrays exactly once instead of regrowing them on every insert.
 
 Only the first `count` entries of `keys` are used, so callers filling many maps in a row can
 reuse one buffer. They must be in ascending order, which is how reference tables store them.
+
+Most archives of the cache hold a single file, so a map of one entry - or of none - is left
+without a hash table at all, `HashSize` staying `0`: the lookups compare against the one key
+instead of probing, and opening a cache does one allocation less per archive for the hundred
+thousand odd maps it builds. {ref}`TFileMap._Grow` gives such a map a table if something is
+later added to it.
 *)
 procedure TFileMap.Build(const keys: TIntegerArray; count: Integer);
 var
@@ -132,7 +140,7 @@ var
   slots: TIntegerArray;
   values: TFileArray;
 begin
-  Self.HashSize := MapHashSize(count);
+  Self.HashSize := 0;
   Self.Count := count;
   Self.IsSetup := True;
 
@@ -142,6 +150,15 @@ begin
   SetLength(Self.Values, 0);
   SetLength(Self.Values, count);
   SetLength(Self.HashSlots, 0);
+
+  if count <= 1 then
+  begin
+    if count = 1 then
+      Self.Values[0].ID := keys[0];
+    Exit;
+  end;
+
+  Self.HashSize := MapHashSize(count);
   SetLength(Self.HashSlots, Self.HashSize);
 
   //one map is built per archive of an index, so hundreds of thousands of them are built to open
@@ -174,9 +191,7 @@ Whether the map holds an entry with this id.
 *)
 function TFileMap.Exists(key: Integer): Boolean;
 begin
-  if not Self.IsSetup then
-    Exit(False);
-  Result := Self.HashSlots[Self._FindSlot(key)] <> 0;
+  Result := Self.IndexOf(key) <> -1;
 end;
 
 (*
@@ -192,6 +207,14 @@ var
 begin
   if not Self.IsSetup then
     Exit(-1);
+
+  if Self.HashSize = 0 then
+  begin
+    if (Self.Count = 1) and (Self.Keys[0] = key) then
+      Exit(0);
+    Exit(-1);
+  end;
+
   slot := Self._FindSlot(key);
   if Self.HashSlots[slot] = 0 then
     Result := -1

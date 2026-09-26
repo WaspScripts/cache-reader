@@ -33,7 +33,8 @@ type
 ```pascal
 procedure TMapDataLoader.LoadUnderlays();
 ```
-Loads every ground underlay definition. The config index has to be cached first.
+Loads every ground underlay definition, caching the underlay archive first if it has not been
+already.
 *)
 procedure TMapDataLoader.LoadUnderlays();
 var
@@ -41,6 +42,7 @@ var
   files: TFileArray;
   i: Integer;
 begin
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache(EConfigArchive.UNDERLAY);
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.UNDERLAY];
 
   files := archive.Files.Values;
@@ -54,7 +56,8 @@ end;
 ```pascal
 procedure TMapDataLoader.LoadOverlays();
 ```
-Loads every ground overlay definition. The config index has to be cached first.
+Loads every ground overlay definition, caching the overlay archive first if it has not been
+already.
 *)
 procedure TMapDataLoader.LoadOverlays();
 var
@@ -62,6 +65,7 @@ var
   files: TFileArray;
   i: Integer;
 begin
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache(EConfigArchive.OVERLAY);
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.OVERLAY];
 
   files := archive.Files.Values;
@@ -75,7 +79,7 @@ end;
 ```pascal
 procedure TMapDataLoader.LoadObjects();
 ```
-Loads every world object definition. The config index has to be cached first.
+Loads every world object definition, caching the object archive first if it has not been already.
 
 This is the slowest part of {ref}`TMapDataLoader.Load` by some distance - there are tens of
 thousands of them, and the map renderer needs any of them to be reachable by id.
@@ -86,6 +90,7 @@ var
   files: TFileArray;
   i: Integer;
 begin
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache(EConfigArchive.OBJ);
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.OBJ];
 
   files := archive.Files.Values;
@@ -99,7 +104,7 @@ end;
 ```pascal
 procedure TMapDataLoader.LoadAreas();
 ```
-Loads every map area definition. The config index has to be cached first.
+Loads every map area definition, caching the area archive first if it has not been already.
 *)
 procedure TMapDataLoader.LoadAreas();
 var
@@ -107,6 +112,7 @@ var
   files: TFileArray;
   i: Integer;
 begin
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache(EConfigArchive.AREA);
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.AREA];
 
   files := archive.Files.Values;
@@ -241,7 +247,7 @@ var
   files: TFileArray;
   i: Integer;
 begin
-  CacheReader.Indices[ECacheIndex.TEXTURES].Cache();
+  CacheReader.Indices[ECacheIndex.TEXTURES].Cache(0);
   archive := CacheReader.Indices[ECacheIndex.TEXTURES].ReferenceTable.Archives.Value[0];
 
   files := archive.Files.Values;
@@ -348,8 +354,8 @@ procedure TMapDataLoader.Load();
 Loads everything {ref}`TMapChunkLoader` needs to draw a map: ground colours, object definitions,
 and the sprites for map scenes and area icons.
 
-This caches the config index, so it takes a second or so and a few hundred megabytes. Do it once
-before rendering rather than per chunk.
+This caches the config archives it reads and every texture, so it takes a while and a few hundred
+megabytes. Do it once before rendering rather than per chunk.
 
 Example:
 ```pascal
@@ -360,8 +366,6 @@ chunkLoader.MapData.Load();
 *)
 procedure TMapDataLoader.Load();
 begin
-  CacheReader.Indices[ECacheIndex.CONFIGS].Cache();
-
   Self.LoadUnderlays();
   Self.LoadOverlays();
   Self.LoadObjects();

@@ -34,9 +34,6 @@ type
     const BRIGHTNESS_LOW: Double = 0.8;
     const BRIGHTNESS_MIN: Double = 0.9;
 
-    const HUE_OFFSET: Double = 0.5 / 64.0;
-    const SATURATION_OFFSET: Double = 0.5 / 8.0;
-
     Palette, MinimapPalette, HeightColors: TIntegerArray;
     Brightness: Double;
     Revision: Integer;

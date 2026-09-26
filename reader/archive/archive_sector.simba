@@ -26,7 +26,6 @@ type
     const DATA_SIZE_SMALL: Integer = 512;
     const DATA_SIZE_BIG: Integer = 510;
     const SECTOR_SIZE: Integer = 520;
-    const WHIRLPOOL_SIZE: Integer = 64;
   end;
 
 (*

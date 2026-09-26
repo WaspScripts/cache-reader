@@ -144,6 +144,7 @@ function TItemSprite.Create(id: Integer): TItemSprite; static; overload;
 var
   archive: TArchive;
 begin
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache(EConfigArchive.ITEM);
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.ITEM];
   Result := TItemSprite.Create(archive, id);
 end;

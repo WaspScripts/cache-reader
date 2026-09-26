@@ -27,7 +27,6 @@ var
   archive: TArchive;
   sector: TArchiveSector;
   data: TByteArray;
-  definition: TFontDefinition;
 begin
   CacheReader.Indices[ECacheIndex.FONTS].Cache();
   SetLength(Self.Fonts, Length(TFontLoader.NAMES));
