@@ -303,6 +303,28 @@ begin
     Result := Ord(s[i]) + Result * 31;
 end;
 
+(*
+## CacheString2UTF8
+```pascal
+function CacheString2UTF8(const s: String): String;
+```
+Turns a string as the cache stores it, one byte per character, into UTF-8.
+*)
+function CacheString2UTF8(const s: String): String;
+var
+  c: Char;
+  o: Integer;
+begin
+  for c in s do
+  begin
+    o := Ord(c);
+    if o < $80 then
+      Result += c
+    else
+      Result += Char($C0 or (o shr 6)) + Char($80 or (o and $3F));
+  end;
+end;
+
 type
   TColorHSLEx = record
     H,S,L: Double;

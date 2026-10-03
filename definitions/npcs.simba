@@ -1,0 +1,317 @@
+(*
+# NPC Definition
+NPCs: their names, menu operations, combat stats, the models they are drawn from, and the forms
+they can turn into.
+*)
+
+{$DEFINE WL_CACHE_DEFINITION_NPCS_INCLUDED}
+{$IFNDEF WL_CACHE_DEFINITION_ENTITYOPS_INCLUDED}  {$INCLUDE_ONCE entityops.simba}  {$ENDIF}
+
+type
+  TNPCDefinition = record
+    ID: Integer;
+    Name: String;
+
+    Models, ChatheadModels,
+    RecolorToFind, RecolorToReplace,
+    RetextureToFind, RetextureToReplace,
+    HeadIconArchiveIDs, HeadIconSpriteIndex,
+    ConfigChangeDest: TIntegerArray;
+
+    Size, Category, CombatLevel,
+    StandingAnimation, WalkingAnimation,
+    IdleRotateLeftAnimation, IdleRotateRightAnimation,
+    Rotate180Animation, RotateLeftAnimation, RotateRightAnimation,
+    RunAnimation, RunRotate180Animation, RunRotateLeftAnimation, RunRotateRightAnimation,
+    CrawlAnimation, CrawlRotate180Animation, CrawlRotateLeftAnimation, CrawlRotateRightAnimation,
+    FullRecolor, WidthScale, HeightScale, Ambient, Contrast,
+    RenderPriority, RotationSpeed, VarbitID, VarpID,
+    Height, FootprintSize, OverlapTintHSL: Integer;
+
+    //attack, defence, strength, hitpoints, ranged and magic levels
+    Stats: array [0..5] of Integer;
+
+    IsMinimapVisible, IsInteractable, RotationFlag,
+    IsFollower, LowPriorityFollowerOps,
+    Unknown1, IdleAnimRestart, CanHideForOverlap, ZBuf: Boolean;
+
+    Ops: TEntityOpsDefinition;
+
+    Params: array of record
+      Key: Integer;
+      IsString: Boolean;
+      IntValue: Integer;
+      StrValue: String;
+    end;
+  end;
+
+  TNPCDefinitionArray = array of TNPCDefinition;
+
+(*
+## NPCDefinition.Create
+```pascal
+function TNPCDefinition.Create(id, revision: Integer; const data: TByteArray): TNPCDefinition; static;
+```
+Decodes an NPC: its name and menu operations, its combat stats, its models and the forms it can
+turn into.
+
+`revision` is the archive's revision, which decides whether the head icons are stored as a
+single sprite or as the per slot list that replaced it in build 1493.
+
+When the stream doesn't set a footprint, it is worked out afterwards from the NPC's size the way
+the client does it.
+
+Example:
+```pascal
+archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.NPC];
+def := TNPCDefinition.Create(3010, archive.Revision, archive.Files.Value[3010].Data);
+```
+*)
+function TNPCDefinition.Create(id, revision: Integer; const data: TByteArray): TNPCDefinition; static;
+var
+  offset, opcode, i, len, bitfield, varTmp: Integer;
+  rev210HeadIcons: Boolean;
+begin
+  Result.ID := id;
+  Result.Name := 'null';
+  Result.Size := 1;
+  Result.CombatLevel := -1;
+  Result.StandingAnimation := -1;
+  Result.WalkingAnimation := -1;
+  Result.IdleRotateLeftAnimation := -1;
+  Result.IdleRotateRightAnimation := -1;
+  Result.Rotate180Animation := -1;
+  Result.RotateLeftAnimation := -1;
+  Result.RotateRightAnimation := -1;
+  Result.RunAnimation := -1;
+  Result.RunRotate180Animation := -1;
+  Result.RunRotateLeftAnimation := -1;
+  Result.RunRotateRightAnimation := -1;
+  Result.CrawlAnimation := -1;
+  Result.CrawlRotate180Animation := -1;
+  Result.CrawlRotateLeftAnimation := -1;
+  Result.CrawlRotateRightAnimation := -1;
+  Result.WidthScale := 128;
+  Result.HeightScale := 128;
+  Result.RotationSpeed := 32;
+  Result.VarbitID := -1;
+  Result.VarpID := -1;
+  Result.Height := -1;
+  Result.FootprintSize := -1;
+  Result.OverlapTintHSL := -1;
+  Result.Stats := [1, 1, 1, 1, 1, 1];
+  Result.IsMinimapVisible := True;
+  Result.IsInteractable := True;
+  Result.RotationFlag := True;
+  Result.ZBuf := True;
+
+  rev210HeadIcons := revision >= 1493;
+
+  while True do
+  begin
+    opcode := data[offset];
+    Inc(offset);
+
+    case opcode of
+      0: Break;
+      1:
+      begin
+        SetLength(Result.Models, Read8Bits(data, offset));
+        for i := 0 to High(Result.Models) do
+          Result.Models[i] := Read16Bits(data, offset);
+      end;
+      2: Result.Name := data.ReadCString(offset);
+      12: Result.Size := Read8Bits(data, offset);
+      13: Result.StandingAnimation := Read16Bits(data, offset);
+      14: Result.WalkingAnimation := Read16Bits(data, offset);
+      15: Result.IdleRotateLeftAnimation := Read16Bits(data, offset);
+      16: Result.IdleRotateRightAnimation := Read16Bits(data, offset);
+      17:
+      begin
+        Result.WalkingAnimation := Read16Bits(data, offset);
+        Result.Rotate180Animation := Read16Bits(data, offset);
+        Result.RotateLeftAnimation := Read16Bits(data, offset);
+        Result.RotateRightAnimation := Read16Bits(data, offset);
+      end;
+      18: Result.Category := Read16Bits(data, offset);
+      30..34: Result.Ops.DecodeOp(data, offset, opcode - 30);
+      40:
+      begin
+        len := Read8Bits(data, offset);
+        SetLength(Result.RecolorToFind, len);
+        SetLength(Result.RecolorToReplace, len);
+        for i := 0 to len - 1 do
+        begin
+          Result.RecolorToFind[i] := Read16Bits(data, offset);
+          Result.RecolorToReplace[i] := Read16Bits(data, offset);
+        end;
+      end;
+      41:
+      begin
+        len := Read8Bits(data, offset);
+        SetLength(Result.RetextureToFind, len);
+        SetLength(Result.RetextureToReplace, len);
+        for i := 0 to len - 1 do
+        begin
+          Result.RetextureToFind[i] := Read16Bits(data, offset);
+          Result.RetextureToReplace[i] := Read16Bits(data, offset);
+        end;
+      end;
+      42: Result.FullRecolor := Read16Bits(data, offset);
+      60:
+      begin
+        SetLength(Result.ChatheadModels, Read8Bits(data, offset));
+        for i := 0 to High(Result.ChatheadModels) do
+          Result.ChatheadModels[i] := Read16Bits(data, offset);
+      end;
+      61:
+      begin
+        SetLength(Result.Models, Read8Bits(data, offset));
+        for i := 0 to High(Result.Models) do
+          Result.Models[i] := Read32Bits(data, offset);
+      end;
+      62:
+      begin
+        SetLength(Result.ChatheadModels, Read8Bits(data, offset));
+        for i := 0 to High(Result.ChatheadModels) do
+          Result.ChatheadModels[i] := Read32Bits(data, offset);
+      end;
+      74..79: Result.Stats[opcode - 74] := Read16Bits(data, offset);
+      93: Result.IsMinimapVisible := False;
+      95: Result.CombatLevel := Read16Bits(data, offset);
+      97: Result.WidthScale := Read16Bits(data, offset);
+      98: Result.HeightScale := Read16Bits(data, offset);
+      99: Result.RenderPriority := 1;
+      100: Result.Ambient := Read8SignedBits(data, offset);
+      101: Result.Contrast := Read8SignedBits(data, offset);
+      102:
+      begin
+        if not rev210HeadIcons then
+        begin
+          Result.HeadIconArchiveIDs := [-1];
+          Result.HeadIconSpriteIndex := [Read16Bits(data, offset)];
+          Continue;
+        end;
+
+        //a bit per head icon slot, set for the slots that have an icon
+        bitfield := Read8Bits(data, offset);
+        len := 0;
+        while (bitfield shr len) <> 0 do
+          Inc(len);
+
+        SetLength(Result.HeadIconArchiveIDs, len);
+        SetLength(Result.HeadIconSpriteIndex, len);
+        for i := 0 to len - 1 do
+          if (bitfield and (1 shl i)) = 0 then
+          begin
+            Result.HeadIconArchiveIDs[i] := -1;
+            Result.HeadIconSpriteIndex[i] := -1;
+          end
+          else
+          begin
+            Result.HeadIconArchiveIDs[i] := ReadBigSmart2(data, offset);
+            Result.HeadIconSpriteIndex[i] := ReadUnsignedShortSmart(data, offset) - 1;
+          end;
+      end;
+      103: Result.RotationSpeed := Read16Bits(data, offset);
+      106, 118:
+      begin
+        Result.VarbitID := Read16Bits(data, offset);
+        if Result.VarbitID = $FFFF then
+          Result.VarbitID := -1;
+
+        Result.VarpID := Read16Bits(data, offset);
+        if Result.VarpID = $FFFF then
+          Result.VarpID := -1;
+
+        //118 also says which form to take when the var is out of range, 106 takes none
+        varTmp := -1;
+        if opcode = 118 then
+        begin
+          varTmp := Read16Bits(data, offset);
+          if varTmp = $FFFF then
+            varTmp := -1;
+        end;
+
+        len := Read8Bits(data, offset);
+        SetLength(Result.ConfigChangeDest, len + 2);
+        for i := 0 to len do
+        begin
+          Result.ConfigChangeDest[i] := Read16Bits(data, offset);
+          if Result.ConfigChangeDest[i] = $FFFF then
+            Result.ConfigChangeDest[i] := -1;
+        end;
+        Result.ConfigChangeDest[len + 1] := varTmp;
+      end;
+      107: Result.IsInteractable := False;
+      109: Result.RotationFlag := False;
+      111: Result.RenderPriority := 2;
+      114: Result.RunAnimation := Read16Bits(data, offset);
+      115:
+      begin
+        Result.RunAnimation := Read16Bits(data, offset);
+        Result.RunRotate180Animation := Read16Bits(data, offset);
+        Result.RunRotateLeftAnimation := Read16Bits(data, offset);
+        Result.RunRotateRightAnimation := Read16Bits(data, offset);
+      end;
+      116: Result.CrawlAnimation := Read16Bits(data, offset);
+      117:
+      begin
+        Result.CrawlAnimation := Read16Bits(data, offset);
+        Result.CrawlRotate180Animation := Read16Bits(data, offset);
+        Result.CrawlRotateLeftAnimation := Read16Bits(data, offset);
+        Result.CrawlRotateRightAnimation := Read16Bits(data, offset);
+      end;
+      122: Result.IsFollower := True;
+      123: Result.LowPriorityFollowerOps := True;
+      124: Result.Height := Read16Bits(data, offset);
+      126: Result.FootprintSize := Read16Bits(data, offset);
+      129: Result.Unknown1 := True;
+      130: Result.IdleAnimRestart := True;
+      145: Result.CanHideForOverlap := True;
+      146: Result.OverlapTintHSL := Read16Bits(data, offset);
+      147: Result.ZBuf := False;
+      249:
+      begin
+        SetLength(Result.Params, Read8Bits(data, offset));
+        for i := 0 to High(Result.Params) do
+        begin
+          Result.Params[i].IsString := Read8Bits(data, offset) = 1;
+          Result.Params[i].Key := Read24Bits(data, offset);
+          if Result.Params[i].IsString then
+            Result.Params[i].StrValue := data.ReadCString(offset)
+          else
+            Result.Params[i].IntValue := Read32Bits(data, offset);
+        end;
+      end;
+      251: Result.Ops.DecodeSubOp(data, offset);
+      252: Result.Ops.DecodeConditionalOp(data, offset);
+      253: Result.Ops.DecodeConditionalSubOp(data, offset);
+    else
+    begin
+      WriteLn('Unrecognized opcode ', opcode, ' at offset ', offset - 1, '. Parsing may be corrupted from here.');
+      Break;
+    end;
+    end;
+  end;
+
+  if Result.FootprintSize = -1 then
+    Result.FootprintSize := Trunc(0.4 * Result.Size * 128);
+end;
+
+(*
+## TNPCDefinitionArray.IndexOf
+```pascal
+function TNPCDefinitionArray.IndexOf(id: Integer): Integer;
+```
+The position of `id` in the array, or `-1` if there is no such NPC.
+
+NPC definitions are stored one per id with no gaps, so an id is its own index; this exists to
+keep that assumption in one place.
+*)
+function TNPCDefinitionArray.IndexOf(id: Integer): Integer;
+begin
+  if InRange(id, 0, High(Self)) then
+    Exit(id);
+  Result := -1;
+end;

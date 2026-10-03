@@ -27,20 +27,8 @@ function TItemLoader.DecodeName(const name: String): String; static;
 Turns a name as the cache stores it, one byte per character, into lowercase UTF-8.
 *)
 function TItemLoader.DecodeName(const name: String): String; static;
-var
-  c: Char;
-  o: Integer;
 begin
-  for c in name do
-  begin
-    o := Ord(c);
-    if o < $80 then
-      Result += c
-    else
-      Result += Char($C0 or (o shr 6)) + Char($80 or (o and $3F));
-  end;
-
-  Result := Result.ToLower();
+  Result := CacheString2UTF8(name).ToLower();
 end;
 
 (*

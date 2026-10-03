@@ -1,0 +1,44 @@
+(*
+# NPC Model
+What an NPC looks like once the game has built it: how tall it stands and the colours its faces
+are drawn in. It is measured the same way {ref}`TObjectModel` measures world objects.
+
+Example:
+```pascal
+model := TNPCModel.Create(npcDef);
+WriteLn(model.Height, ' ', model.Colors);
+```
+*)
+
+{$DEFINE WL_CACHE_NPC_MODEL_INCLUDED}
+{$IFNDEF WL_CACHE_DEFINITION_NPCS_INCLUDED} {$INCLUDE_ONCE ../definitions/npcs.simba} {$ENDIF}
+{$IFNDEF WL_CACHE_OBJECT_MODEL_INCLUDED}     {$INCLUDE_ONCE objectmodel.simba}           {$ENDIF}
+
+type
+(*
+## TNPCModel
+The same record as {ref}`TObjectModel`, with `Valid` being `False` when one of the NPC's models
+couldn't be read.
+*)
+  TNPCModel = TObjectModel;
+
+(*
+## NPCModel.Create
+```pascal
+function TNPCModel.Create(constref def: TNPCDefinition): TNPCModel; static; overload;
+```
+Builds `def` with {ref}`TObjectModel.Build`: its models recoloured, retextured and scaled as the
+definition asks, and lit with the ambient and contrast the client lights NPCs with.
+
+The client lights NPCs from a different direction than world objects, which only changes which
+faces catch the light, not the range of shades they are drawn in.
+*)
+function TNPCModel.Create(constref def: TNPCDefinition): TNPCModel; static; overload;
+begin
+  Result := TObjectModel.Build(
+    def.Models,
+    def.RecolorToFind, def.RecolorToReplace, def.RetextureToFind, def.RetextureToReplace,
+    def.WidthScale, def.HeightScale, def.WidthScale,
+    def.Ambient + 64, def.Contrast * 5 + 850
+  );
+end;

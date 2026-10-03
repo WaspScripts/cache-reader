@@ -1,0 +1,34 @@
+{$I WaspLib/utils.simba}
+
+var
+  PATH: String = SimbaEnv.DataPath + 'npcs-db' + PATH_SEP;
+  VERSION_PATH: String;
+
+var
+  npcArchive: TArchive;
+  crc: String;
+  rows: Integer;
+  start: Double;
+begin
+  ClearSimbaOutput();
+
+  CacheReader := TCacheReader.Create();
+  npcArchive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.NPC];
+  crc := ToStr(npcArchive.CRC);
+
+  VERSION_PATH := PATH + 'version.txt';
+
+  if FileExists(VERSION_PATH) and (FileRead(VERSION_PATH).Trim() = crc) then
+    WriteLn('NPC cache unchanged (CRC ', crc, '), skipping database rebuild.')
+  else
+  begin
+    start := PerformanceTime();
+    rows := NPCLoader.WriteDatabase(PATH);
+
+    if not FileWrite(VERSION_PATH, crc) then
+      raise 'dump_npcs: Couldn''t write ' + VERSION_PATH;
+
+    WriteLn('Saved ', rows, ' rows to ', PATH + 'npcs.zip');
+    WriteLn('Took ', Round(PerformanceTime()-start, 3), 'ms to run.');
+  end;
+end.

@@ -5,7 +5,8 @@ Suite of tools to read the cache files of a popular MMORPG.
 Include this file to get all of it. Reading anything starts with {ref}`TCacheReader.Create`,
 which fills the global `CacheReader`; from there {ref}`TCacheIndex.Cache` unpacks an index and
 the definition types decode what comes out of it. {ref}`TMapChunkLoader` renders maps and
-{ref}`TItemSprite` renders inventory icons.
+{ref}`TItemSprite` renders inventory icons, and {ref}`TItemLoader` and {ref}`TNPCLoader` build the
+item and NPC databases.
 
 Range checks are off by default, since the decoders are hot loops over trusted data. Define
 `ENABLE_CACHEREADER_RANGE_CHECKS` before including this to turn them back on while developing.
@@ -30,19 +31,23 @@ begin
 end;
 {$ENDIF}
 
-{$IFNDEF WL_CACHE_READER_INCLUDED}          {$INCLUDE_ONCE reader/reader.simba}
+{$IFNDEF WL_CACHE_READER_INCLUDED}                {$INCLUDE_ONCE reader/reader.simba}
 {$IFNDEF WL_CACHE_DEFINITION_ITEMS_INCLUDED}      {$INCLUDE_ONCE definitions/items.simba}
+{$IFNDEF WL_CACHE_DEFINITION_NPCS_INCLUDED}       {$INCLUDE_ONCE definitions/npcs.simba}
 {$IFNDEF WL_CACHE_DEFINITION_DBROWS_INCLUDED}     {$INCLUDE_ONCE definitions/dbrows.simba}
 {$IFNDEF WL_CACHE_DEFINITION_FONTS_INCLUDED}      {$INCLUDE_ONCE definitions/fonts.simba}
 {$IFNDEF WL_CACHE_DEFINITION_ENUMS_INCLUDED}      {$INCLUDE_ONCE definitions/enums.simba}
 {$IFNDEF WL_CACHE_DEFINITION_INTERFACES_INCLUDED} {$INCLUDE_ONCE definitions/interfaces.simba}
-{$IFNDEF WL_ITEM_SPRITE_INCLUDED}           {$INCLUDE_ONCE render/itemsprite.simba}
-{$IFNDEF WL_CACHE_OBJECT_MODEL_INCLUDED}     {$INCLUDE_ONCE render/objectmodel.simba}
+{$IFNDEF WL_ITEM_SPRITE_INCLUDED}                 {$INCLUDE_ONCE render/itemsprite.simba}
+{$IFNDEF WL_CACHE_OBJECT_MODEL_INCLUDED}          {$INCLUDE_ONCE render/objectmodel.simba}
+{$IFNDEF WL_CACHE_NPC_MODEL_INCLUDED}             {$INCLUDE_ONCE render/npcmodel.simba}
 {$IFNDEF WL_CACHE_LOADER_FONTS_INCLUDED}          {$INCLUDE_ONCE loaders/fontloader.simba}
 {$IFNDEF WL_CACHE_LOADER_ITEMS_INCLUDED}          {$INCLUDE_ONCE loaders/itemloader.simba}
+{$IFNDEF WL_CACHE_LOADER_NPCS_INCLUDED}           {$INCLUDE_ONCE loaders/npcloader.simba}
 {$IFNDEF WL_CACHE_LOADER_MAPCHUNK_INCLUDED}       {$INCLUDE_ONCE loaders/map/mapchunk.simba}
 
-{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}
+{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}{$ENDIF}
+{$ENDIF}{$ENDIF}
 
 begin
   ColorUtils.SetBrightness(TColorUtils.BRIGHTNESS_MAX);   

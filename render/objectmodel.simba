@@ -81,32 +81,35 @@ begin
 end;
 
 (*
-## ObjectModel.Create
+## ObjectModel.Build
 ```pascal
-function TObjectModel.Create(constref def: TObjectDefinition; locType: Integer): TObjectModel; static;
+function TObjectModel.Build(ids, recolorFind, recolorReplace, retextureFind, retextureReplace: TIntegerArray; scaleX, scaleHeight, scaleY, ambient, contrast: Integer): TObjectModel; static;
 ```
-Builds `def` as it is drawn when placed as `locType` and measures it.
+Builds the models `ids` and measures them. Each one is recoloured, retextured and resized as
+asked and lit with `ambient` and `contrast`, which are the values {ref}`TLitModel.Light` takes, the
+client's base already added.
 
 It is always built facing north: turning it would only move which of its faces the light falls
 on, not the range of shades they are drawn in.
 
 Faces that are hidden or see-through are left out of the colours, since what shows through them
-is whatever is behind the object. Textured faces count as their texture's
+is whatever is behind the model. Textured faces count as their texture's
 {ref}`TTextureLoader.AverageColor`, darkened by their light the way the rasterizer darkens each
 texel.
+
+This is what {ref}`TObjectModel.Create` and {ref}`TNPCModel.Create` build their models with.
 *)
-function TObjectModel.Create(constref def: TObjectDefinition; locType: Integer): TObjectModel; static;
+function TObjectModel.Build(ids, recolorFind, recolorReplace, retextureFind, retextureReplace: TIntegerArray; scaleX, scaleHeight, scaleY, ambient, contrast: Integer): TObjectModel; static;
 var
   idx: TCacheIndex;
   sector: TArchiveSector;
   data: TByteArray;
   modelDef: TModelDefinition;
   lit: TLitModel;
-  ids, colors, hsl: TIntegerArray;
+  colors, hsl: TIntegerArray;
   id, i, j, texture, color, previous: Integer;
   alpha: Byte;
 begin
-  ids := TObjectModel.ModelIDs(def, locType);
   if ids = [] then
     Exit;
 
@@ -124,21 +127,20 @@ begin
 
     modelDef := TModelDefinition.Create(id, data);
 
-    for i := 0 to High(def.RecolorToFind) do
-      modelDef.Recolor(def.RecolorToFind[i], def.RecolorToReplace[i]);
+    for i := 0 to High(recolorFind) do
+      modelDef.Recolor(recolorFind[i], recolorReplace[i]);
 
-    for i := 0 to High(def.RetextureToFind) do
-      modelDef.Retexture(def.RetextureToFind[i], def.TextureToReplace[i]);
+    for i := 0 to High(retextureFind) do
+      modelDef.Retexture(retextureFind[i], retextureReplace[i]);
 
-    if (def.ModelSizeX <> 128) or (def.ModelSizeHeight <> 128) or (def.ModelSizeY <> 128) then
-      modelDef.Resize(def.ModelSizeX, def.ModelSizeHeight, def.ModelSizeY);
+    if (scaleX <> 128) or (scaleHeight <> 128) or (scaleY <> 128) then
+      modelDef.Resize(scaleX, scaleHeight, scaleY);
 
     lit := TLitModel.Create(modelDef);
-    lit.Light(def.Ambient + 64, def.Contrast + 768);
+    lit.Light(ambient, contrast);
     lit.CalcBoundsCylinder();
 
-    //the offset moves the model down, heights are counted up
-    Result.Height := Max(Result.Height, lit.ModelHeight - def.OffsetHeight);
+    Result.Height := Max(Result.Height, lit.ModelHeight);
 
     for i := 0 to lit.IndicesCount - 1 do
     begin
@@ -184,7 +186,7 @@ begin
     end;
   end;
 
-  //most common first, so the colours that cover the object come before stray ones
+  //most common first, so the colours that cover the model come before stray ones
   colors.Sort();
   previous := -1;
   for color in colors do
@@ -208,4 +210,25 @@ begin
         Break;
 
   Result.Valid := True;
+end;
+
+(*
+## ObjectModel.Create
+```pascal
+function TObjectModel.Create(constref def: TObjectDefinition; locType: Integer): TObjectModel; static;
+```
+Builds `def` as it is drawn when placed as `locType` and measures it with
+{ref}`TObjectModel.Build`, lit the way the client lights world objects.
+*)
+function TObjectModel.Create(constref def: TObjectDefinition; locType: Integer): TObjectModel; static;
+begin
+  Result := TObjectModel.Build(
+    TObjectModel.ModelIDs(def, locType),
+    def.RecolorToFind, def.RecolorToReplace, def.RetextureToFind, def.TextureToReplace,
+    def.ModelSizeX, def.ModelSizeHeight, def.ModelSizeY,
+    def.Ambient + 64, def.Contrast + 768
+  );
+
+  //the offset moves the model down, heights are counted up
+  Result.Height := Max(0, Result.Height - def.OffsetHeight);
 end;

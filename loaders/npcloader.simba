@@ -1,0 +1,244 @@
+(*
+# NPC Loader
+Builds the NPC database WaspLib looks NPCs up in: where every NPC spawns, grouped by map chunk,
+along with its name, actions, size and the colours it is drawn in.
+
+The cache doesn't say where NPCs spawn, the server places them, so the spawns come from a
+crowdsourced list and everything else from the cache.
+*)
+
+{$DEFINE WL_CACHE_LOADER_NPCS_INCLUDED}
+{$IFNDEF WL_CACHE_READER_INCLUDED}               {$INCLUDE_ONCE ../reader/reader.simba}         {$ENDIF}
+{$IFNDEF WL_CACHE_DEFINITION_NPCS_INCLUDED}      {$INCLUDE_ONCE ../definitions/npcs.simba}      {$ENDIF}
+{$IFNDEF WL_CACHE_NPC_MODEL_INCLUDED}            {$INCLUDE_ONCE ../render/npcmodel.simba}       {$ENDIF}
+
+type
+  TNPCLoader = record
+    Archive: TArchive;
+    Definitions: TNPCDefinitionArray;
+    IsLoaded: Boolean;
+    const SPAWNS_URL: String = 'https://raw.githubusercontent.com/mejrs/data_osrs/master/NPCList_OSRS.json';
+    //share of a model's face corners the colours written for it have to cover
+    const COVERAGE: Single = 0.9;
+  end;
+
+(*
+## TNPCLoader.Load
+```pascal
+procedure TNPCLoader.Load();
+```
+Caches the NPC archive of the config index and decodes every NPC into `TNPCLoader.Definitions`,
+which is indexed by NPC id. Does nothing once loaded.
+*)
+procedure TNPCLoader.Load();
+var
+  id: Integer;
+begin
+  if Self.IsLoaded then
+    Exit;
+
+  CacheReader.Indices[ECacheIndex.CONFIGS].Cache(EConfigArchive.NPC);
+  Self.Archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.NPC];
+
+  SetLength(Self.Definitions, Self.Archive.Files.Keys[High(Self.Archive.Files.Keys)] + 1);
+
+  for id in Self.Archive.Files.Keys do
+    Self.Definitions[id] := TNPCDefinition.Create(id, Self.Archive.Revision, Self.Archive.Files.Value[id].Data);
+
+  Self.IsLoaded := True;
+end;
+
+(*
+## TNPCLoader.Resolve
+```pascal
+function TNPCLoader.Resolve(id: Integer): TNPCDefinition;
+```
+The definition NPC `id` is shown as.
+
+Some NPCs change with the player's progress and spawn as a stand-in whose definition only lists
+what it can turn into. Those are shown as the first of their forms that has a name, or as
+themselves if none of them has one.
+*)
+function TNPCLoader.Resolve(id: Integer): TNPCDefinition;
+var
+  child: Integer;
+begin
+  Result := Self.Definitions[id];
+
+  for child in Result.ConfigChangeDest do
+    if (Self.Definitions.IndexOf(child) <> -1) and (Self.Definitions[child].Name <> 'null') then
+      Exit(Self.Definitions[child]);
+end;
+
+(*
+## TNPCLoader.ToJSON
+```pascal
+function TNPCLoader.ToJSON(id: Integer; coordinates: TPointArray): String;
+```
+NPC `id` as one entry of a chunk file: an object holding its `id`, `name`, `level`, `category`,
+`minimapdot`, `actions`, `size`, `coordinates` and `colors`, in that order, which is the order
+`TEntity` reads them in.
+
+`size` is the tiles it covers on each side followed by its height, and `colors` are the colours
+of its {ref}`TNPCModel`, most common first, until `TNPCLoader.COVERAGE` of it is accounted for.
+An NPC without a name is written with an empty one and one without a combat level with `0`.
+*)
+function TNPCLoader.ToJSON(id: Integer; coordinates: TPointArray): String;
+var
+  def: TNPCDefinition;
+  model: TNPCModel;
+  values: TStringArray;
+  name: String;
+  i, j, total, covered: Integer;
+  pt: TPoint;
+begin
+  def := Self.Resolve(id);
+  model := TNPCModel.Create(def);
+
+  name := '';
+  if def.Name <> 'null' then
+    name := CacheString2UTF8(def.Name).Replace('\', '\\').Replace('"', '\"');
+
+  Result := '{"id":' + ToStr(id) + ',"name":"' + name + '"' +
+            ',"level":' + ToStr(Max(0, def.CombatLevel)) +
+            ',"category":' + ToStr(def.Category) +
+            ',"minimapdot":' + ToStr(def.IsMinimapVisible).ToLower();
+
+  //in the order the right-click menu shows them
+  for i := 0 to 4 do
+    for j := 0 to High(def.Ops.Ops) do
+      if def.Ops.Ops[j].Index = i then
+        values += '"' + CacheString2UTF8(def.Ops.Ops[j].Text).Replace('\', '\\').Replace('"', '\"') + '"';
+  Result += ',"actions":[' + values.Join(',') + ']';
+
+  Result += ',"size":[' + ToStr(def.Size) + ',' + ToStr(def.Size) + ',' + ToStr(model.Height) + ']';
+
+  values := [];
+  for pt in coordinates do
+    values += '[' + ToStr(pt.X) + ',' + ToStr(pt.Y) + ']';
+  Result += ',"coordinates":[' + values.Join(',') + ']';
+
+  for i in model.Counts do
+    total += i;
+
+  values := [];
+  for i := 0 to High(model.Colors) do
+  begin
+    values += ToStr(model.Colors[i]);
+    covered += model.Counts[i];
+    if covered >= total * TNPCLoader.COVERAGE then
+      Break;
+  end;
+  Result += ',"colors":[' + values.Join(',') + ']}';
+end;
+
+(*
+## TNPCLoader.WriteDatabase
+```pascal
+function TNPCLoader.WriteDatabase(path: String): Integer;
+```
+Downloads the NPC spawns from `TNPCLoader.SPAWNS_URL` and writes them into `path` as `npcs.zip`:
+a JSON file per map chunk with NPCs in it, named `plane-x-y.json` after the chunk, holding an
+array of {ref}`TNPCLoader.ToJSON` entries, one per NPC that spawns in the chunk with every
+coordinate it spawns at. Spawns of NPCs the cache doesn't have are left out.
+
+The chunk files are written into `path` + `npcs` to be zipped, and that folder is deleted again
+afterwards. Loads the NPCs first with {ref}`TNPCLoader.Load` if they aren't yet, and creates `path`
+if it doesn't exist. Returns how many entries were written.
+
+Example:
+```pascal
+CacheReader := TCacheReader.Create();
+NPCLoader.WriteDatabase('C:/npcs-db/');
+```
+*)
+function TNPCLoader.WriteDatabase(path: String): Integer;
+var
+  spawns: TJSONParser;
+  lookup: TStringMap<Integer>;
+  chunks: TStringArray;
+  ids: array of TIntegerArray;
+  coordinates: array of T2DPointArray;
+  spawn: TJSONItem;
+  id, plane, x, y, c, i, j: Integer;
+  chunk, dir, content: String;
+  files: TStringArray;
+begin
+  Self.Load();
+
+  if not path.EndsWith(PATH_SEP) then
+    path += PATH_SEP;
+
+  dir := path + 'npcs' + PATH_SEP;
+  DirDelete(dir, False);
+  if not DirCreate(dir) then
+    raise 'TNPCLoader: Couldn''t create ' + dir;
+
+  content := HTTPClient.Get(TNPCLoader.SPAWNS_URL);
+  if content = '' then
+    raise 'TNPCLoader: Couldn''t download ' + TNPCLoader.SPAWNS_URL;
+
+  spawns := new TJSONParser();
+  spawns.Parse(content);
+
+  for i := 0 to spawns.Count - 1 do
+  begin
+    spawn := spawns.Item[i];
+    id := spawn.Item['id'].AsInt;
+    if Self.Definitions.IndexOf(id) = -1 then
+      Continue;
+
+    plane := spawn.Item['p'].AsInt;
+    x := spawn.Item['x'].AsInt;
+    y := spawn.Item['y'].AsInt;
+    chunk := ToStr(plane) + '-' + ToStr(x div 64) + '-' + ToStr(y div 64);
+
+    if not lookup.Exists(chunk) then
+    begin
+      lookup.Value[chunk] := Length(chunks);
+      chunks += chunk;
+      SetLength(ids, Length(chunks));
+      SetLength(coordinates, Length(chunks));
+    end;
+
+    c := lookup.Value[chunk];
+    j := ids[c].IndexOf(id);
+    if j = -1 then
+    begin
+      j := Length(ids[c]);
+      ids[c] += id;
+      SetLength(coordinates[c], j + 1);
+    end;
+
+    //map coordinates count 4 pixels a tile, y going down from the top of the map
+    coordinates[c][j] += [x * 4, 196 * 256 + 252 - y * 4];
+  end;
+
+  for i := 0 to High(chunks) do
+  begin
+    content := '[' + LINE_SEP;
+    for j := 0 to High(ids[i]) do
+    begin
+      content += ' ' + Self.ToJSON(ids[i][j], coordinates[i][j]);
+      if j < High(ids[i]) then
+        content += ',';
+      content += LINE_SEP;
+    end;
+    content += ']';
+
+    if not FileWrite(dir + chunks[i] + '.json', content) then
+      raise 'TNPCLoader: Couldn''t write ' + dir + chunks[i] + '.json';
+
+    files += dir + chunks[i] + '.json';
+    Result += Length(ids[i]);
+  end;
+
+  FileDelete(path + 'npcs.zip');
+  if not ZipFiles(path + 'npcs.zip', files) then
+    raise 'TNPCLoader: Couldn''t write ' + path + 'npcs.zip';
+
+  DirDelete(dir, False);
+end;
+
+var
+  NPCLoader: TNPCLoader;
