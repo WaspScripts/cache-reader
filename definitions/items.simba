@@ -13,7 +13,7 @@ type
     ID: Integer;
     Name, Examine: String;
     InventoryModel, Stackable, Cost: Integer;
-    Members, GETradeable, Tradeable: Boolean;
+    Members, GETradeable, Tradeable, Bronzeman: Boolean;
 
     WearPos1, WearPos2, WearPos3,
     MaleModel0, MaleModel1, MaleModel2, MaleOffset,
@@ -44,6 +44,7 @@ type
       StrValue: String;
     end;
     ColorFind, ColorReplace, TextureFind, TextureReplace: TIntegerArray;
+    HoldingWhitelist: TIntegerArray;
   end;
 
 (*
@@ -78,6 +79,7 @@ begin
   Result.Members := False;
   Result.GETradeable := False;
   Result.Tradeable := True;
+  Result.Bronzeman := False;
   Result.NotedID := -1;
   Result.NotedTemplate := -1;
   Result.PlaceholderID := -1;
@@ -227,6 +229,13 @@ begin
       148: Result.PlaceholderID := Read16Bits(data, offset);
       149: Result.PlaceholderTemplate := Read16Bits(data, offset);
       160: Result.Stackable := 2; //alt version. maybe important because 1 has weight 0.
+      161:
+      begin
+        paramCount := Read16Bits(data, offset);
+        SetLength(Result.HoldingWhitelist, paramCount);
+        for i := 0 to paramCount - 1 do
+          Result.HoldingWhitelist[i] := Read16Bits(data, offset);
+      end;
       200: Result.GroundOps.DecodeSubOp(data, offset);
       201: Result.GroundOps.DecodeConditionalOp(data, offset);
       202: Result.GroundOps.DecodeConditionalSubOp(data, offset);
@@ -244,6 +253,7 @@ begin
              Result.Params[i].IntValue := Read32Bits(data, offset);
          end;
       end;
+      251: Result.Bronzeman := True;
 
       else
       begin
