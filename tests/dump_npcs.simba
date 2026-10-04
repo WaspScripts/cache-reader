@@ -1,7 +1,7 @@
 {$I WaspLib/utils.simba}
 
 var
-  PATH: String = SimbaEnv.DataPath + 'Cache' + PATH_SEP + 'npcs-db' + PATH_SEP;
+  PATH: String = WLEnv.CacheDir + 'npcs-db' + PATH_SEP;
   VERSION_PATH: String;
 
 var
