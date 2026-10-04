@@ -1,7 +1,7 @@
 {$I WaspLib/utils.simba}
 
 var
-  PATH: String = SimbaEnv.DataPath + 'npcs-db' + PATH_SEP;
+  PATH: String = SimbaEnv.DataPath + 'Cache' + PATH_SEP + 'npcs-db' + PATH_SEP;
   VERSION_PATH: String;
 
 var
@@ -28,7 +28,7 @@ begin
     if not FileWrite(VERSION_PATH, crc) then
       raise 'dump_npcs: Couldn''t write ' + VERSION_PATH;
 
-    WriteLn('Saved ', rows, ' rows to ', PATH + 'npcs.zip');
+    WriteLn('Saved ', rows, ' rows to ', PATH);
     WriteLn('Took ', Round(PerformanceTime()-start, 3), 'ms to run.');
   end;
 end.

@@ -1,0 +1,14 @@
+{.$DEFINE DISABLE_CACHEREADER_RANGE_CHECKS}
+{$I WaspLib/utils/cache-reader/cache.simba}
+
+var
+  idStr: String;
+begin
+  CacheReader := TCacheReader.Create();
+
+  while ShowQueryDialog('NPC ID:', 'Type an NPC ID:', idStr) do
+  begin
+    WriteLn NPCLoader.Get(StrToInt(idStr, 0));
+    WriteLn TNPCModel.Create(NPCLoader.Resolve(StrToInt(idStr, 0)));
+  end;
+end.
