@@ -155,6 +155,37 @@ end;
 
 
 (*
+## RegionLoader.LoadRegionAt
+```pascal
+function TRegionLoader.LoadRegionAt(regionX, regionY: Integer): Integer;
+```
+The index in `Regions` of the region at `regionX, regionY`, loading it first if it is not loaded
+yet. Returns `-1` if there is no such region.
+*)
+function TRegionLoader.LoadRegionAt(regionX, regionY: Integer): Integer;
+var
+  region: TRegion;
+  id: Integer;
+begin
+  if not InRange(regionX, 0, 255) or not InRange(regionY, 0, 255) then
+    Exit(-1);
+
+  Self.BuildLookup();
+
+  id := (regionX shl 8) or regionY;
+  Result := Self.Lookup[id];
+  if Result <> -1 then
+    Exit;
+
+  if Self.LoadRegion(id, region) then
+  begin
+    Self.Regions += region;
+    Result := High(Self.Regions);
+    Self.Lookup[id] := Result;
+  end;
+end;
+
+(*
 ## RegionLoader.LoadRegionAndNeighbors
 ```pascal
 function TRegionLoader.LoadRegionAndNeighbors(regionX, regionY: Integer): Boolean;
@@ -167,41 +198,15 @@ the map would show a seam at every edge. Regions already loaded are left alone, 
 per chunk while panning around only pays for what is new.
 *)
 function TRegionLoader.LoadRegionAndNeighbors(regionX, regionY: Integer): Boolean;
-var
-  region: TRegion;
-  coordinates: TPointArray;
-  i, id: Integer;
 begin
   if not InRange(regionX, 0, 255) or not InRange(regionY, 0, 255) then
     Exit;
 
-  Self.BuildLookup();
-
-  coordinates := [Point(regionX, regionY)];                          // center
-  if regionX > 0   then coordinates += Point(regionX - 1, regionY);  // left
-  if regionX < 255 then coordinates += Point(regionX + 1, regionY);  // right
-  if regionY > 0   then coordinates += Point(regionX, regionY - 1);  // down
-  if regionY < 255 then coordinates += Point(regionX, regionY + 1);  // up
-
-  for i := 0 to High(coordinates) do
-  begin
-    id := (coordinates[i].X shl 8) or coordinates[i].Y;
-
-    if Self.Lookup[id] <> -1 then
-    begin
-      if i = 0 then
-        Result := True;
-      Continue;
-    end;
-
-    if Self.LoadRegion(id, region) then
-    begin
-      Self.Regions += region;
-      Self.Lookup[id] := High(Self.Regions);
-      if i = 0 then
-        Result := True;
-    end;
-  end;
+  Result := Self.LoadRegionAt(regionX, regionY) <> -1;
+  Self.LoadRegionAt(regionX - 1, regionY); // left
+  Self.LoadRegionAt(regionX + 1, regionY); // right
+  Self.LoadRegionAt(regionX, regionY - 1); // down
+  Self.LoadRegionAt(regionX, regionY + 1); // up
 end;
 
 (*

@@ -30,6 +30,8 @@ type
     RegionPlaneCache: array of array of TIntegerMatrix;
     RegionTileCodes, RegionIconCodes: array of array of TIntegerArray;
     RegionIconsCached: array of TBooleanArray;
+    RegionOverhangs: array of TIntegerArray;
+    RegionOverhangsCached: TBooleanArray;
 
     LastIndex, PaletteRevision: Integer;
 
@@ -1182,11 +1184,17 @@ procedure TMapChunkLoader.DrawCollisionEdge(var pixels: TIntegerMatrix; drawX, d
 Draws one edge of the tile whose top-left pixel is `drawX, drawY`.
 `edge` is `0` for the left edge, `1` for the top, `2` for the right and `3` for the bottom,
 which is also the order a wall's orientation uses.
+
+Nothing is drawn if that tile is outside the chunk, which happens to walls belonging to a
+neighbouring region.
 *)
 procedure TMapChunkLoader.DrawCollisionEdge(var pixels: TIntegerMatrix; drawX, drawY, edge, color: Integer); static;
 var
   i: Integer;
 begin
+  if not InRange(drawX, 0, TMapChunkLoader.IMAGE_SIZE - 1) or not InRange(drawY, 0, TMapChunkLoader.IMAGE_SIZE - 1) then
+    Exit;
+
   case edge of
     0: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawY + i, drawX] := color;
     1: for i := 0 to TMapChunkLoader.SCALE - 1 do pixels[drawY, drawX + i] := color;
@@ -1203,8 +1211,8 @@ procedure TMapChunkLoader.DrawCollisionWall(var pixels: TIntegerMatrix; drawX, d
 Draws a wall on the edge its `orientation` points at.
 
 A door blocks the tile it swings into rather than the one it stands on, so it is drawn one
-edge further round, and a south-facing one lands on the row below the tile entirely - which is
-skipped when that row falls outside the chunk.
+edge further round, and a south-facing one lands on the row below the tile entirely - which can
+be the top row of the chunk to the south.
 *)
 procedure TMapChunkLoader.DrawCollisionWall(var pixels: TIntegerMatrix; drawX, drawY, orientation, color: Integer; isDoor: Boolean); static;
 var
@@ -1218,7 +1226,7 @@ begin
 
   if orientation = 2 then
   begin
-    if drawY + TMapChunkLoader.SCALE < TMapChunkLoader.IMAGE_SIZE then
+    if InRange(drawX, 0, TMapChunkLoader.IMAGE_SIZE - 1) and InRange(drawY + TMapChunkLoader.SCALE, 0, TMapChunkLoader.IMAGE_SIZE - 1) then
       for i := 0 to TMapChunkLoader.SCALE - 1 do
         pixels[drawY + TMapChunkLoader.SCALE, drawX + i] := color;
     Exit;
@@ -1238,13 +1246,22 @@ Walls and corners block the edge they sit on - or the next edge round, if the ob
 openable door, since a closed door blocks the tile it opens into rather than the one it stands
 on. Everything larger blocks its whole footprint, rotated with the object, and does not paint
 over a wall that was already marked there.
+
+`x, y` are relative to the chunk being drawn and can fall outside it: an object standing in a
+neighbouring region is passed in too, and only the part of it that reaches into this chunk is
+drawn, the same way the client clips a footprint to its collision map.
 *)
 procedure TMapChunkLoader.DrawCollisionObjectAtTile(var pixels: TIntegerMatrix; constref loc: TWorldLocation; x, y: Integer);
 var
-  i, objIdx, color, drawX, drawY, xSize, ySize, sX, sY: Integer;
+  i, objIdx, color, drawX, drawY, w, h, x1, y1, x2, y2, px, py: Integer;
   objs: TObjectDefinitionArray;
+  row: TIntegerArray;
 begin
   if InRange(loc.LocType, 4, 8) then
+    Exit;
+
+  //objects only reach east and north of their tile, apart from a door reaching one row south
+  if (x >= TMapChunkLoader.REGION_SIZE) or (y > TMapChunkLoader.REGION_SIZE) then
     Exit;
 
   objIdx := Self.MapData.Objects.IndexOf(loc.ID);
@@ -1260,20 +1277,40 @@ begin
     if objs[objIdx].InteractType <> 1 then
       Exit;
 
-  drawX := x * TMapChunkLoader.SCALE;
-  drawY := (TMapChunkLoader.REGION_SIZE - objs[objIdx].SizeY - y) * TMapChunkLoader.SCALE;
-
-  if drawY < 0 then
-    Exit;
-
-  if objs[objIdx].WallOrDoor <> 0 then
-    color := TColorUtils.COLLISION_DOOR_COLOR
-  else
-    color := TColorUtils.COLLISION_WALL_COLOR;
-
-  // Types 0-3: walls and corners
-  if loc.LocType <= 3 then
+  // Types 0-3 and 9: walls, which never leave their own tile
+  if (loc.LocType <= 3) or (loc.LocType = 9) then
   begin
+    if x < 0 then
+      Exit;
+
+    drawX := x * TMapChunkLoader.SCALE;
+    drawY := (TMapChunkLoader.REGION_SIZE - objs[objIdx].SizeY - y) * TMapChunkLoader.SCALE;
+
+    if objs[objIdx].WallOrDoor <> 0 then
+      color := TColorUtils.COLLISION_DOOR_COLOR
+    else
+      color := TColorUtils.COLLISION_WALL_COLOR;
+
+    if loc.LocType = 9 then
+    begin
+      if not InRange(drawY, 0, TMapChunkLoader.IMAGE_SIZE - 1) then
+        Exit;
+
+      //begin/end is required here: Lape binds a trailing `else` to the `for`, not to the `if`
+      if (loc.Orientation <> 0) and (loc.Orientation <> 2) then
+      begin
+        for i := 0 to TMapChunkLoader.SCALE - 1 do
+          pixels[drawY + i, drawX + i] := color;
+      end
+      else
+      begin
+        for i := 0 to TMapChunkLoader.SCALE - 1 do
+          pixels[drawY + (TMapChunkLoader.SCALE - 1 - i), drawX + i] := color;
+      end;
+
+      Exit;
+    end;
+
     if loc.ID = 24720 then
       Exit;
 
@@ -1286,66 +1323,82 @@ begin
         TMapChunkLoader.DrawCollisionEdge(pixels, drawX, drawY, (loc.Orientation + 1) and 3, color);
       end;
       3:
-        case loc.Orientation of
-          0: pixels[drawY, drawX] := color;
-          1: pixels[drawY, drawX + TMapChunkLoader.SCALE - 1] := color;
-          2: pixels[drawY + TMapChunkLoader.SCALE - 1, drawX + TMapChunkLoader.SCALE - 1] := color;
-          3: pixels[drawY + TMapChunkLoader.SCALE - 1, drawX] := color;
-        end;
+        if InRange(drawY, 0, TMapChunkLoader.IMAGE_SIZE - 1) then
+          case loc.Orientation of
+            0: pixels[drawY, drawX] := color;
+            1: pixels[drawY, drawX + TMapChunkLoader.SCALE - 1] := color;
+            2: pixels[drawY + TMapChunkLoader.SCALE - 1, drawX + TMapChunkLoader.SCALE - 1] := color;
+            3: pixels[drawY + TMapChunkLoader.SCALE - 1, drawX] := color;
+          end;
     end;
 
     Exit;
   end;
 
-  // Type 9: diagonal walls
-  if loc.LocType = 9 then
+  // Types 10-22: collision objects, blocking a footprint that turns with the object
+  if (loc.Orientation = 1) or (loc.Orientation = 3) then
   begin
-    //begin/end is required here: Lape binds a trailing `else` to the `for`, not to the `if`
-    if (loc.Orientation <> 0) and (loc.Orientation <> 2) then
-    begin
-      for i := 0 to TMapChunkLoader.SCALE - 1 do
-        pixels[drawY + i, drawX + i] := color;
-    end
-    else
-    begin
-      for i := 0 to TMapChunkLoader.SCALE - 1 do
-        pixels[drawY + (TMapChunkLoader.SCALE - 1 - i), drawX + i] := color;
-    end;
-
-    Exit;
+    w := objs[objIdx].SizeY;
+    h := objs[objIdx].SizeX;
+  end else
+  begin
+    w := objs[objIdx].SizeX;
+    h := objs[objIdx].SizeY;
   end;
 
-  // Types 10-22: collision objects
+  x1 := Max(x, 0);
+  y1 := Max(y, 0);
+  x2 := Min(x + w, TMapChunkLoader.REGION_SIZE) - 1;
+  y2 := Min(y + h, TMapChunkLoader.REGION_SIZE) - 1;
+  if (x1 > x2) or (y1 > y2) then
+    Exit;
+
   if (objs[objIdx].Name = 'null') or (objs[objIdx].Name = '') then
     Exit;
   if objs[objIdx].ObjectModels.IsEmpty then
     Exit;
 
-  xSize := objs[objIdx].SizeX * TMapChunkLoader.SCALE;
-  ySize := objs[objIdx].SizeY * TMapChunkLoader.SCALE;
-
-  if (xSize = ySize) or (loc.Orientation = 0) or (loc.Orientation = 2) then
+  //the image has north at the top, so the footprint's top tile row is its northernmost one
+  for py := (TMapChunkLoader.REGION_SIZE - 1 - y2) * TMapChunkLoader.SCALE to (TMapChunkLoader.REGION_SIZE - y1) * TMapChunkLoader.SCALE - 1 do
   begin
-    if (drawX + xSize >= TMapChunkLoader.IMAGE_SIZE) or (drawY + ySize >= TMapChunkLoader.IMAGE_SIZE) then
-      Exit;
-
-    for sX := 0 to xSize - 1 do
-      for sY := 0 to ySize - 1 do
-        if pixels[drawY + sY, drawX + sX] <> TColorUtils.COLLISION_WALL_COLOR then
-          pixels[drawY + sY, drawX + sX] := TColorUtils.COLLISION_COLOR;
+    row := pixels[py];
+    for px := x1 * TMapChunkLoader.SCALE to (x2 + 1) * TMapChunkLoader.SCALE - 1 do
+      if row[px] <> TColorUtils.COLLISION_WALL_COLOR then
+        row[px] := TColorUtils.COLLISION_COLOR;
   end;
+end;
 
-  if (xSize <> ySize) and ((loc.Orientation = 1) or (loc.Orientation = 3)) then
-  begin
-    drawY := drawY + ySize - 1;
-    if (drawY >= TMapChunkLoader.IMAGE_SIZE) or (drawY - xSize < 0) or (drawX + ySize >= TMapChunkLoader.IMAGE_SIZE) then
-      Exit;
+(*
+## MapChunkLoader.DrawCollisionLocation
+```pascal
+procedure TMapChunkLoader.DrawCollisionLocation(var pixels: TIntegerMatrix; constref region: TRegion; constref loc: TWorldLocation; z, offsetX, offsetY: Integer);
+```
+Marks one of `region`'s objects on the collision map of plane `z`, if it is on that plane.
 
-    for sX := 0 to xSize - 1 do
-      for sY := 0 to ySize - 1 do
-        if pixels[drawY - sX, drawX + sY] <> TColorUtils.COLLISION_WALL_COLOR then
-          pixels[drawY - sX, drawX + sY] := TColorUtils.COLLISION_COLOR;
-  end;
+On the ground plane a bridge tile takes its objects from plane 1, since that is the surface
+being walked on, and tiles the plane says are not rendered are skipped.
+
+`offsetX, offsetY` is where `region` sits relative to the chunk being drawn, in tiles: `0, 0` for
+the chunk itself, or `-64, 0` for the region west of it.
+*)
+procedure TMapChunkLoader.DrawCollisionLocation(var pixels: TIntegerMatrix; constref region: TRegion; constref loc: TWorldLocation; z, offsetX, offsetY: Integer);
+var
+  localX, localY, tileZ: Integer;
+begin
+  localX := loc.X - region.BaseX;
+  localY := loc.Y - region.BaseY;
+
+  if (region.TileSettings[z, localX, localY] and 24) <> 0 then
+    Exit;
+
+  tileZ := z;
+  if (z = 0) and ((region.TileSettings[1, localX, localY] and 2) <> 0) then
+    tileZ := 1;
+
+  if loc.Z <> tileZ then
+    Exit;
+
+  Self.DrawCollisionObjectAtTile(pixels, loc, localX + offsetX, localY + offsetY);
 end;
 
 (*
@@ -1354,50 +1407,115 @@ end;
 procedure TMapChunkLoader.DrawCollisionObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
 ```
 Marks every object of a region that blocks movement on plane `z`.
-
-On the ground plane a bridge tile takes its objects from plane 1, since that is the surface
-being walked on, and tiles the plane says are not rendered are skipped.
 *)
 procedure TMapChunkLoader.DrawCollisionObjectsOnPlane(var pixels: TIntegerMatrix; constref region: TRegion; z: Integer);
 var
   loc: TWorldLocation;
-  localX, localY, tileZ: Integer;
 begin
-  if z = 0 then
-  begin
-    for loc in region.Locations do
-    begin
-      localX := loc.X - region.BaseX;
-      localY := loc.Y - region.BaseY;
-
-      if (region.TileSettings[0, localX, localY] and 24) <> 0 then
-        Continue;
-
-      tileZ := 0;
-      if (region.TileSettings[1, localX, localY] and 2) <> 0 then
-        tileZ := 1;
-
-      if loc.Z <> tileZ then
-        Continue;
-
-      Self.DrawCollisionObjectAtTile(pixels, loc, localX, localY);
-    end;
-    Exit;
-  end;
-
   for loc in region.Locations do
+    Self.DrawCollisionLocation(pixels, region, loc, z, 0, 0);
+end;
+
+(*
+## MapChunkLoader.GetRegionOverhangs
+```pascal
+function TMapChunkLoader.GetRegionOverhangs(regionIdx: Integer): TIntegerArray;
+```
+The indices into a region's `Locations` of the objects that can reach into a neighbouring chunk's
+collision map: footprints running past the region's east or north edge, and walls on its bottom
+row, since a door there can draw on the row below.
+
+Worked out once per region and cached, so drawing a chunk's neighbours only goes through the few
+objects on their edges instead of all of them.
+*)
+function TMapChunkLoader.GetRegionOverhangs(regionIdx: Integer): TIntegerArray;
+var
+  i, objIdx, w, h, localX, localY: Integer;
+  objs: TObjectDefinitionArray;
+  region: TRegion;
+begin
+  if regionIdx >= Length(Self.RegionOverhangsCached) then
   begin
-    if loc.Z <> z then
-      Continue;
-
-    localX := loc.X - region.BaseX;
-    localY := loc.Y - region.BaseY;
-
-    if (region.TileSettings[z, localX, localY] and 24) <> 0 then
-      Continue;
-
-    Self.DrawCollisionObjectAtTile(pixels, loc, localX, localY);
+    SetLength(Self.RegionOverhangs, regionIdx + 1);
+    SetLength(Self.RegionOverhangsCached, regionIdx + 1);
   end;
+
+  if Self.RegionOverhangsCached[regionIdx] then
+    Exit(Self.RegionOverhangs[regionIdx]);
+
+  objs := Self.MapData.Objects;
+  region := Self.RegionLoader.Regions[regionIdx];
+
+  for i := 0 to High(region.Locations) do
+  begin
+    objIdx := objs.IndexOf(region.Locations[i].ID);
+    if objIdx = -1 then
+      Continue;
+
+    localX := region.Locations[i].X - region.BaseX;
+    localY := region.Locations[i].Y - region.BaseY;
+
+    if (localY = 0) and (region.Locations[i].LocType <= 3) then
+    begin
+      Result += i;
+      Continue;
+    end;
+
+    if (region.Locations[i].Orientation = 1) or (region.Locations[i].Orientation = 3) then
+    begin
+      w := objs[objIdx].SizeY;
+      h := objs[objIdx].SizeX;
+    end else
+    begin
+      w := objs[objIdx].SizeX;
+      h := objs[objIdx].SizeY;
+    end;
+
+    if (localX + w > TMapChunkLoader.REGION_SIZE) or (localY + h > TMapChunkLoader.REGION_SIZE) then
+      Result += i;
+  end;
+
+  Self.RegionOverhangs[regionIdx] := Result;
+  Self.RegionOverhangsCached[regionIdx] := True;
+end;
+
+(*
+## MapChunkLoader.DrawCollisionObjects
+```pascal
+procedure TMapChunkLoader.DrawCollisionObjects(var pixels: TIntegerMatrix; regionX, regionY, z: Integer);
+```
+Marks every object that blocks movement on plane `z` of the chunk at `regionX, regionY`.
+
+An object's position is its south-west tile and its footprint grows east and north, so objects
+standing in the regions to the west, south and south-west can reach into this chunk, and a door
+on the bottom row of the region to the north can reach its top row. Those are drawn as well,
+clipped to the chunk, so the collision has no gaps along chunk boundaries.
+
+The chunk's own objects go last, so where a neighbour's footprint meets one of its doors the
+door is what shows.
+*)
+procedure TMapChunkLoader.DrawCollisionObjects(var pixels: TIntegerMatrix; regionX, regionY, z: Integer);
+const
+  NEIGHBORS: array of TPoint = [[-1, -1], [-1, 0], [0, -1], [0, 1]];
+var
+  i, j, id: Integer;
+  overhangs: TIntegerArray;
+begin
+  for i := 0 to High(NEIGHBORS) do
+  begin
+    id := Self.RegionLoader.LoadRegionAt(regionX + NEIGHBORS[i].X, regionY + NEIGHBORS[i].Y);
+    if id = -1 then
+      Continue;
+
+    overhangs := Self.GetRegionOverhangs(id);
+    for j := 0 to High(overhangs) do
+      Self.DrawCollisionLocation(pixels, Self.RegionLoader.Regions[id], Self.RegionLoader.Regions[id].Locations[overhangs[j]], z,
+        NEIGHBORS[i].X * TMapChunkLoader.REGION_SIZE, NEIGHBORS[i].Y * TMapChunkLoader.REGION_SIZE);
+  end;
+
+  id := Self.RegionLoader.LoadRegionAt(regionX, regionY);
+  if id <> -1 then
+    Self.DrawCollisionObjectsOnPlane(pixels, Self.RegionLoader.Regions[id], z);
 end;
 
 (*
@@ -1519,7 +1637,7 @@ begin
       Move(line[0], pixels[pixelRow][0], TMapChunkLoader.IMAGE_SIZE * SizeOf(Integer));
   end;
 
-  Self.DrawCollisionObjectsOnPlane(pixels, region, z);
+  Self.DrawCollisionObjects(pixels, regionX, regionY, z);
 
   SetLength(argb, TMapChunkLoader.IMAGE_SIZE * TMapChunkLoader.IMAGE_SIZE);
   for y := 0 to TMapChunkLoader.IMAGE_SIZE - 1 do
