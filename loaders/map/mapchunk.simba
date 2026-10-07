@@ -1353,11 +1353,6 @@ begin
   if (x1 > x2) or (y1 > y2) then
     Exit;
 
-  if (objs[objIdx].Name = 'null') or (objs[objIdx].Name = '') then
-    Exit;
-  if objs[objIdx].ObjectModels.IsEmpty then
-    Exit;
-
   //the image has north at the top, so the footprint's top tile row is its northernmost one
   for py := (TMapChunkLoader.REGION_SIZE - 1 - y2) * TMapChunkLoader.SCALE to (TMapChunkLoader.REGION_SIZE - y1) * TMapChunkLoader.SCALE - 1 do
   begin
