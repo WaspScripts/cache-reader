@@ -222,9 +222,9 @@ begin
       67: Result.ModelSizeY := Read16Bits(data, offset);
       68: Result.MapSceneID := Read16Bits(data, offset);
       69: Result.BlockingMask := Read8Bits(data, offset);
-      70: Result.OffsetX := Read16Bits(data, offset);
-      71: Result.OffsetHeight := Read16Bits(data, offset);
-      72: Result.OffsetY := Read16Bits(data, offset);
+      70: Result.OffsetX := ReadSignedShort(data, offset);
+      71: Result.OffsetHeight := ReadSignedShort(data, offset);
+      72: Result.OffsetY := ReadSignedShort(data, offset);
       73: Result.ObstructsGround := True;
       74: Result.IsHollow := True;
       75: Result.SupportsItems := Read8Bits(data, offset);
