@@ -35,8 +35,9 @@ begin
   //do not have to be cleared by hand
   SetLength(Self.Keys, 0);
   SetLength(Self.Values, 0);
-  SetLength(Self.HashSlots, 0);
+
   SetLength(Self.HashSlots, Self.HashSize);
+  FillMem(Self.HashSlots[0], Self.HashSize * SizeOf(Integer), 0);
 
   Self.Count := 0;
   Self.IsSetup := True;
@@ -77,8 +78,8 @@ var
 begin
   Self.HashSize := Self.HashSize * 2;
 
-  SetLength(Self.HashSlots, 0);
   SetLength(Self.HashSlots, Self.HashSize);
+  FillMem(Self.HashSlots[0], Self.HashSize * SizeOf(Integer), 0);
 
   for i := 0 to High(Self.Keys) do
     Self.HashSlots[Self._FindSlot(Self.Keys[i])] := i + 1;
@@ -111,8 +112,9 @@ begin
   Self.Keys := Copy(keys, 0, count);
   SetLength(Self.Values, 0);
   SetLength(Self.Values, count);
-  SetLength(Self.HashSlots, 0);
+
   SetLength(Self.HashSlots, Self.HashSize);
+  FillMem(Self.HashSlots[0], Self.HashSize * SizeOf(Integer), 0);
 
   //one map is built per archive of an index, so hundreds of thousands of them are built to open
   //a cache - hence the aliases, and the hash written out rather than called: at this scale the
@@ -233,8 +235,8 @@ begin
     Self.Keys[insertPos] := key;
     Self.Values[insertPos] := val;
 
-    for i := 0 to Self.HashSize - 1 do
-      Self.HashSlots[i] := 0;
+    FillMem(Self.HashSlots[0], Self.HashSize * SizeOf(Integer), 0);
+
     for i := 0 to idx do
       Self.HashSlots[Self._FindSlot(Self.Keys[i])] := i + 1;
   end;
