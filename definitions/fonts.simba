@@ -51,8 +51,9 @@ function TFontDefinition.GetGlyphImage(charCode: Integer): TImage;
 ```
 The glyph drawn for `charCode` as an image. A code the font has no glyph for raises.
 
-Every glyph comes back on the font's full `MaxWidth` x `MaxHeight` canvas, placed at its
-`OffsetX`, `OffsetY`, so all glyphs of a font are the same size and share a baseline.
+Every glyph comes back on a canvas as wide as its advance and as tall as the font's `MaxHeight`,
+placed at its `OffsetX`, `OffsetY`, so glyphs laid side by side are spaced like the game draws
+them and share a baseline.
 *)
 function TFontDefinition.GetGlyphImage(charCode: Integer): TImage;
 var
@@ -63,7 +64,7 @@ begin
 
   sprite := Self.Glyphs[charCode];
 
-  Result := new TImage(sprite.OffsetX+sprite.Width, sprite.MaxHeight);
+  Result := new TImage(Self.Advances[charCode], sprite.MaxHeight);
   if (sprite.Width > 0) and (sprite.Height > 0) then
     Result.DrawImage(sprite.ToImage(), [sprite.OffsetX, sprite.OffsetY]);
 end;
@@ -74,8 +75,8 @@ end;
 function TFontDefinition.GetGlyphShadowImage(charCode: Integer): TImage;
 ```
 Like {ref}`TFontDefinition.GetGlyphImage` but with the game's drop shadow drawn one pixel down and
-to the right of the glyph. The canvas is one pixel wider and taller than the font's so the shadow
-is never clipped.
+to the right of the glyph. The canvas is one pixel taller so the shadow is never clipped at the
+bottom, but keeps the glyph's advance as its width.
 *)
 function TFontDefinition.GetGlyphShadowImage(charCode: Integer): TImage;
 var
@@ -87,7 +88,7 @@ begin
 
   sprite := Self.Glyphs[charCode];
 
-  Result := new TImage(sprite.OffsetX + sprite.Width + 1, sprite.MaxHeight + 1);
+  Result := new TImage(Self.Advances[charCode], sprite.MaxHeight + 1);
   Result.DrawImage(Self.GetGlyphImage(charCode), [0, 0]);
 
   tpa := Result.FindColor($FFFFFF, 0);
@@ -102,7 +103,7 @@ function TFontDefinition.GetGlyphImages(): TImageArray;
 function TFontDefinition.GetGlyphShadowImages(): TImageArray;
 ```
 The printable glyphs indexed by character code, from {ref}`TFontDefinition.GetGlyphImage` or
-{ref}`TFontDefinition.GetGlyphShadowImage`. Space is a blank image the same size as the rest.
+{ref}`TFontDefinition.GetGlyphShadowImage`. Space is a blank image as wide as its advance.
 Codes `0..31` and `96` are left empty.
 *)
 function TFontDefinition.GetGlyphImages(): TImageArray;
@@ -111,7 +112,7 @@ var
 begin
   SetLength(Result, 256);
 
-  Result[32] := new TImage(Self.Glyphs[32].MaxWidth, Self.Glyphs[32].MaxHeight);
+  Result[32] := new TImage(Self.Advances[32], Self.Glyphs[32].MaxHeight);
   for i := 33 to 95 do //0..31 are spaces and/or duplicated symbols
     Result[i] := Self.GetGlyphImage(i);
 
@@ -126,7 +127,7 @@ var
 begin
   SetLength(Result, 256);
 
-  Result[32] := new TImage(Self.Glyphs[32].MaxWidth + 1, Self.Glyphs[32].MaxHeight + 1);
+  Result[32] := new TImage(Self.Advances[32], Self.Glyphs[32].MaxHeight + 1);
   for i := 33 to 95 do
     Result[i] := Self.GetGlyphShadowImage(i);
 
