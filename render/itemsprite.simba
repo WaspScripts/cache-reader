@@ -232,7 +232,9 @@ begin
 
   Self.Sprite := TSpritePixels.Create(36, 32);
   Self.Graphics.SetRasterBuffer(Self.Sprite.Pixels, 36, 32);
-  Self.Graphics.Reset();
+
+  FillMem(Self.Graphics.Pixels[0], Length(Self.Graphics.Pixels) * SizeOf(Integer), 0);
+
   Self.Graphics.Zoom := 512;
   Self.Graphics.SetRasterClipping();
   Self.Graphics.SetOffset(16, 16);

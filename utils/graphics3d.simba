@@ -73,21 +73,6 @@ begin
 end;
 
 (*
-## Graphics3D.Reset
-```pascal
-procedure TGraphics3D.Reset();
-```
-Clears the pixel buffer to transparent.
-*)
-procedure TGraphics3D.Reset();
-var
-  i: Integer;
-begin
-  for i := 0 to High(Self.Pixels) do
-    Self.Pixels[i] := 0;
-end;
-
-(*
 ## Graphics3D.UpdateClipDims
 ```pascal
 procedure TGraphics3D.UpdateClipDims();

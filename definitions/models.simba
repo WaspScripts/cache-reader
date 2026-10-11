@@ -306,7 +306,6 @@ begin
   c1 := offsetOfTextureIndices;
   for i := 0 to textureCount - 1 do
   begin
-    Result.TextureRenderTypes[i] := 0;
     Result.TexIndices1[i] := Read16Bits(data, c1);
     Result.TexIndices2[i] := Read16Bits(data, c1);
     Result.TexIndices3[i] := Read16Bits(data, c1);
@@ -611,7 +610,6 @@ begin
   c1 := offsetOfTextureIndices;
   for i := 0 to textureCount - 1 do
   begin
-    Result.TextureRenderTypes[i] := 0;
     Result.TexIndices1[i] := Read16Bits(data, c1);
     Result.TexIndices2[i] := Read16Bits(data, c1);
     Result.TexIndices3[i] := Read16Bits(data, c1);
