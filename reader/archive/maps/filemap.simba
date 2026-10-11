@@ -61,12 +61,12 @@ procedure TFileMap._Init(expectedCount: Integer);
 begin
   Self.HashSize := MapHashSize(expectedCount);
 
-  //dropping the arrays before resizing them hands back freshly zeroed memory, so the slots
-  //do not have to be cleared by hand
   SetLength(Self.Keys, 0);
   SetLength(Self.Values, 0);
-  SetLength(Self.HashSlots, 0);
+
+  //cleared in place rather than dropped, so a table that is already the right size is reused
   SetLength(Self.HashSlots, Self.HashSize);
+  FillMem(Self.HashSlots[0], Self.HashSize * SizeOf(Integer), 0);
 
   Self.Count := 0;
   Self.IsSetup := True;
@@ -109,8 +109,8 @@ var
 begin
   Self.HashSize := MapHashSize(Length(Self.Keys) + 1);
 
-  SetLength(Self.HashSlots, 0);
   SetLength(Self.HashSlots, Self.HashSize);
+  FillMem(Self.HashSlots[0], Self.HashSize * SizeOf(Integer), 0);
 
   for i := 0 to High(Self.Keys) do
     Self.HashSlots[Self._FindSlot(Self.Keys[i])] := i + 1;
@@ -283,8 +283,8 @@ begin
     Self.Keys[insertPos] := key;
     Self.Values[insertPos] := val;
 
-    for i := 0 to Self.HashSize - 1 do
-      Self.HashSlots[i] := 0;
+    FillMem(Self.HashSlots[0], Self.HashSize * SizeOf(Integer), 0);
+
     for i := 0 to idx do
       Self.HashSlots[Self._FindSlot(Self.Keys[i])] := i + 1;
   end;
