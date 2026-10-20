@@ -83,6 +83,9 @@ Loads every world object definition, caching the object archive first if it has 
 
 This is the slowest part of {ref}`TMapDataLoader.Load` by some distance - there are tens of
 thousands of them, and the map renderer needs any of them to be reachable by id.
+
+Each one is stored at its id. The archive skips some ids, which leaves empty slots that
+{ref}`TObjectDefinitionArray.IndexOf` doesn't count.
 *)
 procedure TMapDataLoader.LoadObjects();
 var
@@ -94,9 +97,9 @@ begin
   archive := CacheReader.Indices[ECacheIndex.CONFIGS].ReferenceTable.Archives.Value[EConfigArchive.OBJ];
 
   files := archive.Files.Values;
-  SetLength(Self.Objects, Length(files));
+  SetLength(Self.Objects, files[High(files)].ID + 1);
   for i := 0 to High(files) do
-    Self.Objects[i] := TObjectDefinition.Create(files[i].ID, archive.Revision, files[i].Data);
+    Self.Objects[files[i].ID] := TObjectDefinition.Create(files[i].ID, archive.Revision, files[i].Data);
 end;
 
 (*

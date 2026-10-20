@@ -361,12 +361,12 @@ function TObjectDefinitionArray.IndexOf(id: Integer): Integer;
 ```
 The position of `id` in the array, or `-1` if there is no such object.
 
-Object definitions are stored one per id with no gaps, so an id is its own index; this exists to
-keep that assumption in one place.
+Object definitions are stored at their id, so an id is its own index. The archive skips some ids,
+and the empty slots those leave behind have the wrong `ID`, so they don't count.
 *)
 function TObjectDefinitionArray.IndexOf(id: Integer): Integer;
 begin
-  if InRange(id, 0, High(Self)) then
+  if InRange(id, 0, High(Self)) and (Self[id].ID = id) then
     Exit(id);
   Result := -1;
 end;
