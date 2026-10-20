@@ -101,14 +101,15 @@ end;
 ```pascal
 function TAreaDefinitionArray.IndexOf(id: Integer): Integer;
 ```
-The position of `id` in the array, or `-1` if there is no such area.
+The position of `id` in the array, or `-1` if `id` is negative.
 
 Area definitions are stored one per id with no gaps, so an id is its own index; this exists to
-keep that assumption in one place.
+keep that assumption in one place. An id past the end isn't checked: the ids looked up come from
+the same cache as the definitions.
 *)
 function TAreaDefinitionArray.IndexOf(id: Integer): Integer;
 begin
-  if InRange(id, 0, High(Self)) then
+  if id >= 0 then
     Exit(id);
   Result := -1;
 end;

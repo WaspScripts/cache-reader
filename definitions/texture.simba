@@ -85,14 +85,15 @@ end;
 ```pascal
 function TTextureDefinitionArray.IndexOf(id: Integer): Integer;
 ```
-The position of `id` in the array, or `-1` if there is no such texture.
+The position of `id` in the array, or `-1` if `id` is negative.
 
-Texture definitions are stored one per id with no gaps, so an id is its own index; this exists to
-keep that assumption in one place.
+Texture definitions are stored at their id, so an id is its own index. The archive skips some ids,
+and nothing in the cache points at the empty slots those leave behind. Neither those nor an id
+past the end are checked: the ids looked up come from the same cache as the definitions.
 *)
 function TTextureDefinitionArray.IndexOf(id: Integer): Integer;
 begin
-  if InRange(id, 0, High(Self)) then
+  if id >= 0 then
     Exit(id);
   Result := -1;
 end;

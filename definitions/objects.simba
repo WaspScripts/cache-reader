@@ -359,14 +359,15 @@ end;
 ```pascal
 function TObjectDefinitionArray.IndexOf(id: Integer): Integer;
 ```
-The position of `id` in the array, or `-1` if there is no such object.
+The position of `id` in the array, or `-1` if `id` is negative.
 
 Object definitions are stored at their id, so an id is its own index. The archive skips some ids,
-and the empty slots those leave behind have the wrong `ID`, so they don't count.
+and nothing in the cache points at the empty slots those leave behind. Neither those nor an id
+past the end are checked: the ids looked up come from the same cache as the definitions.
 *)
 function TObjectDefinitionArray.IndexOf(id: Integer): Integer;
 begin
-  if InRange(id, 0, High(Self)) and (Self[id].ID = id) then
+  if id >= 0 then
     Exit(id);
   Result := -1;
 end;

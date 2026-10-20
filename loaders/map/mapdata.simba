@@ -85,7 +85,7 @@ This is the slowest part of {ref}`TMapDataLoader.Load` by some distance - there 
 thousands of them, and the map renderer needs any of them to be reachable by id.
 
 Each one is stored at its id. The archive skips some ids, which leaves empty slots that
-{ref}`TObjectDefinitionArray.IndexOf` doesn't count.
+nothing in the cache points at.
 *)
 procedure TMapDataLoader.LoadObjects();
 var
@@ -243,6 +243,8 @@ Loads every texture definition, caching the texture index first if it has not be
 
 The map renderer only wants their average colours, which is what a textured ground overlay is
 drawn as.
+
+Each one is stored at its id, like {ref}`MapDataLoader.LoadObjects` does.
 *)
 procedure TMapDataLoader.LoadTextures();
 var
@@ -254,9 +256,9 @@ begin
   archive := CacheReader.Indices[ECacheIndex.TEXTURES].ReferenceTable.Archives.Value[0];
 
   files := archive.Files.Values;
-  SetLength(Self.Textures, Length(files));
+  SetLength(Self.Textures, files[High(files)].ID + 1);
   for i := 0 to High(files) do
-    Self.Textures[i] := TTextureDefinition.Create(files[i].ID, files[i].Data);
+    Self.Textures[files[i].ID] := TTextureDefinition.Create(files[i].ID, files[i].Data);
 end;
 
 
