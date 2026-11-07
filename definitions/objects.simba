@@ -304,6 +304,33 @@ begin
       94: Result.Unknown1 := True;
       95: Result.SoundVisibility := Read8Bits(data, offset);
       96: Result.RaiseAmount := Read8Bits(data, offset);
+      97, 98: // 77 and 92 with 24-bit signed object ids (cache rev 242)
+      begin
+        varpID := Read16Bits(data, offset);
+        if varpID = $FFFF then varpID := -1;
+        Result.VarbitID := varpID;
+
+        configId := Read16Bits(data, offset);
+        if configId = $FFFF then configId := -1;
+        Result.VarpID := configId;
+
+        varTmp := -1;
+        if opcode = 98 then
+        begin
+          varTmp := Read24Bits(data, offset);
+          if varTmp > $7FFFFF then varTmp -= $1000000;
+        end;
+
+        cfgLen := Read8Bits(data, offset);
+        SetLength(Result.ConfigChangeDest, cfgLen + 2);
+        for i := 0 to cfgLen do
+        begin
+          Result.ConfigChangeDest[i] := Read24Bits(data, offset);
+          if Result.ConfigChangeDest[i] > $7FFFFF then
+            Result.ConfigChangeDest[i] -= $1000000;
+        end;
+        Result.ConfigChangeDest[cfgLen + 1] := varTmp;
+      end;
       100: Result.Ops.DecodeSubOp(data, offset);
       101: Result.Ops.DecodeConditionalOp(data, offset);
       102: Result.Ops.DecodeConditionalSubOp(data, offset);
